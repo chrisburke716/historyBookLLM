@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.env
+*.env
+
+# Poetry
+poetry.lock
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Data
+data/*
+
+# VSCode
+.vscode/
+
+# Docker
+*.log
+
+*.DS_Store
