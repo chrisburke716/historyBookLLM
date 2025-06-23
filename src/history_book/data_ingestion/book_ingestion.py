@@ -206,7 +206,7 @@ def get_chapter_text_blocks(doc: pymupdf.Document, start_page: int, end_page: in
     blocks = []
     block_pages = []
     # page numbers are 1-indexed, so we need to adjust accordingly
-    for n, page in enumerate(doc[start_page-1:end_page]):
+    for n, page in enumerate(doc[start_page-1:end_page-1]):  # FIX: Adjust end_page to be exclusive
         page_blocks = page.get_text("blocks")
         cleaned_blocks = [clean_text(block[4]) for block in page_blocks if block[6] == 0]  # only text blocks
         if n == 0:
