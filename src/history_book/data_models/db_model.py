@@ -73,6 +73,10 @@ class DBModel(BaseModel):
         Returns:
             The result from the collection insert operation
         """
+
+        # TODO: check if the model is already in the collection.
+        # update it instead of inserting a new one?
+
         # Ensure we have a valid collection
         if self.collection is None:
             self.set_collection()
@@ -127,5 +131,11 @@ class DBModel(BaseModel):
             uuid=uuid,
             references=references if references else None,
         )
+
+        # after writing to database, extract the embedding that was created
+        # and set it on the model instance
+        db_entry = self.collection.query.fetch_object_by_id(uuid, include_vector=True)
+        # assuming only one vector field exists
+        self.embedding = list(db_entry.vector.values())[0]
 
         return result
