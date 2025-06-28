@@ -25,6 +25,7 @@ class ChapterDBModel(DBModel):
 
 class ParagraphDBModel(DBModel):
     collection_name: ClassVar[str] = "paragraphs"
+    vectorize_fields: ClassVar[Optional[list[str]]] = ["text"]
 
     text: str
     embedding: Optional[List[float]] = (

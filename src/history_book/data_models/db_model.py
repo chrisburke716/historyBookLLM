@@ -16,6 +16,7 @@ class DBModel(BaseModel):
     client: WeaviateClient = None
     collection: Optional[Collection] = None
     collection_name: ClassVar[str] = None
+    vectorize_fields: ClassVar[Optional[list[str]]] = None # used when creating weaviate collection
 
     # Pydantic having issues with Weaviate types, so we allow arbitrary types
     # --- not ideal, probably want to move client outside the model
@@ -27,12 +28,15 @@ class DBModel(BaseModel):
         if self.client is None:
             self.client = get_client()
         self.set_collection()
+        # TODO: if creating an instance from scratch (as opposed to loading from DB),
+        # we should insert it into the collection automatically
 
     def create_collection(self) -> Collection:
         """
         Create a Weaviate collection for the model.
         """
-        # self.collection = create_collection_from_pydantic(self.client, self)
+        # TODO: rethink whether the collection should be created here, or if it
+        # should be handled externally and expected to be set before using the model
         collection = create_collection_from_pydantic(
             self.client, self.__class__, self.collection_name
         )

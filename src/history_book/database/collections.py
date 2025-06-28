@@ -3,7 +3,7 @@ from typing import Optional
 from pydantic import BaseModel
 from weaviate.collections.collection.sync import Collection
 
-from weaviate.classes.config import Property, DataType
+from weaviate.classes.config import Configure, Property, DataType
 from pydantic.fields import FieldInfo
 
 from weaviate import WeaviateClient
@@ -139,9 +139,26 @@ def create_collection_from_pydantic(
         is not None
     ]
 
-    # TODO: add vectorization config if needed, references
+    # add vectorization config if needed, references
+    vectorize_fields = getattr(model_class, "vectorize_fields", None)
+    references = getattr(model_class, "references", None)
+    vectorizer_config = []
+    if vectorize_fields:
+        for prop in properties:
+            if prop.name in vectorize_fields:
+                # prop.module_config = {"text2vec-openai": {"vectorize": True}}
+                vectorizer_config.append(
+                    Configure.NamedVectors.text2vec_openai(
+                        name=f"{prop.name}_vector",
+                        source_properties= [prop.name],
+                        model="text-embedding-3-large",
+                        dimensions=256,
+                    )
+                )
 
     collection_config = {"name": class_name, "properties": properties}
+    if vectorizer_config:
+        collection_config["vectorizer_config"] = vectorizer_config
 
     # print(f"Creating collection {class_name} with properties: {properties}")
 
