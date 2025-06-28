@@ -30,6 +30,7 @@ class DBModel(BaseModel):
         self.set_collection()
         # TODO: if creating an instance from scratch (as opposed to loading from DB),
         # we should insert it into the collection automatically
+        self.write_model_to_collection()
 
     def create_collection(self) -> Collection:
         """
@@ -131,11 +132,5 @@ class DBModel(BaseModel):
             uuid=uuid,
             references=references if references else None,
         )
-
-        # after writing to database, extract the embedding that was created
-        # and set it on the model instance
-        db_entry = self.collection.query.fetch_object_by_id(uuid, include_vector=True)
-        # assuming only one vector field exists
-        self.embedding = list(db_entry.vector.values())[0]
 
         return result
