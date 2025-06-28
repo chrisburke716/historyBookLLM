@@ -113,6 +113,7 @@ def pydantic_field_to_weaviate_property(
     annotation = getattr(field_info, "annotation", None)
 
     # Map Python types to Weaviate DataType
+    # TODO: change == to is --- works fine now and DB is created, don't want to change without testing
     if annotation == str:
         dtype = DataType.TEXT
     elif annotation == int:
@@ -141,12 +142,10 @@ def create_collection_from_pydantic(
 
     # add vectorization config if needed, references
     vectorize_fields = getattr(model_class, "vectorize_fields", None)
-    references = getattr(model_class, "references", None)
     vectorizer_config = []
     if vectorize_fields:
         for prop in properties:
             if prop.name in vectorize_fields:
-                # prop.module_config = {"text2vec-openai": {"vectorize": True}}
                 vectorizer_config.append(
                     Configure.NamedVectors.text2vec_openai(
                         name=f"{prop.name}_vector",
@@ -159,8 +158,6 @@ def create_collection_from_pydantic(
     collection_config = {"name": class_name, "properties": properties}
     if vectorizer_config:
         collection_config["vectorizer_config"] = vectorizer_config
-
-    # print(f"Creating collection {class_name} with properties: {properties}")
 
     collection = client.collections.create(**collection_config)
 
