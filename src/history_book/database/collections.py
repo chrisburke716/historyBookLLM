@@ -113,14 +113,13 @@ def pydantic_field_to_weaviate_property(
     annotation = getattr(field_info, "annotation", None)
 
     # Map Python types to Weaviate DataType
-    # TODO: change == to is --- works fine now and DB is created, don't want to change without testing
-    if annotation == str:
+    if annotation is str:
         dtype = DataType.TEXT
-    elif annotation == int:
+    elif annotation is int:
         dtype = DataType.INT
-    elif annotation == float:
+    elif annotation is float:
         dtype = DataType.NUMBER
-    elif annotation == bool:
+    elif annotation is bool:
         dtype = DataType.BOOL
     else:
         # Unknown or unsupported type

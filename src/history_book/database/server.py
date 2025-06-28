@@ -14,5 +14,7 @@ def get_client() -> weaviate.WeaviateClient:
     """
     global _client
     if _client is None:
-        _client = weaviate.connect_to_local()
+        # TODO: set up flag or environment variable to toggle test/prod
+        _client = weaviate.connect_to_local()  # prod
+        # _client = weaviate.connect_to_local(port=8081, grpc_port=50052)  # test server
     return _client
