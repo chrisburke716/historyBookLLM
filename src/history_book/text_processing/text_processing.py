@@ -8,6 +8,7 @@ LIGATURES = {
     "ʃ": "ff",
 }
 
+
 def replace_ligatures(text: str) -> str:
     """
     Replace common ligatures in the text with their expanded forms.
@@ -20,6 +21,7 @@ def replace_ligatures(text: str) -> str:
         text = text.replace(ligature, replacement)
     return text
 
+
 def clean_text(text: str) -> str:
     """
     Clean the input text by removing unnecessary characters and formatting.
@@ -30,7 +32,7 @@ def clean_text(text: str) -> str:
     Returns:
         str: The cleaned text.
     """
-    text = text.replace('\n', ' ')
-    text = re.sub(r'\s+', ' ', text)  # replace multiple spaces with a single space
+    text = text.replace("\n", " ")
+    text = re.sub(r"\s+", " ", text)  # replace multiple spaces with a single space
     text = replace_ligatures(text)
     return text.strip()

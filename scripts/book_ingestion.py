@@ -5,7 +5,6 @@
 from history_book.data_ingestion.book_ingestion import build_history_book_db
 
 if __name__ == "__main__":
-
     # Get book data (books, paragraphs, chapters)
     all_books, all_chapters, all_paragraphs = build_history_book_db()
     # TODO: fix - first page of every chapter is read twice: into previous chapter and into current chapter
@@ -23,5 +22,3 @@ if __name__ == "__main__":
         paragraph.write_model_to_collection()
 
     print("History book data has been successfully ingested into the database.")
-
-

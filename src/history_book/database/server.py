@@ -4,10 +4,11 @@ import weaviate
 
 _client = None
 
+
 def get_client() -> weaviate.WeaviateClient:
     """
     Create and return a Weaviate client instance.
-    
+
     Returns:
         weaviate.WeaviateClient: An instance of the Weaviate client.
     """
