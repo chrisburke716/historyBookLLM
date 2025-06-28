@@ -16,7 +16,9 @@ class DBModel(BaseModel):
     client: WeaviateClient = None
     collection: Optional[Collection] = None
     collection_name: ClassVar[str] = None
-    vectorize_fields: ClassVar[Optional[list[str]]] = None # used when creating weaviate collection
+    vectorize_fields: ClassVar[Optional[list[str]]] = (
+        None  # used when creating weaviate collection
+    )
 
     # Pydantic having issues with Weaviate types, so we allow arbitrary types
     # --- not ideal, probably want to move client outside the model

@@ -150,7 +150,7 @@ def create_collection_from_pydantic(
                 vectorizer_config.append(
                     Configure.NamedVectors.text2vec_openai(
                         name=f"{prop.name}_vector",
-                        source_properties= [prop.name],
+                        source_properties=[prop.name],
                         model="text-embedding-3-large",
                         dimensions=256,
                     )

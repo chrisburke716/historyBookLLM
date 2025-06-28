@@ -42,13 +42,14 @@ class ParagraphDBModel(DBModel):
         """
         # Call the parent method to handle the basic insert
         result = super().write_model_to_collection(reference_fields)
-        
+
         # After writing to database, extract the embedding that was created
         # and set it on the model instance
         if self.vectorize_fields:
-            db_entry = self.collection.query.fetch_object_by_id(self.id, include_vector=True)
+            db_entry = self.collection.query.fetch_object_by_id(
+                self.id, include_vector=True
+            )
             # assuming only one vector field exists
             self.embedding = list(db_entry.vector.values())[0]
 
-            
         return result
