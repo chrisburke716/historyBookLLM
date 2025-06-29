@@ -48,6 +48,9 @@ class ParagraphDBModel(DBModel):
                 self.id, include_vector=True
             )
             # assuming only one vector field exists
-            self.embedding = list(db_entry.vector.values())[0]
+            if db_entry.vector and db_entry.vector.values():
+                self.embedding = list(db_entry.vector.values())[0]
+            else:
+                self.embedding = None  # Handle empty vector gracefully
 
         return result
