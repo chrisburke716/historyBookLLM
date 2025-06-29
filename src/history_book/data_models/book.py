@@ -1,8 +1,6 @@
 from typing import List, Optional, ClassVar
 from history_book.data_models.db_model import DBModel
 
-# TODO: get rid of foreign keys, use book and chapter indices instead --- test in nb first
-
 
 class BookDBModel(DBModel):
     collection_name: ClassVar[str] = "books"

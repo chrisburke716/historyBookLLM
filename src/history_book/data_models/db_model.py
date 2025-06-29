@@ -30,9 +30,8 @@ class DBModel(BaseModel):
         if self.client is None:
             self.client = get_client()
         self.set_collection()
-        # TODO: if creating an instance from scratch (as opposed to loading from DB),
-        # we should insert it into the collection automatically
         self.write_model_to_collection()
+        # TODO: handle case of reading from collection
 
     def create_collection(self) -> Collection:
         """

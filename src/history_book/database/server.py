@@ -1,7 +1,5 @@
 import weaviate
 
-# TODO: this should have a singleton pattern to avoid creating multiple clients
-
 _client = None
 
 
