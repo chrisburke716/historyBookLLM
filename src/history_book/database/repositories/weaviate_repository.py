@@ -1,0 +1,597 @@
+"""Weaviate implementation of the vector repository interface."""
+
+import logging
+from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar
+import weaviate
+from weaviate import WeaviateClient
+from weaviate.collections import Collection
+
+from ..interfaces.vector_repository_interface import VectorRepository
+from ..config.database_config import WeaviateConfig
+from ..exceptions.database_exceptions import (
+    ConnectionError,
+    CollectionError,
+    EntityNotFoundError,
+    VectorError,
+    QueryError,
+    BatchOperationError,
+    ValidationError,
+)
+
+logger = logging.getLogger(__name__)
+
+T = TypeVar('T')
+
+
+class WeaviateRepository(VectorRepository[T]):
+    """
+    Weaviate implementation of the vector repository interface.
+    
+    This class provides concrete implementations of all repository operations
+    for Weaviate vector database, handling connection management, error handling,
+    and Weaviate-specific operations.
+    """
+
+    def __init__(
+        self, 
+        config: WeaviateConfig,
+        collection_name: str,
+        entity_class: Type[T],
+        client: Optional[WeaviateClient] = None
+    ):
+        """
+        Initialize the Weaviate repository.
+        
+        Args:
+            config: Weaviate configuration
+            collection_name: Name of the collection to operate on
+            entity_class: The entity class this repository manages
+            client: Optional pre-configured Weaviate client
+        """
+        self.config = config
+        self.collection_name = collection_name.capitalize()  # Weaviate uses capitalized names
+        self.entity_class = entity_class
+        self._client = client
+        self._collection: Optional[Collection] = None
+
+    @property
+    def client(self) -> WeaviateClient:
+        """Get or create the Weaviate client."""
+        if self._client is None:
+            try:
+                if self.config.is_local:
+                    self._client = weaviate.connect_to_local(
+                        port=self.config.port,
+                        grpc_port=self.config.grpc_port
+                    )
+                else:
+                    # For remote connections, you'd configure differently
+                    # This is a placeholder for future remote connection support
+                    raise NotImplementedError("Remote Weaviate connections not yet implemented")
+                
+                logger.info(f"Connected to Weaviate at {self.config.connection_string}")
+            except Exception as e:
+                raise ConnectionError(f"Failed to connect to Weaviate: {str(e)}", e)
+        
+        return self._client
+
+    @property
+    def collection(self) -> Collection:
+        """Get or create the collection."""
+        if self._collection is None:
+            try:
+                # Check if collection exists
+                if self.collection_name in self.client.collections.list_all().keys():
+                    self._collection = self.client.collections.get(self.collection_name)
+                    logger.info(f"Retrieved existing collection: {self.collection_name}")
+                else:
+                    raise CollectionError(f"Collection '{self.collection_name}' does not exist")
+                
+            except Exception as e:
+                if isinstance(e, CollectionError):
+                    raise
+                raise CollectionError(f"Failed to access collection '{self.collection_name}': {str(e)}", e)
+        
+        return self._collection
+
+    def close(self):
+        """Close the database connection."""
+        if self._client is not None:
+            try:
+                self._client.close()
+                logger.info("Weaviate connection closed")
+            except Exception as e:
+                logger.warning(f"Error closing Weaviate connection: {str(e)}")
+            finally:
+                self._client = None
+                self._collection = None
+
+    # Sync versions of the interface methods (for now, we'll implement sync versions)
+    # In the future, you could add async support by wrapping these in asyncio.run()
+
+    async def create(self, entity: T, **kwargs) -> str:
+        """Create a new entity in the collection."""
+        return self.create_sync(entity, **kwargs)
+
+    def create_sync(self, entity: T, **kwargs) -> str:
+        """Synchronous version of create."""
+        try:
+            # Convert entity to dict, filtering out None values and internal fields
+            entity_data = self._entity_to_dict(entity)
+            entity_id = entity_data.pop("id", None)
+            
+            # Insert into collection
+            result = self.collection.data.insert(
+                properties=entity_data,
+                uuid=entity_id,
+                **kwargs
+            )
+            
+            logger.debug(f"Created entity with ID: {result}")
+            return str(result)
+            
+        except Exception as e:
+            raise CollectionError(f"Failed to create entity: {str(e)}", e)
+
+    async def get_by_id(self, entity_id: str, **kwargs) -> Optional[T]:
+        """Retrieve an entity by its ID."""
+        return self.get_by_id_sync(entity_id, **kwargs)
+
+    def get_by_id_sync(self, entity_id: str, **kwargs) -> Optional[T]:
+        """Synchronous version of get_by_id."""
+        try:
+            result = self.collection.query.fetch_object_by_id(entity_id, **kwargs)
+            if result is None:
+                return None
+            
+            # Convert Weaviate object back to entity
+            return self._weaviate_object_to_entity(result)
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve entity {entity_id}: {str(e)}")
+            return None
+
+    async def update(self, entity_id: str, updates: Dict[str, Any], **kwargs) -> bool:
+        """Update an existing entity."""
+        return self.update_sync(entity_id, updates, **kwargs)
+
+    def update_sync(self, entity_id: str, updates: Dict[str, Any], **kwargs) -> bool:
+        """Synchronous version of update."""
+        try:
+            self.collection.data.update(
+                uuid=entity_id,
+                properties=updates,
+                **kwargs
+            )
+            logger.debug(f"Updated entity {entity_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to update entity {entity_id}: {str(e)}")
+            return False
+
+    async def delete(self, entity_id: str, **kwargs) -> bool:
+        """Delete an entity by its ID."""
+        return self.delete_sync(entity_id, **kwargs)
+
+    def delete_sync(self, entity_id: str, **kwargs) -> bool:
+        """Synchronous version of delete."""
+        try:
+            self.collection.data.delete_by_id(entity_id, **kwargs)
+            logger.debug(f"Deleted entity {entity_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to delete entity {entity_id}: {str(e)}")
+            return False
+
+    async def list_all(self, limit: Optional[int] = None, offset: Optional[int] = None, **kwargs) -> List[T]:
+        """List all entities with optional pagination."""
+        return self.list_all_sync(limit, offset, **kwargs)
+
+    def list_all_sync(self, limit: Optional[int] = None, offset: Optional[int] = None, **kwargs) -> List[T]:
+        """Synchronous version of list_all."""
+        try:
+            query = self.collection.query.fetch_objects(
+                limit=limit,
+                offset=offset,
+                **kwargs
+            )
+            
+            entities = []
+            for obj in query.objects:
+                entity = self._weaviate_object_to_entity(obj)
+                if entity:
+                    entities.append(entity)
+            
+            return entities
+            
+        except Exception as e:
+            raise QueryError(f"Failed to list entities: {str(e)}", e)
+
+    async def count(self, **kwargs) -> int:
+        """Count the total number of entities."""
+        return self.count_sync(**kwargs)
+
+    def count_sync(self, **kwargs) -> int:
+        """Synchronous version of count."""
+        try:
+            result = self.collection.aggregate.over_all(total_count=True)
+            return result.total_count or 0
+            
+        except Exception as e:
+            logger.error(f"Failed to count entities: {str(e)}")
+            return 0
+
+    async def exists(self, entity_id: str, **kwargs) -> bool:
+        """Check if an entity exists by its ID."""
+        return self.exists_sync(entity_id, **kwargs)
+
+    def exists_sync(self, entity_id: str, **kwargs) -> bool:
+        """Synchronous version of exists."""
+        return self.get_by_id_sync(entity_id, **kwargs) is not None
+
+    async def find_by_criteria(self, criteria: Dict[str, Any], **kwargs) -> List[T]:
+        """Find entities matching specific criteria."""
+        return self.find_by_criteria_sync(criteria, **kwargs)
+
+    def find_by_criteria_sync(self, criteria: Dict[str, Any], **kwargs) -> List[T]:
+        """Synchronous version of find_by_criteria."""
+        try:
+            # For now, let's implement a simple version that fetches all and filters in Python
+            # This is not efficient but will allow us to test the interface
+            query = self.collection.query.fetch_objects(**kwargs)
+            
+            entities = []
+            for obj in query.objects:
+                entity = self._weaviate_object_to_entity(obj)
+                if entity:
+                    # Apply criteria filtering in Python
+                    if self._entity_matches_criteria(entity, criteria):
+                        entities.append(entity)
+            
+            return entities
+            
+        except Exception as e:
+            raise QueryError(f"Failed to find entities by criteria: {str(e)}", e)
+    
+    def _entity_matches_criteria(self, entity: T, criteria: Dict[str, Any]) -> bool:
+        """Check if an entity matches the given criteria."""
+        for field, value in criteria.items():
+            if hasattr(entity, field):
+                entity_value = getattr(entity, field)
+                if entity_value != value:
+                    return False
+            else:
+                return False
+        return True
+
+    # Vector-specific methods
+
+    async def similarity_search(
+        self, 
+        query_vector: List[float], 
+        limit: int = 10,
+        threshold: Optional[float] = None,
+        **kwargs
+    ) -> List[Tuple[T, float]]:
+        """Perform similarity search using a query vector."""
+        return self.similarity_search_sync(query_vector, limit, threshold, **kwargs)
+
+    def similarity_search_sync(
+        self, 
+        query_vector: List[float], 
+        limit: int = 10,
+        threshold: Optional[float] = None,
+        **kwargs
+    ) -> List[Tuple[T, float]]:
+        """Synchronous version of similarity_search."""
+        try:
+            # Note: This is a simplified implementation
+            # You'll need to adapt this based on your specific vector field configuration
+            query = self.collection.query.near_vector(
+                near_vector=query_vector,
+                limit=limit,
+                distance=threshold,
+                **kwargs
+            )
+            
+            results = []
+            for obj in query.objects:
+                entity = self._weaviate_object_to_entity(obj)
+                if entity:
+                    # Get distance/score from metadata
+                    score = getattr(obj.metadata, 'distance', 0.0)
+                    results.append((entity, 1.0 - score))  # Convert distance to similarity
+            
+            return results
+            
+        except Exception as e:
+            raise VectorError(f"Vector similarity search failed: {str(e)}", e)
+
+    async def similarity_search_by_text(
+        self, 
+        query_text: str, 
+        limit: int = 10,
+        threshold: Optional[float] = None,
+        **kwargs
+    ) -> List[Tuple[T, float]]:
+        """Perform similarity search using text query."""
+        return self.similarity_search_by_text_sync(query_text, limit, threshold, **kwargs)
+
+    def similarity_search_by_text_sync(
+        self, 
+        query_text: str, 
+        limit: int = 10,
+        threshold: Optional[float] = None,
+        **kwargs
+    ) -> List[Tuple[T, float]]:
+        """Synchronous version of similarity_search_by_text."""
+        try:
+            query = self.collection.query.near_text(
+                query=query_text,
+                limit=limit,
+                distance=threshold,
+                **kwargs
+            )
+            
+            results = []
+            for obj in query.objects:
+                entity = self._weaviate_object_to_entity(obj)
+                if entity:
+                    # Get distance/score from metadata, handle None case
+                    distance = getattr(obj.metadata, 'distance', None)
+                    if distance is not None:
+                        score = 1.0 - distance  # Convert distance to similarity
+                    else:
+                        score = 0.0  # Default score if distance is None
+                    results.append((entity, score))
+            
+            return results
+            
+        except Exception as e:
+            raise VectorError(f"Text similarity search failed: {str(e)}", e)
+
+    async def create_with_vector(
+        self, 
+        entity: T, 
+        vector: Optional[List[float]] = None,
+        **kwargs
+    ) -> str:
+        """Create an entity with an associated vector."""
+        return self.create_with_vector_sync(entity, vector, **kwargs)
+
+    def create_with_vector_sync(
+        self, 
+        entity: T, 
+        vector: Optional[List[float]] = None,
+        **kwargs
+    ) -> str:
+        """Synchronous version of create_with_vector."""
+        try:
+            entity_data = self._entity_to_dict(entity)
+            entity_id = entity_data.pop("id", None)
+            
+            insert_kwargs = kwargs.copy()
+            if vector:
+                insert_kwargs['vector'] = vector
+            
+            result = self.collection.data.insert(
+                properties=entity_data,
+                uuid=entity_id,
+                **insert_kwargs
+            )
+            
+            logger.debug(f"Created entity with vector, ID: {result}")
+            return str(result)
+            
+        except Exception as e:
+            raise VectorError(f"Failed to create entity with vector: {str(e)}", e)
+
+    async def update_vector(self, entity_id: str, vector: List[float], **kwargs) -> bool:
+        """Update the vector for an existing entity."""
+        return self.update_vector_sync(entity_id, vector, **kwargs)
+
+    def update_vector_sync(self, entity_id: str, vector: List[float], **kwargs) -> bool:
+        """Synchronous version of update_vector."""
+        try:
+            self.collection.data.update(
+                uuid=entity_id,
+                vector=vector,
+                **kwargs
+            )
+            logger.debug(f"Updated vector for entity {entity_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to update vector for entity {entity_id}: {str(e)}")
+            return False
+
+    async def get_vector(self, entity_id: str, **kwargs) -> Optional[List[float]]:
+        """Retrieve the vector for an entity."""
+        return self.get_vector_sync(entity_id, **kwargs)
+
+    def get_vector_sync(self, entity_id: str, **kwargs) -> Optional[List[float]]:
+        """Synchronous version of get_vector."""
+        try:
+            result = self.collection.query.fetch_object_by_id(
+                entity_id, 
+                include_vector=True,
+                **kwargs
+            )
+            
+            if result and result.vector:
+                # Return the first vector (assuming single vector per object)
+                return list(result.vector.values())[0] if result.vector.values() else None
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to get vector for entity {entity_id}: {str(e)}")
+            return None
+
+    async def batch_create_with_vectors(
+        self, 
+        entities_and_vectors: List[Tuple[T, Optional[List[float]]]],
+        **kwargs
+    ) -> List[str]:
+        """Create multiple entities with their vectors in a batch operation."""
+        return self.batch_create_with_vectors_sync(entities_and_vectors, **kwargs)
+
+    def batch_create_with_vectors_sync(
+        self, 
+        entities_and_vectors: List[Tuple[T, Optional[List[float]]]],
+        **kwargs
+    ) -> List[str]:
+        """Synchronous version of batch_create_with_vectors."""
+        try:
+            # Prepare batch data
+            objects_to_insert = []
+            for entity, vector in entities_and_vectors:
+                entity_data = self._entity_to_dict(entity)
+                entity_id = entity_data.pop("id", None)
+                
+                obj_data = {
+                    "properties": entity_data,
+                    "uuid": entity_id
+                }
+                
+                if vector:
+                    obj_data["vector"] = vector
+                
+                objects_to_insert.append(obj_data)
+            
+            # Perform batch insert
+            results = self.collection.data.insert_many(objects_to_insert)
+            
+            # Extract IDs from results
+            created_ids = []
+            for result in results:
+                if hasattr(result, 'uuid'):
+                    created_ids.append(str(result.uuid))
+            
+            logger.info(f"Batch created {len(created_ids)} entities")
+            return created_ids
+            
+        except Exception as e:
+            raise BatchOperationError(f"Batch create operation failed: {str(e)}", original_error=e)
+
+    async def hybrid_search(
+        self,
+        query_text: str,
+        query_vector: Optional[List[float]] = None,
+        alpha: float = 0.5,
+        limit: int = 10,
+        **kwargs
+    ) -> List[Tuple[T, float]]:
+        """Perform hybrid search combining text and vector search."""
+        return self.hybrid_search_sync(query_text, query_vector, alpha, limit, **kwargs)
+
+    def hybrid_search_sync(
+        self,
+        query_text: str,
+        query_vector: Optional[List[float]] = None,
+        alpha: float = 0.5,
+        limit: int = 10,
+        **kwargs
+    ) -> List[Tuple[T, float]]:
+        """Synchronous version of hybrid_search."""
+        try:
+            # Use Weaviate's hybrid search if available
+            query = self.collection.query.hybrid(
+                query=query_text,
+                vector=query_vector,
+                alpha=alpha,
+                limit=limit,
+                **kwargs
+            )
+            
+            results = []
+            for obj in query.objects:
+                entity = self._weaviate_object_to_entity(obj)
+                if entity:
+                    score = getattr(obj.metadata, 'score', 0.0)
+                    results.append((entity, score))
+            
+            return results
+            
+        except Exception as e:
+            raise VectorError(f"Hybrid search failed: {str(e)}", e)
+
+    # Helper methods
+
+    def _entity_to_dict(self, entity: T) -> Dict[str, Any]:
+        """Convert entity to dictionary suitable for Weaviate."""
+        if hasattr(entity, 'model_dump'):
+            # Pydantic model
+            data = entity.model_dump()
+        elif hasattr(entity, '__dict__'):
+            # Regular class
+            data = entity.__dict__.copy()
+        else:
+            raise ValidationError(f"Cannot convert entity of type {type(entity)} to dict")
+        
+        # Filter out None values and internal fields
+        filtered_data = {}
+        for key, value in data.items():
+            if key in ['client', 'collection']:
+                continue
+            if value is not None:
+                filtered_data[key] = value
+        
+        return filtered_data
+
+    def _weaviate_object_to_entity(self, weaviate_obj) -> Optional[T]:
+        """Convert Weaviate object back to entity."""
+        try:
+            # Extract properties
+            properties = weaviate_obj.properties.copy()
+            
+            # Add the ID
+            properties['id'] = str(weaviate_obj.uuid)
+            
+            # Create entity instance (but don't let it auto-save to database)
+            if hasattr(self.entity_class, 'model_construct'):
+                # For Pydantic models, use model_construct to bypass validation and __init__
+                entity = self.entity_class.model_construct(**properties)
+                
+                # Set client and collection references without triggering writes
+                entity.client = self.client
+                entity.collection = self.collection
+                
+                return entity
+            else:
+                # Regular class - create directly
+                return self.entity_class(**properties)
+                
+        except Exception as e:
+            logger.error(f"Failed to convert Weaviate object to entity: {str(e)}")
+            return None
+
+    def _build_where_filter(self, criteria: Dict[str, Any]):
+        """Build Weaviate where filter from criteria dictionary."""
+        from weaviate.classes.query import Filter
+        
+        if not criteria:
+            return None
+        
+        # Build filter conditions
+        filters = []
+        for field, value in criteria.items():
+            if isinstance(value, str):
+                filters.append(Filter.by_property(field).equal(value))
+            elif isinstance(value, (int, float)):
+                filters.append(Filter.by_property(field).equal(value))
+            elif isinstance(value, bool):
+                filters.append(Filter.by_property(field).equal(value))
+        
+        if len(filters) == 1:
+            return filters[0]
+        elif len(filters) > 1:
+            # Combine with AND
+            result = filters[0]
+            for filter_condition in filters[1:]:
+                result = result & filter_condition
+            return result
+        else:
+            return None
