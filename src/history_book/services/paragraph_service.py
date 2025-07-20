@@ -51,11 +51,11 @@ class ParagraphService:
         """
         try:
             # Step 1: Create the paragraph using repository
-            paragraph_id = self.repository.create_sync(paragraph)
+            paragraph_id = self.repository.create(paragraph)
             
             # Step 2: Fetch the created paragraph with its generated vector embedding
             # (Weaviate auto-generates embeddings for fields in vectorize_fields)
-            created_paragraph = self.repository.get_by_id_sync(paragraph_id)
+            created_paragraph = self.repository.get_by_id(paragraph_id)
             
             # Step 3: Update the original paragraph object with the embedding and ID
             if created_paragraph:
@@ -70,10 +70,10 @@ class ParagraphService:
         except Exception as e:
             logger.error(f"Failed to create paragraph: {e}")
             raise
-    
+
     def get_paragraph_by_id(self, paragraph_id: str) -> Optional[Paragraph]:
         """Get a paragraph by ID."""
-        return self.repository.get_by_id_sync(paragraph_id)
+        return self.repository.get_by_id(paragraph_id)
     
     def search_similar_paragraphs(
         self, 
@@ -99,7 +99,7 @@ class ParagraphService:
         """
         try:
             # Use the repository's specialized search method
-            results = self.repository.search_similar_paragraphs_sync(
+            results = self.repository.search_similar_paragraphs(
                 query_text=query_text,
                 limit=limit,
                 book_index=book_index,
@@ -115,7 +115,7 @@ class ParagraphService:
     
     def get_paragraphs_by_book(self, book_index: int) -> List[Paragraph]:
         """Get all paragraphs for a specific book."""
-        return self.repository.find_by_book_index_sync(book_index)
+        return self.repository.find_by_book_index(book_index)
     
     def get_paragraphs_by_chapter(
         self, 
@@ -123,7 +123,7 @@ class ParagraphService:
         chapter_index: int
     ) -> List[Paragraph]:
         """Get all paragraphs for a specific chapter."""
-        return self.repository.find_by_chapter_index_sync(book_index, chapter_index)
+        return self.repository.find_by_chapter_index(book_index, chapter_index)
     
     def get_paragraphs_by_page_range(
         self,
@@ -137,7 +137,7 @@ class ParagraphService:
         This demonstrates business logic that might be too complex for
         a simple repository method.
         """
-        return self.repository.search_paragraphs_by_page_range_sync(
+        return self.repository.search_paragraphs_by_page_range(
             start_page=start_page,
             end_page=end_page,
             book_index=book_index
@@ -161,7 +161,7 @@ class ParagraphService:
             entities_and_vectors = [(p, None) for p in paragraphs]  # Let Weaviate generate vectors
             
             # Perform batch creation
-            paragraph_ids = self.repository.batch_create_with_vectors_sync(entities_and_vectors)
+            paragraph_ids = self.repository.batch_create_with_vectors(entities_and_vectors)
             
             # Update the paragraph objects with their new IDs
             for paragraph, paragraph_id in zip(paragraphs, paragraph_ids):
@@ -176,7 +176,7 @@ class ParagraphService:
     
     def count_paragraphs(self) -> int:
         """Count total paragraphs."""
-        return self.repository.count_sync()
+        return self.repository.count()
     
     def close(self):
         """Close repository connections."""

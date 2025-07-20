@@ -14,7 +14,7 @@ class VectorRepository(BaseRepository[T], ABC):
     """
 
     @abstractmethod
-    async def similarity_search(
+    def similarity_search(
         self, 
         query_vector: List[float], 
         limit: int = 10,
@@ -36,7 +36,7 @@ class VectorRepository(BaseRepository[T], ABC):
         pass
 
     @abstractmethod
-    async def similarity_search_by_text(
+    def similarity_search_by_text(
         self, 
         query_text: str, 
         limit: int = 10,
@@ -58,7 +58,7 @@ class VectorRepository(BaseRepository[T], ABC):
         pass
 
     @abstractmethod
-    async def create_with_vector(
+    def create_with_vector(
         self, 
         entity: T, 
         vector: Optional[List[float]] = None,
@@ -78,7 +78,7 @@ class VectorRepository(BaseRepository[T], ABC):
         pass
 
     @abstractmethod
-    async def update_vector(
+    def update_vector(
         self, 
         entity_id: str, 
         vector: List[float],
@@ -98,7 +98,7 @@ class VectorRepository(BaseRepository[T], ABC):
         pass
 
     @abstractmethod
-    async def get_vector(self, entity_id: str, **kwargs) -> Optional[List[float]]:
+    def get_vector(self, entity_id: str, **kwargs) -> Optional[List[float]]:
         """
         Retrieve the vector for an entity.
         
@@ -112,7 +112,7 @@ class VectorRepository(BaseRepository[T], ABC):
         pass
 
     @abstractmethod
-    async def batch_create_with_vectors(
+    def batch_create_with_vectors(
         self, 
         entities_and_vectors: List[Tuple[T, Optional[List[float]]]],
         **kwargs
@@ -130,7 +130,7 @@ class VectorRepository(BaseRepository[T], ABC):
         pass
 
     @abstractmethod
-    async def hybrid_search(
+    def hybrid_search(
         self,
         query_text: str,
         query_vector: Optional[List[float]] = None,

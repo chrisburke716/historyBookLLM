@@ -17,7 +17,7 @@ class BaseRepository(ABC, Generic[T]):
     """
 
     @abstractmethod
-    async def create(self, entity: T, **kwargs) -> str:
+    def create(self, entity: T, **kwargs) -> str:
         """
         Create a new entity in the database.
         
@@ -31,7 +31,7 @@ class BaseRepository(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    async def get_by_id(self, entity_id: str, **kwargs) -> Optional[T]:
+    def get_by_id(self, entity_id: str, **kwargs) -> Optional[T]:
         """
         Retrieve an entity by its ID.
         
@@ -45,7 +45,7 @@ class BaseRepository(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    async def update(self, entity_id: str, updates: Dict[str, Any], **kwargs) -> bool:
+    def update(self, entity_id: str, updates: Dict[str, Any], **kwargs) -> bool:
         """
         Update an existing entity.
         
@@ -60,7 +60,7 @@ class BaseRepository(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    async def delete(self, entity_id: str, **kwargs) -> bool:
+    def delete(self, entity_id: str, **kwargs) -> bool:
         """
         Delete an entity by its ID.
         
@@ -74,7 +74,7 @@ class BaseRepository(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    async def list_all(self, limit: Optional[int] = None, offset: Optional[int] = None, **kwargs) -> List[T]:
+    def list_all(self, limit: Optional[int] = None, offset: Optional[int] = None, **kwargs) -> List[T]:
         """
         List all entities with optional pagination.
         
@@ -89,7 +89,7 @@ class BaseRepository(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    async def count(self, **kwargs) -> int:
+    def count(self, **kwargs) -> int:
         """
         Count the total number of entities.
         
@@ -102,7 +102,7 @@ class BaseRepository(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    async def exists(self, entity_id: str, **kwargs) -> bool:
+    def exists(self, entity_id: str, **kwargs) -> bool:
         """
         Check if an entity exists by its ID.
         
@@ -116,7 +116,7 @@ class BaseRepository(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    async def find_by_criteria(self, criteria: Dict[str, Any], **kwargs) -> List[T]:
+    def find_by_criteria(self, criteria: Dict[str, Any], **kwargs) -> List[T]:
         """
         Find entities matching specific criteria.
         

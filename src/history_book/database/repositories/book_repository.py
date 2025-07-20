@@ -19,7 +19,7 @@ class BookRepository(WeaviateRepository["Book"]):
         from ...data_models.entities import Book
         super().__init__(
             config=config,
-            collection_name="books",
+            collection_name="Books",  # Will be auto-capitalized
             entity_class=Book
         )
 
@@ -31,13 +31,13 @@ class ChapterRepository(WeaviateRepository["Chapter"]):
         from ...data_models.entities import Chapter
         super().__init__(
             config=config,
-            collection_name="chapters",
+            collection_name="Chapters",  # Will be auto-capitalized
             entity_class=Chapter
         )
     
-    def find_by_book_index_sync(self, book_index: int) -> List["Chapter"]:
+    def find_by_book_index(self, book_index: int) -> List["Chapter"]:
         """Find all chapters for a specific book."""
-        return self.find_by_criteria_sync({"book_index": book_index})
+        return self.find_by_criteria({"book_index": book_index})
 
 
 class ParagraphRepository(WeaviateRepository["Paragraph"]):
@@ -47,22 +47,22 @@ class ParagraphRepository(WeaviateRepository["Paragraph"]):
         from ...data_models.entities import Paragraph
         super().__init__(
             config=config,
-            collection_name="paragraphs",
+            collection_name="Paragraphs",  # Will be auto-capitalized
             entity_class=Paragraph
         )
     
-    def find_by_book_index_sync(self, book_index: int) -> List["Paragraph"]:
+    def find_by_book_index(self, book_index: int) -> List["Paragraph"]:
         """Find all paragraphs for a specific book."""
-        return self.find_by_criteria_sync({"book_index": book_index})
+        return self.find_by_criteria({"book_index": book_index})
     
-    def find_by_chapter_index_sync(self, book_index: int, chapter_index: int) -> List["Paragraph"]:
+    def find_by_chapter_index(self, book_index: int, chapter_index: int) -> List["Paragraph"]:
         """Find all paragraphs for a specific chapter."""
-        return self.find_by_criteria_sync({
+        return self.find_by_criteria({
             "book_index": book_index,
             "chapter_index": chapter_index
         })
     
-    def search_similar_paragraphs_sync(
+    def search_similar_paragraphs(
         self, 
         query_text: str, 
         limit: int = 10,
@@ -85,7 +85,7 @@ class ParagraphRepository(WeaviateRepository["Paragraph"]):
         # For now, we'll do a simple similarity search and filter afterward
         # In a more advanced implementation, you could combine this with where filters
         
-        results = self.similarity_search_by_text_sync(
+        results = self.similarity_search_by_text(
             query_text=query_text,
             limit=limit * 2 if book_index is not None else limit,  # Get more results for filtering
             threshold=threshold
@@ -101,7 +101,7 @@ class ParagraphRepository(WeaviateRepository["Paragraph"]):
         
         return results[:limit]
     
-    def search_paragraphs_by_page_range_sync(
+    def search_paragraphs_by_page_range(
         self, 
         start_page: int, 
         end_page: int,
@@ -120,7 +120,7 @@ class ParagraphRepository(WeaviateRepository["Paragraph"]):
         """
         # This would require more complex filtering in Weaviate
         # For now, we'll implement a simple version
-        all_paragraphs = self.list_all_sync()
+        all_paragraphs = self.list_all()
         
         filtered_paragraphs = [
             p for p in all_paragraphs

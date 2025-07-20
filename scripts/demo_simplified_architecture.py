@@ -28,22 +28,22 @@ def demo_pure_entities_and_repositories():
     
     try:
         # Example 1: Count existing data using repositories
-        book_count = book_repo.count_sync()
-        chapter_count = chapter_repo.count_sync()
+        book_count = book_repo.count()
+        chapter_count = chapter_repo.count()
         
         logger.info(f"Found {book_count} books and {chapter_count} chapters")
         
         # Example 2: List books using repository
         if book_count > 0:
             logger.info("Listing first 3 books...")
-            books = book_repo.list_all_sync(limit=3)
+            books = book_repo.list_all(limit=3)
             for book in books:
                 logger.info(f"  Book {book.book_index}: {book.title} (pages {book.start_page}-{book.end_page})")
         
         # Example 3: Find chapters by book using repository  
         if chapter_count > 0:
             logger.info("Finding chapters for book 0...")
-            chapters = chapter_repo.find_by_book_index_sync(book_index=0)
+            chapters = chapter_repo.find_by_book_index(book_index=0)
             for chapter in chapters[:3]:  # Show first 3
                 logger.info(f"  Chapter {chapter.chapter_index}: {chapter.title}")
                 

@@ -109,11 +109,7 @@ class WeaviateRepository(VectorRepository[T]):
     # Sync versions of the interface methods (for now, we'll implement sync versions)
     # In the future, you could add async support by wrapping these in asyncio.run()
 
-    async def create(self, entity: T, **kwargs) -> str:
-        """Create a new entity in the collection."""
-        return self.create_sync(entity, **kwargs)
-
-    def create_sync(self, entity: T, **kwargs) -> str:
+    def create(self, entity: T, **kwargs) -> str:
         """Synchronous version of create."""
         try:
             # Convert entity to dict, filtering out None values and internal fields
@@ -133,11 +129,7 @@ class WeaviateRepository(VectorRepository[T]):
         except Exception as e:
             raise CollectionError(f"Failed to create entity: {str(e)}", e)
 
-    async def get_by_id(self, entity_id: str, **kwargs) -> Optional[T]:
-        """Retrieve an entity by its ID."""
-        return self.get_by_id_sync(entity_id, **kwargs)
-
-    def get_by_id_sync(self, entity_id: str, **kwargs) -> Optional[T]:
+    def get_by_id(self, entity_id: str, **kwargs) -> Optional[T]:
         """Synchronous version of get_by_id."""
         try:
             result = self.collection.query.fetch_object_by_id(entity_id, **kwargs)
@@ -151,11 +143,7 @@ class WeaviateRepository(VectorRepository[T]):
             logger.error(f"Failed to retrieve entity {entity_id}: {str(e)}")
             return None
 
-    async def update(self, entity_id: str, updates: Dict[str, Any], **kwargs) -> bool:
-        """Update an existing entity."""
-        return self.update_sync(entity_id, updates, **kwargs)
-
-    def update_sync(self, entity_id: str, updates: Dict[str, Any], **kwargs) -> bool:
+    def update(self, entity_id: str, updates: Dict[str, Any], **kwargs) -> bool:
         """Synchronous version of update."""
         try:
             self.collection.data.update(
@@ -170,11 +158,7 @@ class WeaviateRepository(VectorRepository[T]):
             logger.error(f"Failed to update entity {entity_id}: {str(e)}")
             return False
 
-    async def delete(self, entity_id: str, **kwargs) -> bool:
-        """Delete an entity by its ID."""
-        return self.delete_sync(entity_id, **kwargs)
-
-    def delete_sync(self, entity_id: str, **kwargs) -> bool:
+    def delete(self, entity_id: str, **kwargs) -> bool:
         """Synchronous version of delete."""
         try:
             self.collection.data.delete_by_id(entity_id, **kwargs)
@@ -185,11 +169,7 @@ class WeaviateRepository(VectorRepository[T]):
             logger.error(f"Failed to delete entity {entity_id}: {str(e)}")
             return False
 
-    async def list_all(self, limit: Optional[int] = None, offset: Optional[int] = None, **kwargs) -> List[T]:
-        """List all entities with optional pagination."""
-        return self.list_all_sync(limit, offset, **kwargs)
-
-    def list_all_sync(self, limit: Optional[int] = None, offset: Optional[int] = None, **kwargs) -> List[T]:
+    def list_all(self, limit: Optional[int] = None, offset: Optional[int] = None, **kwargs) -> List[T]:
         """Synchronous version of list_all."""
         try:
             query = self.collection.query.fetch_objects(
@@ -209,11 +189,7 @@ class WeaviateRepository(VectorRepository[T]):
         except Exception as e:
             raise QueryError(f"Failed to list entities: {str(e)}", e)
 
-    async def count(self, **kwargs) -> int:
-        """Count the total number of entities."""
-        return self.count_sync(**kwargs)
-
-    def count_sync(self, **kwargs) -> int:
+    def count(self, **kwargs) -> int:
         """Synchronous version of count."""
         try:
             result = self.collection.aggregate.over_all(total_count=True)
@@ -223,19 +199,11 @@ class WeaviateRepository(VectorRepository[T]):
             logger.error(f"Failed to count entities: {str(e)}")
             return 0
 
-    async def exists(self, entity_id: str, **kwargs) -> bool:
-        """Check if an entity exists by its ID."""
-        return self.exists_sync(entity_id, **kwargs)
-
-    def exists_sync(self, entity_id: str, **kwargs) -> bool:
+    def exists(self, entity_id: str, **kwargs) -> bool:
         """Synchronous version of exists."""
-        return self.get_by_id_sync(entity_id, **kwargs) is not None
+        return self.get_by_id(entity_id, **kwargs) is not None
 
-    async def find_by_criteria(self, criteria: Dict[str, Any], **kwargs) -> List[T]:
-        """Find entities matching specific criteria."""
-        return self.find_by_criteria_sync(criteria, **kwargs)
-
-    def find_by_criteria_sync(self, criteria: Dict[str, Any], **kwargs) -> List[T]:
+    def find_by_criteria(self, criteria: Dict[str, Any], **kwargs) -> List[T]:
         """Synchronous version of find_by_criteria."""
         try:
             # For now, let's implement a simple version that fetches all and filters in Python
@@ -268,17 +236,7 @@ class WeaviateRepository(VectorRepository[T]):
 
     # Vector-specific methods
 
-    async def similarity_search(
-        self, 
-        query_vector: List[float], 
-        limit: int = 10,
-        threshold: Optional[float] = None,
-        **kwargs
-    ) -> List[Tuple[T, float]]:
-        """Perform similarity search using a query vector."""
-        return self.similarity_search_sync(query_vector, limit, threshold, **kwargs)
-
-    def similarity_search_sync(
+    def similarity_search(
         self, 
         query_vector: List[float], 
         limit: int = 10,
@@ -309,17 +267,7 @@ class WeaviateRepository(VectorRepository[T]):
         except Exception as e:
             raise VectorError(f"Vector similarity search failed: {str(e)}", e)
 
-    async def similarity_search_by_text(
-        self, 
-        query_text: str, 
-        limit: int = 10,
-        threshold: Optional[float] = None,
-        **kwargs
-    ) -> List[Tuple[T, float]]:
-        """Perform similarity search using text query."""
-        return self.similarity_search_by_text_sync(query_text, limit, threshold, **kwargs)
-
-    def similarity_search_by_text_sync(
+    def similarity_search_by_text(
         self, 
         query_text: str, 
         limit: int = 10,
@@ -352,16 +300,7 @@ class WeaviateRepository(VectorRepository[T]):
         except Exception as e:
             raise VectorError(f"Text similarity search failed: {str(e)}", e)
 
-    async def create_with_vector(
-        self, 
-        entity: T, 
-        vector: Optional[List[float]] = None,
-        **kwargs
-    ) -> str:
-        """Create an entity with an associated vector."""
-        return self.create_with_vector_sync(entity, vector, **kwargs)
-
-    def create_with_vector_sync(
+    def create_with_vector(
         self, 
         entity: T, 
         vector: Optional[List[float]] = None,
@@ -388,11 +327,7 @@ class WeaviateRepository(VectorRepository[T]):
         except Exception as e:
             raise VectorError(f"Failed to create entity with vector: {str(e)}", e)
 
-    async def update_vector(self, entity_id: str, vector: List[float], **kwargs) -> bool:
-        """Update the vector for an existing entity."""
-        return self.update_vector_sync(entity_id, vector, **kwargs)
-
-    def update_vector_sync(self, entity_id: str, vector: List[float], **kwargs) -> bool:
+    def update_vector(self, entity_id: str, vector: List[float], **kwargs) -> bool:
         """Synchronous version of update_vector."""
         try:
             self.collection.data.update(
@@ -407,11 +342,7 @@ class WeaviateRepository(VectorRepository[T]):
             logger.error(f"Failed to update vector for entity {entity_id}: {str(e)}")
             return False
 
-    async def get_vector(self, entity_id: str, **kwargs) -> Optional[List[float]]:
-        """Retrieve the vector for an entity."""
-        return self.get_vector_sync(entity_id, **kwargs)
-
-    def get_vector_sync(self, entity_id: str, **kwargs) -> Optional[List[float]]:
+    def get_vector(self, entity_id: str, **kwargs) -> Optional[List[float]]:
         """Synchronous version of get_vector."""
         try:
             result = self.collection.query.fetch_object_by_id(
@@ -430,15 +361,7 @@ class WeaviateRepository(VectorRepository[T]):
             logger.error(f"Failed to get vector for entity {entity_id}: {str(e)}")
             return None
 
-    async def batch_create_with_vectors(
-        self, 
-        entities_and_vectors: List[Tuple[T, Optional[List[float]]]],
-        **kwargs
-    ) -> List[str]:
-        """Create multiple entities with their vectors in a batch operation."""
-        return self.batch_create_with_vectors_sync(entities_and_vectors, **kwargs)
-
-    def batch_create_with_vectors_sync(
+    def batch_create_with_vectors(
         self, 
         entities_and_vectors: List[Tuple[T, Optional[List[float]]]],
         **kwargs
@@ -476,18 +399,7 @@ class WeaviateRepository(VectorRepository[T]):
         except Exception as e:
             raise BatchOperationError(f"Batch create operation failed: {str(e)}", original_error=e)
 
-    async def hybrid_search(
-        self,
-        query_text: str,
-        query_vector: Optional[List[float]] = None,
-        alpha: float = 0.5,
-        limit: int = 10,
-        **kwargs
-    ) -> List[Tuple[T, float]]:
-        """Perform hybrid search combining text and vector search."""
-        return self.hybrid_search_sync(query_text, query_vector, alpha, limit, **kwargs)
-
-    def hybrid_search_sync(
+    def hybrid_search(
         self,
         query_text: str,
         query_vector: Optional[List[float]] = None,
