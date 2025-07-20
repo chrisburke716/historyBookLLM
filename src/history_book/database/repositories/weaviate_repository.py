@@ -550,19 +550,21 @@ class WeaviateRepository(VectorRepository[T]):
             # Add the ID
             properties['id'] = str(weaviate_obj.uuid)
             
-            # Create entity instance (but don't let it auto-save to database)
+            # Filter out legacy fields that don't belong in pure entities
+            legacy_fields = {'client', 'collection'}
+            filtered_properties = {
+                k: v for k, v in properties.items() 
+                if k not in legacy_fields
+            }
+            
+            # Create entity instance using model_construct for better compatibility
             if hasattr(self.entity_class, 'model_construct'):
-                # For Pydantic models, use model_construct to bypass validation and __init__
-                entity = self.entity_class.model_construct(**properties)
-                
-                # Set client and collection references without triggering writes
-                entity.client = self.client
-                entity.collection = self.collection
-                
+                # For Pydantic models, use model_construct to bypass validation
+                entity = self.entity_class.model_construct(**filtered_properties)
                 return entity
             else:
                 # Regular class - create directly
-                return self.entity_class(**properties)
+                return self.entity_class(**filtered_properties)
                 
         except Exception as e:
             logger.error(f"Failed to convert Weaviate object to entity: {str(e)}")

@@ -1,55 +1,61 @@
 """Book-specific repository implementation."""
 
 import logging
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, TYPE_CHECKING
 from ..repositories.weaviate_repository import WeaviateRepository
 from ..config.database_config import WeaviateConfig
-from ...data_models.book import BookDBModel, ChapterDBModel, ParagraphDBModel
+
+# Use TYPE_CHECKING to avoid circular imports
+if TYPE_CHECKING:
+    from ...data_models.entities import Book, Chapter, Paragraph
 
 logger = logging.getLogger(__name__)
 
 
-class BookRepository(WeaviateRepository[BookDBModel]):
+class BookRepository(WeaviateRepository["Book"]):
     """Repository for book entities."""
     
     def __init__(self, config: WeaviateConfig):
+        from ...data_models.entities import Book
         super().__init__(
             config=config,
             collection_name="books",
-            entity_class=BookDBModel
+            entity_class=Book
         )
 
 
-class ChapterRepository(WeaviateRepository[ChapterDBModel]):
+class ChapterRepository(WeaviateRepository["Chapter"]):
     """Repository for chapter entities."""
     
     def __init__(self, config: WeaviateConfig):
+        from ...data_models.entities import Chapter
         super().__init__(
             config=config,
             collection_name="chapters",
-            entity_class=ChapterDBModel
+            entity_class=Chapter
         )
     
-    def find_by_book_index_sync(self, book_index: int) -> List[ChapterDBModel]:
+    def find_by_book_index_sync(self, book_index: int) -> List["Chapter"]:
         """Find all chapters for a specific book."""
         return self.find_by_criteria_sync({"book_index": book_index})
 
 
-class ParagraphRepository(WeaviateRepository[ParagraphDBModel]):
+class ParagraphRepository(WeaviateRepository["Paragraph"]):
     """Repository for paragraph entities with vector search capabilities."""
     
     def __init__(self, config: WeaviateConfig):
+        from ...data_models.entities import Paragraph
         super().__init__(
             config=config,
             collection_name="paragraphs",
-            entity_class=ParagraphDBModel
+            entity_class=Paragraph
         )
     
-    def find_by_book_index_sync(self, book_index: int) -> List[ParagraphDBModel]:
+    def find_by_book_index_sync(self, book_index: int) -> List["Paragraph"]:
         """Find all paragraphs for a specific book."""
         return self.find_by_criteria_sync({"book_index": book_index})
     
-    def find_by_chapter_index_sync(self, book_index: int, chapter_index: int) -> List[ParagraphDBModel]:
+    def find_by_chapter_index_sync(self, book_index: int, chapter_index: int) -> List["Paragraph"]:
         """Find all paragraphs for a specific chapter."""
         return self.find_by_criteria_sync({
             "book_index": book_index,
@@ -62,7 +68,7 @@ class ParagraphRepository(WeaviateRepository[ParagraphDBModel]):
         limit: int = 10,
         book_index: Optional[int] = None,
         threshold: Optional[float] = None
-    ) -> List[Tuple[ParagraphDBModel, float]]:
+    ) -> List[Tuple["Paragraph", float]]:
         """
         Search for similar paragraphs using text similarity.
         
@@ -100,7 +106,7 @@ class ParagraphRepository(WeaviateRepository[ParagraphDBModel]):
         start_page: int, 
         end_page: int,
         book_index: Optional[int] = None
-    ) -> List[ParagraphDBModel]:
+    ) -> List["Paragraph"]:
         """
         Find paragraphs within a specific page range.
         
