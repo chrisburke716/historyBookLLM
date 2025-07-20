@@ -30,6 +30,12 @@ def _(WeaviateConfig):
 
 
 @app.cell
+def _(config):
+    config.__dict__
+    return
+
+
+@app.cell
 def _(BookRepositoryManager, config):
     repo_manager = BookRepositoryManager(config)
     return (repo_manager,)
@@ -76,9 +82,21 @@ def _(repo_manager):
 
 @app.cell
 def _(repo_manager):
+    repo_manager.paragraphs.count()
+    return
+
+
+@app.cell
+def _(repo_manager):
     # get paragraphs
     para_b2_c3 = repo_manager.paragraphs.find_by_chapter_index(book_index=2, chapter_index=3)
     return (para_b2_c3,)
+
+
+@app.cell
+def _(para_b2_c3):
+    sorted(para_b2_c3, key=lambda x: x.__dict__["paragraph_index"])
+    return
 
 
 @app.cell

@@ -387,11 +387,32 @@ class WeaviateRepository(VectorRepository[T]):
             # Perform batch insert
             results = self.collection.data.insert_many(objects_to_insert)
             
-            # Extract IDs from results
+            # Extract IDs from results - handle different result formats
             created_ids = []
-            for result in results:
-                if hasattr(result, 'uuid'):
-                    created_ids.append(str(result.uuid))
+            
+            # Handle the newer client API - check for uuids first
+            if hasattr(results, 'uuids') and results.uuids:
+                created_ids = [str(uuid) for uuid in results.uuids if uuid is not None]
+            # Check if results has a .all_responses attribute (deprecated but may still work)
+            elif hasattr(results, 'all_responses'):
+                for response in results.all_responses:
+                    if hasattr(response, 'uuid') and response.uuid:
+                        created_ids.append(str(response.uuid))
+            # Check if results is directly iterable
+            elif hasattr(results, '__iter__'):
+                try:
+                    for result in results:
+                        if hasattr(result, 'uuid') and result.uuid:
+                            created_ids.append(str(result.uuid))
+                except TypeError:
+                    # If not iterable, try to get uuids directly
+                    if hasattr(results, 'uuid') and results.uuid:
+                        created_ids.append(str(results.uuid))
+            else:
+                # Fallback - log the type for debugging
+                logger.warning(f"Unexpected batch result type: {type(results)}")
+                if hasattr(results, 'uuid') and results.uuid:
+                    created_ids.append(str(results.uuid))
             
             logger.info(f"Batch created {len(created_ids)} entities")
             return created_ids
@@ -456,17 +477,30 @@ class WeaviateRepository(VectorRepository[T]):
     def _weaviate_object_to_entity(self, weaviate_obj) -> Optional[T]:
         """Convert Weaviate object back to entity."""
         try:
-            # Extract properties
-            properties = weaviate_obj.properties.copy()
+            # Extract properties - handle both direct properties and nested 'properties' field
+            if hasattr(weaviate_obj, 'properties') and isinstance(weaviate_obj.properties, dict):
+                properties = weaviate_obj.properties.copy()
+                
+                # Check if data is nested in a 'properties' sub-field (common Weaviate issue)
+                if 'properties' in properties and isinstance(properties['properties'], dict):
+                    # Use the nested properties as the actual data
+                    nested_props = properties['properties']
+                    # Keep top-level fields that aren't duplicated
+                    for key, value in properties.items():
+                        if key != 'properties' and key not in nested_props:
+                            nested_props[key] = value
+                    properties = nested_props
+            else:
+                properties = {}
             
             # Add the ID
             properties['id'] = str(weaviate_obj.uuid)
             
             # Filter out legacy fields that don't belong in pure entities
-            legacy_fields = {'client', 'collection'}
+            legacy_fields = {'client', 'collection', 'uuid'}
             filtered_properties = {
                 k: v for k, v in properties.items() 
-                if k not in legacy_fields
+                if k not in legacy_fields and v is not None
             }
             
             # Create entity instance using model_construct for better compatibility
@@ -480,6 +514,7 @@ class WeaviateRepository(VectorRepository[T]):
                 
         except Exception as e:
             logger.error(f"Failed to convert Weaviate object to entity: {str(e)}")
+            logger.error(f"Properties: {getattr(weaviate_obj, 'properties', 'N/A')}")
             return None
 
     def _build_where_filter(self, criteria: Dict[str, Any]):
