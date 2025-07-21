@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "history_book"
 version = "0.1.0"
-description = ""
+description = "A sophisticated Python application for ingesting, storing, and querying historical books using Weaviate vector database"
 authors = ["Christopher Burke <imcjb8@gmail.com>"]
 readme = "README.md"
 packages = [{ include = "history_book", from = "src" }]

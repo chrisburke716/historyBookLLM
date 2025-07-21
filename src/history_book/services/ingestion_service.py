@@ -1,4 +1,4 @@
-"""Modern ingestion service using the new repository pattern."""
+"""Service for ingesting book data from PDF files into the vector database."""
 
 from typing import List, Tuple, Optional
 import logging
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class IngestionService:
-    """Service for ingesting book data using the new repository pattern."""
+    """Service for ingesting book data from PDF files into the vector database."""
     
     def __init__(self, config: Optional[WeaviateConfig] = None):
         """
@@ -106,13 +106,6 @@ class IngestionService:
     def ingest_book_from_pdf(self, pdf_path: Path, final_page: int = 1699, clear_existing: bool = False) -> Tuple[List[str], List[str], List[str]]:
         """
         Ingest a complete book from PDF into the database.
-        
-        This method coordinates the entire ingestion process:
-        1. Optionally clear existing data
-        2. Extract structure from PDF (books, chapters, paragraphs)
-        3. Create pure entity objects 
-        4. Save to database via repositories
-        5. Return IDs of created entities
         
         Args:
             pdf_path: Path to the PDF file

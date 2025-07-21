@@ -245,8 +245,6 @@ class WeaviateRepository(VectorRepository[T]):
     ) -> List[Tuple[T, float]]:
         """Synchronous version of similarity_search."""
         try:
-            # Note: This is a simplified implementation
-            # You'll need to adapt this based on your specific vector field configuration
             query = self.collection.query.near_vector(
                 near_vector=query_vector,
                 limit=limit,
