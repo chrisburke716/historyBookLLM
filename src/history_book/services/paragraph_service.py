@@ -54,14 +54,17 @@ class ParagraphService:
             paragraph_id = self.repository.create(paragraph)
             
             # Step 2: Fetch the created paragraph with its generated vector embedding
-            # (Weaviate auto-generates embeddings for fields in vectorize_fields)
+            # We need to get the vector from Weaviate's collection
             created_paragraph = self.repository.get_by_id(paragraph_id)
             
-            # Step 3: Update the original paragraph object with the embedding and ID
+            # Step 3: Get the vector embedding from Weaviate
+            vector = self.repository.get_vector(paragraph_id)
+            
+            # Step 4: Update the original paragraph object with the embedding and ID
             if created_paragraph:
-                paragraph.embedding = created_paragraph.embedding
+                paragraph.embedding = vector
                 paragraph.id = paragraph_id
-                logger.debug(f"Created paragraph {paragraph_id} with embedding")
+                logger.debug(f"Created paragraph {paragraph_id} with embedding of {len(vector) if vector else 0} dimensions")
             else:
                 logger.warning(f"Created paragraph {paragraph_id} but couldn't fetch it back")
             
@@ -163,9 +166,16 @@ class ParagraphService:
             # Perform batch creation
             paragraph_ids = self.repository.batch_create_with_vectors(entities_and_vectors)
             
-            # Update the paragraph objects with their new IDs
+            # Update the paragraph objects with their new IDs and fetch embeddings
             for paragraph, paragraph_id in zip(paragraphs, paragraph_ids):
                 paragraph.id = paragraph_id
+                # Fetch the vector for this paragraph
+                try:
+                    vector = self.repository.get_vector(paragraph_id)
+                    paragraph.embedding = vector
+                    logger.debug(f"Updated paragraph {paragraph_id} with embedding of {len(vector) if vector else 0} dimensions")
+                except Exception as e:
+                    logger.warning(f"Could not fetch embedding for paragraph {paragraph_id}: {e}")
             
             logger.info(f"Batch created {len(paragraph_ids)} paragraphs")
             return paragraph_ids

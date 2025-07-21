@@ -1,6 +1,6 @@
 """Pure data models without database operations."""
 
-from typing import List, Optional
+from typing import List, Optional, ClassVar
 from pydantic import BaseModel, Field
 import uuid
 
@@ -33,3 +33,6 @@ class Paragraph(BaseModel):
     paragraph_index: int
     book_index: int
     chapter_index: int
+    
+    # Specify which fields should be vectorized by Weaviate
+    vectorize_fields: ClassVar[List[str]] = ["text"]

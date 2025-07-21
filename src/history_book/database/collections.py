@@ -49,8 +49,9 @@ def create_collection_from_pydantic(
         is not None
     ]
 
-    # add vectorization config if needed, references
+    # Check if this model has vectorization fields
     vectorize_fields = getattr(model_class, "vectorize_fields", None)
+    
     vectorizer_config = []
     if vectorize_fields:
         for prop in properties:

@@ -85,7 +85,9 @@ class WeaviateRepository(VectorRepository[T]):
                     self._collection = self.client.collections.get(self.collection_name)
                     logger.info(f"Retrieved existing collection: {self.collection_name}")
                 else:
-                    raise CollectionError(f"Collection '{self.collection_name}' does not exist")
+                    # Create collection if it doesn't exist
+                    logger.info(f"Creating new collection: {self.collection_name}")
+                    self._collection = self._create_collection()
                 
             except Exception as e:
                 if isinstance(e, CollectionError):
@@ -93,6 +95,15 @@ class WeaviateRepository(VectorRepository[T]):
                 raise CollectionError(f"Failed to access collection '{self.collection_name}': {str(e)}", e)
         
         return self._collection
+    
+    def _create_collection(self) -> Collection:
+        """Create a new collection with proper configuration."""
+        from ..collections import create_collection_from_pydantic
+        return create_collection_from_pydantic(
+            client=self.client,
+            model_class=self.entity_class,
+            class_name=self.collection_name
+        )
 
     def close(self):
         """Close the database connection."""
@@ -132,7 +143,12 @@ class WeaviateRepository(VectorRepository[T]):
     def get_by_id(self, entity_id: str, **kwargs) -> Optional[T]:
         """Synchronous version of get_by_id."""
         try:
-            result = self.collection.query.fetch_object_by_id(entity_id, **kwargs)
+            # Fetch object with vector included
+            result = self.collection.query.fetch_object_by_id(
+                entity_id, 
+                include_vector=True,
+                **kwargs
+            )
             if result is None:
                 return None
             
@@ -249,6 +265,7 @@ class WeaviateRepository(VectorRepository[T]):
                 near_vector=query_vector,
                 limit=limit,
                 distance=threshold,
+                return_metadata=['distance'],  # Include distance in results
                 **kwargs
             )
             
@@ -278,6 +295,7 @@ class WeaviateRepository(VectorRepository[T]):
                 query=query_text,
                 limit=limit,
                 distance=threshold,
+                return_metadata=['distance'],  # Include distance in results
                 **kwargs
             )
             
@@ -493,6 +511,24 @@ class WeaviateRepository(VectorRepository[T]):
             
             # Add the ID
             properties['id'] = str(weaviate_obj.uuid)
+            
+            # Add vector embedding if available and entity supports it
+            if hasattr(weaviate_obj, 'vector') and weaviate_obj.vector is not None:
+                if 'embedding' in self.entity_class.model_fields:
+                    # Handle different vector formats
+                    if isinstance(weaviate_obj.vector, dict):
+                        # For named vectors, look for text_vector first, then default
+                        if 'text_vector' in weaviate_obj.vector and isinstance(weaviate_obj.vector['text_vector'], list):
+                            properties['embedding'] = weaviate_obj.vector['text_vector']
+                        elif 'default' in weaviate_obj.vector and isinstance(weaviate_obj.vector['default'], list):
+                            properties['embedding'] = weaviate_obj.vector['default']
+                        else:
+                            # Handle other dict formats or skip if unrecognized
+                            logger.debug(f"Skipping vector - unrecognized dict format: {list(weaviate_obj.vector.keys())}")
+                    elif isinstance(weaviate_obj.vector, list):
+                        properties['embedding'] = weaviate_obj.vector
+                    else:
+                        logger.debug(f"Skipping vector - unrecognized format: {type(weaviate_obj.vector)}")
             
             # Filter out legacy fields that don't belong in pure entities
             legacy_fields = {'client', 'collection', 'uuid'}
