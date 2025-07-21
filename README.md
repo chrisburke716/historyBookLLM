@@ -81,8 +81,8 @@ config = WeaviateConfig.from_env()
 manager = BookRepositoryManager(config)
 
 # Search paragraphs
-results = manager.paragraph_repository.similarity_search(
-    query="ancient civilizations",
+results = manager.paragraphs.similarity_search_by_text(
+    query_text="ancient civilizations",
     limit=5
 )
 ```

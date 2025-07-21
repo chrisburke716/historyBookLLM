@@ -67,7 +67,7 @@ Place your PDF file in the `data/` directory or note its path.
 poetry run python scripts/run_ingestion.py
 ```
 
-The default script processes `data/penguin_history_6.pdf.pdf`. To process a different file:
+The default script processes `data/penguin_history_6.pdf`. To process a different file:
 
 ```python
 # Edit scripts/run_ingestion.py
@@ -109,15 +109,15 @@ config = WeaviateConfig.from_env()
 manager = BookRepositoryManager(config)
 
 # Search for paragraphs containing specific topics
-results = manager.paragraph_repository.search_by_text(
-    query="ancient civilizations",
+results = manager.paragraphs.similarity_search_by_text(
+    query_text="ancient civilizations",
     limit=10
 )
 
 for paragraph, score in results:
     print(f"Score: {score:.3f}")
     print(f"Text: {paragraph.text[:200]}...")
-    print(f"Book: {paragraph.book_title}, Chapter: {paragraph.chapter_title}")
+    print(f"Book Index: {paragraph.book_index}, Chapter Index: {paragraph.chapter_index}")
     print("---")
 ```
 
@@ -126,7 +126,7 @@ for paragraph, score in results:
 # If you have a query vector (from embeddings)
 query_vector = [0.1, 0.2, -0.3, ...]  # Your embedding vector
 
-results = manager.paragraph_repository.similarity_search(
+results = manager.paragraphs.similarity_search(
     query_vector=query_vector,
     limit=5,
     threshold=0.7
@@ -152,20 +152,20 @@ book_2_chapter_3 = paragraph_service.get_paragraphs_by_chapter(
 )
 
 for paragraph in book_2_chapter_3:
-    print(f"Page {paragraph.page_number}: {paragraph.text[:100]}...")
+    print(f"Page {paragraph.page}: {paragraph.text[:100]}...")
 ```
 
 #### 4. Book and Chapter Queries
 ```python
 # Get all books
-books = manager.book_repository.get_all()
+books = manager.books.list_all()
 for book in books:
-    print(f"Book: {book.title} ({book.total_pages} pages)")
+    print(f"Book: {book.title} (pages {book.start_page}-{book.end_page})")
 
 # Get chapters from first book
 if books:
-    book_id = books[0].id
-    chapters = manager.chapter_repository.get_by_book_id(book_id)
+    book_index = books[0].book_index
+    chapters = manager.chapters.find_by_book_index(book_index)
     for chapter in chapters:
         print(f"Chapter: {chapter.title} (pages {chapter.start_page}-{chapter.end_page})")
 ```
@@ -176,13 +176,14 @@ if books:
 
 ```python
 from pathlib import Path
-from history_book.entities import Book, Chapter, Paragraph
+from history_book.data_models.entities import Book, Chapter, Paragraph
 from history_book.text_processing import process_text
 
 # Create entities manually
 book = Book(
     title="My Custom Book",
-    total_pages=100,
+    start_page=1,
+    end_page=100,
     book_index=0
 )
 
@@ -190,23 +191,22 @@ chapter = Chapter(
     title="Introduction",
     start_page=1,
     end_page=10,
-    book_id=book.id,
+    book_index=book.book_index,
     chapter_index=0
 )
 
 paragraph = Paragraph(
     text="This is my custom paragraph content.",
-    page_number=1,
-    book_id=book.id,
-    chapter_id=chapter.id,
-    book_title=book.title,
-    chapter_title=chapter.title
+    page=1,
+    paragraph_index=0,
+    book_index=book.book_index,
+    chapter_index=chapter.chapter_index
 )
 
 # Save to database
-manager.book_repository.create(book)
-manager.chapter_repository.create(chapter)
-manager.paragraph_repository.create(paragraph)
+manager.books.create(book)
+manager.chapters.create(chapter)
+manager.paragraphs.create(paragraph)
 ```
 
 ### Batch Operations
@@ -214,12 +214,18 @@ manager.paragraph_repository.create(paragraph)
 ```python
 # Create multiple paragraphs at once
 paragraphs = [
-    Paragraph(text=f"Paragraph {i}", page_number=i, book_id=book.id, chapter_id=chapter.id)
+    Paragraph(
+        text=f"Paragraph {i} content", 
+        page=i, 
+        paragraph_index=i-1,
+        book_index=book.book_index, 
+        chapter_index=chapter.chapter_index
+    )
     for i in range(1, 11)
 ]
 
 # Batch insert
-manager.paragraph_repository.create_many(paragraphs)
+manager.paragraphs.batch_create_with_vectors(paragraphs, [])  # Empty vectors for now
 ```
 
 ### Database Management
@@ -239,9 +245,9 @@ config = WeaviateConfig.from_env()
 manager = BookRepositoryManager(config)
 
 # Count entities
-book_count = len(manager.book_repository.get_all())
-chapter_count = len(manager.chapter_repository.get_all())  
-paragraph_count = len(manager.paragraph_repository.get_all())
+book_count = manager.books.count()
+chapter_count = manager.chapters.count()
+paragraph_count = manager.paragraphs.count()
 
 print(f"Database contains:")
 print(f"  Books: {book_count}")

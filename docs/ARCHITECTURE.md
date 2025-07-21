@@ -31,12 +31,12 @@ The History Book application follows a clean architecture pattern with clear sep
   - Error handling and connection management
 
 - `BookRepositoryManager`: Aggregates specialized repositories
-  - `book_repository`: Book entity operations
-  - `chapter_repository`: Chapter entity operations  
-  - `paragraph_repository`: Paragraph entity operations
+  - `books`: Book entity operations
+  - `chapters`: Chapter entity operations  
+  - `paragraphs`: Paragraph entity operations
   - Provides unified access point for all data operations
 
-### 3. Entity Layer (`src/history_book/entities/`)
+### 3. Entity Layer (`src/history_book/data_models/entities.py`)
 
 **Purpose**: Pure data models without business logic or database dependencies.
 
