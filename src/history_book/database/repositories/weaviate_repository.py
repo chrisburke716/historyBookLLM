@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar
 import weaviate
 from weaviate import WeaviateClient
 from weaviate.collections import Collection
+from weaviate.collections.classes.data import DataObject
 
 from ..interfaces.vector_repository_interface import VectorRepository
 from ..config.database_config import WeaviateConfig
@@ -22,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
 
+"""
+NOTE: This code was largely ai-generated and may not be fully functional.
+"""
 
 class WeaviateRepository(VectorRepository[T]):
     """
@@ -191,6 +195,7 @@ class WeaviateRepository(VectorRepository[T]):
             query = self.collection.query.fetch_objects(
                 limit=limit,
                 offset=offset,
+                include_vector=True,
                 **kwargs
             )
             
@@ -385,51 +390,27 @@ class WeaviateRepository(VectorRepository[T]):
         """Synchronous version of batch_create_with_vectors."""
         try:
             # Prepare batch data
-            objects_to_insert = []
-            for entity, vector in entities_and_vectors:
-                entity_data = self._entity_to_dict(entity)
-                entity_id = entity_data.pop("id", None)
-                
-                obj_data = {
-                    "properties": entity_data,
-                    "uuid": entity_id
-                }
-                
-                if vector:
-                    obj_data["vector"] = vector
-                
-                objects_to_insert.append(obj_data)
-            
-            # Perform batch insert
-            results = self.collection.data.insert_many(objects_to_insert)
-            
-            # Extract IDs from results - handle different result formats
+            # objects_to_insert = []
             created_ids = []
-            
-            # Handle the newer client API - check for uuids first
-            if hasattr(results, 'uuids') and results.uuids:
-                created_ids = [str(uuid) for uuid in results.uuids if uuid is not None]
-            # Check if results has a .all_responses attribute (deprecated but may still work)
-            elif hasattr(results, 'all_responses'):
-                for response in results.all_responses:
-                    if hasattr(response, 'uuid') and response.uuid:
-                        created_ids.append(str(response.uuid))
-            # Check if results is directly iterable
-            elif hasattr(results, '__iter__'):
-                try:
-                    for result in results:
-                        if hasattr(result, 'uuid') and result.uuid:
-                            created_ids.append(str(result.uuid))
-                except TypeError:
-                    # If not iterable, try to get uuids directly
-                    if hasattr(results, 'uuid') and results.uuid:
-                        created_ids.append(str(results.uuid))
-            else:
-                # Fallback - log the type for debugging
-                logger.warning(f"Unexpected batch result type: {type(results)}")
-                if hasattr(results, 'uuid') and results.uuid:
-                    created_ids.append(str(results.uuid))
-            
+            with self.collection.batch.fixed_size(batch_size=100) as batch:
+                for entity, vector in entities_and_vectors:
+
+                    entity_data = self._entity_to_dict(entity)
+                    entity_id = entity_data.pop("id", None)
+
+                    obj_data = {
+                        "properties": entity_data,
+                        "uuid": entity_id  # Use entity's ID if available
+                    }
+
+                    if vector:
+                        obj_data['vector'] = vector
+
+                    id_added = batch.add_object(**obj_data)
+                    if id_added:
+                        created_ids.append(str(id_added))
+
+            logger.warning(f"{batch.number_errors} errors in batch create operation")
             logger.info(f"Batch created {len(created_ids)} entities")
             return created_ids
             

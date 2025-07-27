@@ -49,6 +49,12 @@ def _(repo_manager):
 
 @app.cell
 def _(repo_manager):
+    repo_manager.books.count()
+    return
+
+
+@app.cell
+def _(repo_manager):
     all_books = repo_manager.books.list_all()
     all_books
     return (all_books,)
@@ -63,6 +69,12 @@ def _(all_books):
 @app.cell
 def _(all_books, repo_manager):
     repo_manager.books.get_by_id(all_books[0].id).__dict__
+    return
+
+
+@app.cell
+def _(repo_manager):
+    repo_manager.chapters.count()
     return
 
 
@@ -162,6 +174,12 @@ def _(paragraph_service):
 @app.cell
 def _(para_b2_c3_service):
     para_b2_c3_service
+    return
+
+
+@app.cell
+def _(para_b2_c3_service):
+    para_b2_c3_service[0]
     return
 
 

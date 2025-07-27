@@ -53,6 +53,7 @@ class IngestionService:
             # Delete in order: paragraphs -> chapters -> books (to handle any dependencies)
             
             # Delete all paragraphs
+            # TODO: this is pretty slow, should find a way to delete in bulk
             all_paragraphs = self.repositories.paragraphs.list_all()
             for paragraph in all_paragraphs:
                 if paragraph.id:
@@ -171,6 +172,7 @@ class IngestionService:
                 chapter_ids.append(chapter_id)
             
             # Save paragraphs in batches for efficiency
+            # NOTE: using paragraph repo instead of service -- more symmetric with above but defeats the purpose of having service
             logger.info(f"Batch creating {len(all_paragraph_entities)} paragraphs...")
             paragraph_ids = self.repositories.paragraphs.batch_create_with_vectors(
                 [(p, None) for p in all_paragraph_entities]  # Let Weaviate generate vectors
