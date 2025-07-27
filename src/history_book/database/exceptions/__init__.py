@@ -14,7 +14,7 @@ from .database_exceptions import (
 
 __all__ = [
     "DatabaseError",
-    "ConnectionError", 
+    "ConnectionError",
     "CollectionError",
     "EntityNotFoundError",
     "ValidationError",

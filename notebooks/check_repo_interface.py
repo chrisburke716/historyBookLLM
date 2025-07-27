@@ -7,6 +7,7 @@ app = marimo.App()
 @app.cell
 def _():
     import marimo as mo
+
     return (mo,)
 
 
@@ -14,6 +15,7 @@ def _():
 def _():
     from history_book.database.config import WeaviateConfig
     from history_book.database.repositories import BookRepositoryManager
+
     return BookRepositoryManager, WeaviateConfig
 
 
@@ -88,7 +90,7 @@ def _(repo_manager):
 @app.cell
 def _(repo_manager):
     # check
-    repo_manager.chapters.find_by_criteria({'book_index':1})
+    repo_manager.chapters.find_by_criteria({"book_index": 1})
     return
 
 
@@ -101,7 +103,9 @@ def _(repo_manager):
 @app.cell
 def _(repo_manager):
     # get paragraphs
-    para_b2_c3 = repo_manager.paragraphs.find_by_chapter_index(book_index=2, chapter_index=3)
+    para_b2_c3 = repo_manager.paragraphs.find_by_chapter_index(
+        book_index=2, chapter_index=3
+    )
     return (para_b2_c3,)
 
 
@@ -119,7 +123,9 @@ def _(para_b2_c3):
 
 @app.cell
 def _(repo_manager):
-    para_cleo = repo_manager.paragraphs.search_similar_paragraphs(query_text="cleopatra")
+    para_cleo = repo_manager.paragraphs.search_similar_paragraphs(
+        query_text="cleopatra"
+    )
     return (para_cleo,)
 
 
@@ -138,6 +144,7 @@ def _(mo):
 @app.cell
 def _():
     from history_book.services import ParagraphService
+
     return (ParagraphService,)
 
 
@@ -155,7 +162,9 @@ def _(paragraph_service):
 
 @app.cell
 def _(paragraph_service):
-    para_cleo_service = paragraph_service.search_similar_paragraphs(query_text="cleopatra")
+    para_cleo_service = paragraph_service.search_similar_paragraphs(
+        query_text="cleopatra"
+    )
     return (para_cleo_service,)
 
 
@@ -167,7 +176,9 @@ def _(para_cleo_service):
 
 @app.cell
 def _(paragraph_service):
-    para_b2_c3_service = paragraph_service.get_paragraphs_by_chapter(book_index=2, chapter_index=3)
+    para_b2_c3_service = paragraph_service.get_paragraphs_by_chapter(
+        book_index=2, chapter_index=3
+    )
     return (para_b2_c3_service,)
 
 

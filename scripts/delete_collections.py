@@ -13,10 +13,7 @@ if user_input != "yes":
 
 config = WeaviateConfig.from_environment()
 
-client = weaviate.connect_to_local(
-        port=config.port,
-        grpc_port=config.grpc_port
-    )
+client = weaviate.connect_to_local(port=config.port, grpc_port=config.grpc_port)
 
 for collection_name in client.collections.list_all().keys():
     print(f"Deleting existing collection: {collection_name}")

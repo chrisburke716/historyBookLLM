@@ -8,6 +8,7 @@ from enum import Enum
 
 class DatabaseEnvironment(Enum):
     """Database environment types."""
+
     PRODUCTION = "production"
     TEST = "test"
     DEVELOPMENT = "development"
@@ -16,7 +17,7 @@ class DatabaseEnvironment(Enum):
 @dataclass
 class WeaviateConfig:
     """Weaviate database configuration."""
-    
+
     host: str = "localhost"
     port: int = 8080
     grpc_port: int = 50051
@@ -25,12 +26,12 @@ class WeaviateConfig:
     openai_api_key: Optional[str] = None
     timeout: int = 30
     environment: DatabaseEnvironment = DatabaseEnvironment.PRODUCTION
-    
+
     @classmethod
     def from_environment(cls) -> "WeaviateConfig":
         """Create configuration from environment variables."""
         env = os.getenv("DB_ENVIRONMENT", "production").lower()
-        
+
         # Default configurations for different environments
         if env == "test":
             return cls(
@@ -41,7 +42,7 @@ class WeaviateConfig:
                 api_key=os.getenv("WEAVIATE_API_KEY"),
                 openai_api_key=os.getenv("OPENAI_APIKEY"),
                 timeout=int(os.getenv("WEAVIATE_TIMEOUT", "30")),
-                environment=DatabaseEnvironment.TEST
+                environment=DatabaseEnvironment.TEST,
             )
         elif env == "development":
             return cls(
@@ -52,7 +53,7 @@ class WeaviateConfig:
                 api_key=os.getenv("WEAVIATE_API_KEY"),
                 openai_api_key=os.getenv("OPENAI_APIKEY"),
                 timeout=int(os.getenv("WEAVIATE_TIMEOUT", "30")),
-                environment=DatabaseEnvironment.DEVELOPMENT
+                environment=DatabaseEnvironment.DEVELOPMENT,
             )
         else:  # production
             return cls(
@@ -63,14 +64,14 @@ class WeaviateConfig:
                 api_key=os.getenv("WEAVIATE_API_KEY"),
                 openai_api_key=os.getenv("OPENAI_APIKEY"),
                 timeout=int(os.getenv("WEAVIATE_TIMEOUT", "30")),
-                environment=DatabaseEnvironment.PRODUCTION
+                environment=DatabaseEnvironment.PRODUCTION,
             )
-    
+
     @property
     def is_local(self) -> bool:
         """Check if this is a local Weaviate instance."""
         return self.host in ["localhost", "127.0.0.1"]
-    
+
     @property
     def connection_string(self) -> str:
         """Get connection string for logging/debugging."""

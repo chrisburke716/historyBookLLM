@@ -7,8 +7,6 @@ app = marimo.App()
 @app.cell
 def _():
     import numpy as np
-    import weaviate
-    from weaviate.classes.query import Sort
     from collections import Counter
     import matplotlib.pyplot as plt
     from matplotlib import cm, colors
@@ -36,13 +34,16 @@ def _(BookRepositoryManager, WeaviateConfig):
 
     # Sort them manually since list_all doesn't support sorting yet
     paragraphs_sorted = sorted(
-        paragraphs, 
-        key=lambda p: (p.book_index, p.chapter_index, p.paragraph_index)
+        paragraphs, key=lambda p: (p.book_index, p.chapter_index, p.paragraph_index)
     )
 
     print(f"Total paragraphs loaded: {len(paragraphs_sorted)}")
-    print(f"First paragraph: book={paragraphs_sorted[0].book_index}, chapter={paragraphs_sorted[0].chapter_index}, para={paragraphs_sorted[0].paragraph_index}")
-    print(f"Last paragraph: book={paragraphs_sorted[-1].book_index}, chapter={paragraphs_sorted[-1].chapter_index}, para={paragraphs_sorted[-1].paragraph_index}")
+    print(
+        f"First paragraph: book={paragraphs_sorted[0].book_index}, chapter={paragraphs_sorted[0].chapter_index}, para={paragraphs_sorted[0].paragraph_index}"
+    )
+    print(
+        f"Last paragraph: book={paragraphs_sorted[-1].book_index}, chapter={paragraphs_sorted[-1].chapter_index}, para={paragraphs_sorted[-1].paragraph_index}"
+    )
 
     return paragraphs_sorted, repos
 
@@ -132,7 +133,9 @@ def _(Counter, repos):
 
 @app.cell
 def _(book_chapter_counts, np):
-    book_chapter_cumsum = np.cumsum([0] + [book_chapter_counts[k] for k in book_chapter_counts.keys()])
+    book_chapter_cumsum = np.cumsum(
+        [0] + [book_chapter_counts[k] for k in book_chapter_counts.keys()]
+    )
     print("Cumulative chapters counts per book:")
     for _book, _cumsum in zip(book_chapter_counts.keys(), book_chapter_cumsum[1:]):
         print(f"Book {_book}: {_cumsum} cumulative chapters")
@@ -177,7 +180,9 @@ def _(Counter, paragraphs_sorted):
 @app.cell
 def _(chapter_counts, np):
     # get cumsum of chapter counts for plotting
-    chapter_cumsum = np.cumsum([0] + [chapter_counts[(k[0], k[1])] for k in chapter_counts.keys()])
+    chapter_cumsum = np.cumsum(
+        [0] + [chapter_counts[(k[0], k[1])] for k in chapter_counts.keys()]
+    )
     print("Cumulative paragraph counts per chapter:")
     for (_book, _chapter), _cumsum in zip(chapter_counts.keys(), chapter_cumsum[1:]):
         print(f"Book {_book}, Chapter {_chapter}: {_cumsum} cumulative paragraphs")
@@ -195,16 +200,16 @@ def _(book_cumsum, chapter_cumsum, cm, colors, cos_mat, plt):
     # increase figure size for better visibility
     fig = plt.figure(figsize=(20, 20))
     ax = fig.add_subplot(111)
-    ax.matshow(cos_mat, cmap='viridis')
+    ax.matshow(cos_mat, cmap="viridis")
     # add horizontal and vertical lines to demarcate books
     for _cumsum in book_cumsum[1:]:
-        ax.axhline(y=_cumsum - 0.5, color='red', linestyle='--')
-        ax.axvline(x=_cumsum - 0.5, color='red', linestyle='--')
+        ax.axhline(y=_cumsum - 0.5, color="red", linestyle="--")
+        ax.axvline(x=_cumsum - 0.5, color="red", linestyle="--")
     # add horizontal and vertical lines to demarcate chapters
     # use thin black lines for chapter boundaries
     for _cumsum in chapter_cumsum[1:]:
-        ax.axhline(y=_cumsum - 0.5, color='red', linestyle=':', linewidth=1)
-        ax.axvline(x=_cumsum - 0.5, color='red', linestyle=':', linewidth=1)
+        ax.axhline(y=_cumsum - 0.5, color="red", linestyle=":", linewidth=1)
+        ax.axvline(x=_cumsum - 0.5, color="red", linestyle=":", linewidth=1)
     ax.set_title("Cosine Similarity Matrix of Paragraph Vectors")
     ax.set_xlabel("Paragraph Index")
     ax.set_ylabel("Paragraph Index")
@@ -230,7 +235,7 @@ def _(book_chapter_cumsum, chapter_cumsum):
     # get paraphraph indices for chapter
     p_start = chapter_cumsum[chapter_i_abs]
     p_end = chapter_cumsum[chapter_i_abs + 1]
-    [p_start,p_end]
+    [p_start, p_end]
     return p_end, p_start
 
 
@@ -240,7 +245,7 @@ def _(cm, cos_mat, p_end, p_start, plt):
     # _fig = plt.figure(figsize=(7, 7))
     _fig = plt.figure()
     _ax = _fig.add_subplot(111)
-    _ax.matshow(cos_mat_filtered, cmap='viridis')
+    _ax.matshow(cos_mat_filtered, cmap="viridis")
     _ax.set_title("Cosine Similarity Matrix of Paragraph Vectors")
     _ax.set_xlabel("Paragraph Index")
     _ax.set_ylabel("Paragraph Index")
@@ -264,7 +269,7 @@ def _(cos_mat_filtered, plt):
     plt.figure(figsize=(12, 12))
     for _i in range(1, 6, 2):
         _ax = plt.subplot(3, 1, _i // 2 + 1)
-        _ax.plot(cos_mat_filtered.diagonal(_i), marker='o', label=f"Diagonal {_i}")
+        _ax.plot(cos_mat_filtered.diagonal(_i), marker="o", label=f"Diagonal {_i}")
         _ax.set_title(f"Diagonal {_i} Similarity")
         _ax.set_xlabel("Consecutive Paragraph Index")
         _ax.set_ylabel("Cosine Similarity")
@@ -275,13 +280,13 @@ def _(cos_mat_filtered, plt):
     plt.tight_layout()
     plt.gca()
 
-
     return
 
 
 @app.cell
 def _():
     import marimo as mo
+
     return (mo,)
 
 
