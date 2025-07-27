@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "history_book"
 version = "0.1.0"
-description = ""
+description = "A sophisticated Python application for ingesting, storing, and querying historical books using Weaviate vector database"
 authors = ["Christopher Burke <imcjb8@gmail.com>"]
 readme = "README.md"
 packages = [{ include = "history_book", from = "src" }]
@@ -14,6 +14,7 @@ tiktoken = "^0.9.0"
 weaviate-client = "^4.15.0"
 pandas = "^2.3.0"
 matplotlib = "^3.10.3"
+marimo = {extras = ["recommended"], version = "^0.14.12"}
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.12.1"
