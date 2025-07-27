@@ -9,12 +9,21 @@ def _():
     import numpy as np
     import weaviate
     from weaviate.classes.query import Sort
+    from collections import Counter
+    import matplotlib.pyplot as plt
+    from matplotlib import cm, colors
 
     # Use the fixed repository pattern instead of direct client
     from history_book.database.repositories import BookRepositoryManager
     from history_book.database.config import WeaviateConfig
 
-    return BookRepositoryManager, WeaviateConfig, np
+    return BookRepositoryManager, Counter, WeaviateConfig, cm, colors, np, plt
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""### Load paragraphs""")
+    return
 
 
 @app.cell
@@ -35,20 +44,7 @@ def _(BookRepositoryManager, WeaviateConfig):
     print(f"First paragraph: book={paragraphs_sorted[0].book_index}, chapter={paragraphs_sorted[0].chapter_index}, para={paragraphs_sorted[0].paragraph_index}")
     print(f"Last paragraph: book={paragraphs_sorted[-1].book_index}, chapter={paragraphs_sorted[-1].chapter_index}, para={paragraphs_sorted[-1].paragraph_index}")
 
-    return (paragraphs_sorted,)
-
-
-@app.cell
-def _():
-    # Clean up connections at the end of the notebook
-    # repos.close_all()
-    return
-
-
-@app.cell
-def _(paragraphs_sorted):
-    type(paragraphs_sorted[0]) if paragraphs_sorted else "No paragraphs"
-    return
+    return paragraphs_sorted, repos
 
 
 @app.cell
@@ -58,8 +54,8 @@ def _(paragraphs_sorted):
 
 
 @app.cell
-def _(paragraphs_sorted):
-    paragraphs_sorted[0].embedding
+def _(mo):
+    mo.md(r"""### Extract embeddings and calculate similarities""")
     return
 
 
@@ -112,27 +108,47 @@ def _(cos_mat):
 
 
 @app.cell
-def _():
-    import matplotlib.pyplot as plt
-    return (plt,)
-
-
-@app.cell
-def _():
-    # todo: add book, chapter delimeters to above
+def _(mo):
+    mo.md(
+        r"""
+    ### Get cummulative chapter, paragraph indices
+    For plotting purposes - calculate position from beginning of book to extract specific chapters from cos_mat
+    """
+    )
     return
 
 
 @app.cell
-def _(paragraphs_sorted):
+def _(Counter, repos):
+    chapters = repos.chapters.list_all()
+    chapter_sorted = sorted(chapters, key=lambda c: (c.book_index, c.chapter_index))
+    chapter_books = [c.book_index for c in chapter_sorted]
+    book_chapter_counts = Counter(chapter_books)
+    print("Chapter counts per book:")
+    for _book, _count in book_chapter_counts.items():
+        print(f"Book {_book}: {_count} chapters")
+    return (book_chapter_counts,)
+
+
+@app.cell
+def _(book_chapter_counts, np):
+    book_chapter_cumsum = np.cumsum([0] + [book_chapter_counts[k] for k in book_chapter_counts.keys()])
+    print("Cumulative chapters counts per book:")
+    for _book, _cumsum in zip(book_chapter_counts.keys(), book_chapter_cumsum[1:]):
+        print(f"Book {_book}: {_cumsum} cumulative chapters")
+    return (book_chapter_cumsum,)
+
+
+@app.cell
+def _(Counter, paragraphs_sorted):
     paragraph_books = [p.book_index for p in paragraphs_sorted]
     # count paragraphs per book
-    from collections import Counter
+
     book_counts = Counter(paragraph_books)
     print("Paragraph counts per book:")
     for book, count in book_counts.items():
         print(f"Book {book}: {count} paragraphs")
-    return Counter, book_counts
+    return (book_counts,)
 
 
 @app.cell
@@ -169,9 +185,9 @@ def _(chapter_counts, np):
 
 
 @app.cell
-def _():
-    from matplotlib import cm, colors
-    return cm, colors
+def _(mo):
+    mo.md(r"""### Plot full book similarity matrix""")
+    return
 
 
 @app.cell
@@ -200,21 +216,27 @@ def _(book_cumsum, chapter_cumsum, cm, colors, cos_mat, plt):
 
 
 @app.cell
-def _(book_cumsum):
-    book_cumsum
+def _(mo):
+    mo.md(r"""### Plot similarity matrix for a specific chapter""")
     return
 
 
 @app.cell
-def _(chapter_cumsum):
-    # focus on book 2, chapter 4
-    chapter_cumsum
-    return
+def _(book_chapter_cumsum, chapter_cumsum):
+    # get absolute chapter position
+    book_i = 3
+    chapter_i = 4
+    chapter_i_abs = book_chapter_cumsum[book_i - 1] + chapter_i
+    # get paraphraph indices for chapter
+    p_start = chapter_cumsum[chapter_i_abs]
+    p_end = chapter_cumsum[chapter_i_abs + 1]
+    [p_start,p_end]
+    return p_end, p_start
 
 
 @app.cell
-def _(cm, cos_mat, plt):
-    cos_mat_filtered = cos_mat[613:698, 613:698]  # Book 2, Chapter 4
+def _(cm, cos_mat, p_end, p_start, plt):
+    cos_mat_filtered = cos_mat[p_start:p_end, p_start:p_end]  # Book 3, Chapter 5
     # _fig = plt.figure(figsize=(7, 7))
     _fig = plt.figure()
     _ax = _fig.add_subplot(111)
@@ -230,25 +252,37 @@ def _(cm, cos_mat, plt):
 
 
 @app.cell
+def _(mo):
+    mo.md(r"""#### Plot similarity between paraphraphs n and n+1, n+3, n+5""")
+    return
+
+
+@app.cell
 def _(cos_mat_filtered, plt):
-    # line plot of consecutive paragraph similarity
-    plt.figure(figsize=(12, 6))
+    # rememeber to name local variables with leading underscore (e.g. '_fig')
+    # repeat the above, but with each plot in a different subplot
+    plt.figure(figsize=(12, 12))
     for _i in range(1, 6, 2):
-        plt.plot(cos_mat_filtered.diagonal(_i), marker='o', label=f"Diagonal {_i}")
-    plt.title("Consecutive Paragraph Similarity in Book 2, Chapter 4")
-    plt.xlabel("Consecutive Paragraph Index")
-    plt.ylabel("Cosine Similarity")
-    plt.grid()
-    # plt.xticks(range(len(cos_mat_filtered)), range(613, 698), rotation=45)
-    # plt.tight_layout()
-    plt.legend()
+        _ax = plt.subplot(3, 1, _i // 2 + 1)
+        _ax.plot(cos_mat_filtered.diagonal(_i), marker='o', label=f"Diagonal {_i}")
+        _ax.set_title(f"Diagonal {_i} Similarity")
+        _ax.set_xlabel("Consecutive Paragraph Index")
+        _ax.set_ylabel("Cosine Similarity")
+        _ax.grid()
+        _ax.legend()
+        # _ax.set_xticks(range(len(cos_mat_filtered)))
+        # _ax.set_xticklabels(range(p_start + _i, p_end + _i), rotation=45)
+    plt.tight_layout()
     plt.gca()
+
+
     return
 
 
 @app.cell
 def _():
-    return
+    import marimo as mo
+    return (mo,)
 
 
 if __name__ == "__main__":
