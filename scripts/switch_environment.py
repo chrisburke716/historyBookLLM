@@ -9,8 +9,7 @@ and test environments with proper validation.
 import os
 import sys
 import logging
-from typing import Dict, Callable
-from history_book.database.config import WeaviateConfig, DatabaseEnvironment
+from history_book.database.config import WeaviateConfig
 
 # Set up logging
 logging.basicConfig(

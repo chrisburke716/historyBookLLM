@@ -1,14 +1,13 @@
 # History Book Vector Database
 
-A sophisticated Python application for ingesting, storing, and querying a specific history book using Weaviate vector database. The system processes PDF documents into a structured hierarchy (Books → Chapters → Paragraphs) with vector embeddings for semantic search.
+A Python application for ingesting, storing, and querying a specific history book using Weaviate vector database. The system processes the book PDF into a structured hierarchy (Books → Chapters → Paragraphs) with vector embeddings for semantic search.
 
 ## Features
 
-- **PDF Processing**: Extract structured content from PDF historical documents
+- **PDF Processing**: Extract structured content from PDF book
 - **Vector Storage**: Store books, chapters, and paragraphs with semantic embeddings in Weaviate
 - **Repository Pattern**: Clean separation of concerns with repository and service layers
 - **Environment Management**: Flexible configuration for development, testing, and production
-- **Text Processing**: Advanced text cleaning and normalization utilities
 
 ## Architecture
 
@@ -31,7 +30,7 @@ src/history_book/
 
 ### Data Model
 
-- **Book**: Top-level document with title, total pages
+- **Book**: Top-level documents with title, page range
 - **Chapter**: Document sections with title, page range
 - **Paragraph**: Text chunks with content, embeddings, and metadata
 
@@ -40,7 +39,7 @@ src/history_book/
 ### Prerequisites
 
 - Python 3.11+
-- Weaviate database (local Docker or cloud instance)
+- Weaviate database (running locally in Docker)
 - Poetry for dependency management
 
 ### Installation
@@ -59,6 +58,7 @@ src/history_book/
    # For testing
    poetry run python scripts/setup_test_config.py
    ```
+   Note: the above scripts will provide instructions on running Weaviate through Docker.
 
 ### Usage
 
@@ -92,7 +92,9 @@ results = manager.paragraphs.similarity_search_by_text(
 - `scripts/run_ingestion.py`: Main ingestion pipeline
 - `scripts/setup_development_config.py`: Configure for local development
 - `scripts/setup_test_config.py`: Configure for testing
-- `scripts/inspect_and_clear_database.py`: Database utilities
+- `scripts/switch_environment.py`: Switch between dev/test environments
+- `scripts/inspect_and_clear_database.py`: Database utilities - inspect and clear items in collection
+- `scripts/manage_collections.py`: Delete and/or create Weaviate collections
 
 ## Development
 
@@ -103,12 +105,6 @@ Create `.env` file with:
 WEAVIATE_URL=http://localhost:8080
 WEAVIATE_API_KEY=your-api-key  # Optional for local
 ENVIRONMENT=development
-```
-
-### Running Tests
-
-```bash
-poetry run python -m pytest
 ```
 
 ### Code Quality
@@ -128,7 +124,7 @@ The system supports multiple environments through configuration files:
 
 ## Contributing
 
-1. Ensure all tests pass
+1. Ensure all tests pass (once they exist)
 2. Run code formatting: `poetry run ruff format`
 3. Check for issues: `poetry run ruff check`
 4. Update documentation for significant changes

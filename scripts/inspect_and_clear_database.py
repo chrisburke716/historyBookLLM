@@ -4,11 +4,14 @@ Database inspection script to check what data exists before ingestion.
 
 This script helps you see what's currently in your database and provides
 options to clear data before running a fresh ingestion.
+
+Note: This will delete all items in the specified collections, but will not delete the collections themselves.
+If you need to delete the collections, use the `manage_collections.py` script.
 """
 
 import logging
 import os
-from history_book.database.config import WeaviateConfig, DatabaseEnvironment
+from history_book.database.config import WeaviateConfig
 from history_book.database.repositories import BookRepositoryManager
 
 # Set up logging
