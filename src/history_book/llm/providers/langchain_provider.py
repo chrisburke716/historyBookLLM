@@ -102,6 +102,7 @@ class LangChainProvider(LLMInterface):
             content = msg.content
             
             # Add context to the last user message if provided
+            # TODO: handle context more gracefully? seems awkward to insert into user message?
             if (context and msg.role == MessageRole.USER and 
                 msg == formatted_messages[-1]):
                 formatted_context = format_context_for_llm(

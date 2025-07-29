@@ -152,7 +152,7 @@ class ChatSessionRepository(WeaviateRepository["ChatSession"]):
         """Find the most recently updated chat sessions."""
         # Note: This would need to be implemented in the base WeaviateRepository
         # For now, return all and sort in Python (not optimal for large datasets)
-        all_sessions = self.find_all()
+        all_sessions = self.list_all()
         return sorted(all_sessions, key=lambda s: s.updated_at, reverse=True)[:limit]
 
 

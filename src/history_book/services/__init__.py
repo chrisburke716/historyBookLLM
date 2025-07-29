@@ -2,5 +2,6 @@
 
 from .paragraph_service import ParagraphService
 from .ingestion_service import IngestionService
+from .chat_service import ChatService
 
-__all__ = ["ParagraphService", "IngestionService"]
+__all__ = ["ParagraphService", "IngestionService", "ChatService"]
