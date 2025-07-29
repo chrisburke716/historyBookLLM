@@ -5,6 +5,8 @@ from .book_repository import (
     BookRepository,
     ChapterRepository,
     ParagraphRepository,
+    ChatSessionRepository,
+    ChatMessageRepository,
     BookRepositoryManager,
 )
 
@@ -13,5 +15,7 @@ __all__ = [
     "BookRepository",
     "ChapterRepository",
     "ParagraphRepository",
+    "ChatSessionRepository",
+    "ChatMessageRepository",
     "BookRepositoryManager",
 ]
