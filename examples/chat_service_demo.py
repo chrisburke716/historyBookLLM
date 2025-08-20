@@ -5,11 +5,12 @@ import logging
 from typing import List
 
 from src.history_book.services import ChatService
-from src.history_book.llm import MockLLMProvider, LLMConfig
-from src.history_book.data_models.entities import ChatSession, ChatMessage
+from src.history_book.llm import MockLLMProvider, LLMConfig, LangChainProvider
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Configure logging - suppress external modules, show only history_book
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.getLogger('src.history_book').setLevel(logging.INFO)
+
 logger = logging.getLogger(__name__)
 
 
@@ -20,8 +21,8 @@ async def demonstrate_chat_service():
     print("=" * 50)
     
     # Initialize the chat service with mock provider for demonstration
-    llm_config = LLMConfig()
-    llm_provider = MockLLMProvider(llm_config)
+    llm_config = LLMConfig.from_environment()  # Load from environment variables
+    llm_provider = LangChainProvider(llm_config)
     chat_service = ChatService(llm_provider=llm_provider)
     
     try:
@@ -48,7 +49,7 @@ async def demonstrate_chat_service():
             response = await chat_service.send_message(
                 session_id=session.id,
                 user_message=question,
-                enable_retrieval=False  # Disabled for demo since no actual documents loaded
+                enable_retrieval=True
             )
             
             print(f"🤖 AI Response: {response.content[:100]}...")
@@ -65,7 +66,7 @@ async def demonstrate_chat_service():
         async for chunk in chat_service.send_message_stream(
             session_id=session.id,
             user_message="Tell me more about the Treaty of Versailles",
-            enable_retrieval=False
+            enable_retrieval=True
         ):
             chunks.append(chunk)
             print(chunk, end="", flush=True)

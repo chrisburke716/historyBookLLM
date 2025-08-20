@@ -1,7 +1,7 @@
 """Vector repository interface for vector database operations."""
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from .repository_interface import BaseRepository, T
 
 
@@ -19,6 +19,7 @@ class VectorRepository(BaseRepository[T], ABC):
         query_vector: List[float],
         limit: int = 10,
         threshold: Optional[float] = None,
+        where_filter: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> List[Tuple[T, float]]:
         """
@@ -28,6 +29,7 @@ class VectorRepository(BaseRepository[T], ABC):
             query_vector: The vector to search with
             limit: Maximum number of results to return
             threshold: Minimum similarity threshold
+            where_filter: Optional filter criteria to limit search scope
             **kwargs: Additional search parameters
 
         Returns:
@@ -41,6 +43,7 @@ class VectorRepository(BaseRepository[T], ABC):
         query_text: str,
         limit: int = 10,
         threshold: Optional[float] = None,
+        where_filter: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> List[Tuple[T, float]]:
         """
@@ -50,6 +53,7 @@ class VectorRepository(BaseRepository[T], ABC):
             query_text: The text to search with
             limit: Maximum number of results to return
             threshold: Minimum similarity threshold
+            where_filter: Optional filter criteria to limit search scope
             **kwargs: Additional search parameters
 
         Returns:

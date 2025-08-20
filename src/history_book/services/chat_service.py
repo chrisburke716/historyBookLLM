@@ -293,10 +293,16 @@ class ChatService:
         """
         try:
             # Use vector search to find relevant paragraphs
-            return self.repository_manager.paragraphs.vector_search(
+            # return self.repository_manager.paragraphs.vector_search(
+            #     query_text=query,
+            #     limit=max_paragraphs
+            # )            
+            search_result = self.repository_manager.paragraphs.similarity_search_by_text(
                 query_text=query,
                 limit=max_paragraphs
             )
+            return [para[0] for para in search_result] if search_result else []
+        #
         except Exception as e:
             logger.warning(f"Failed to retrieve context: {e}")
             return []

@@ -85,28 +85,19 @@ class ParagraphRepository(WeaviateRepository["Paragraph"]):
         Returns:
             List of (paragraph, similarity_score) tuples
         """
-        # If book_index is specified, we need to filter results
-        # For now, we'll do a simple similarity search and filter afterward
-        # In a more advanced implementation, you could combine this with where filters
+        # Use server-side filtering with where_filter for better performance
+        where_filter = None
+        if book_index is not None:
+            where_filter = {"book_index": book_index}
 
         results = self.similarity_search_by_text(
             query_text=query_text,
-            limit=limit * 2
-            if book_index is not None
-            else limit,  # Get more results for filtering
+            limit=limit,
             threshold=threshold,
+            where_filter=where_filter,
         )
 
-        if book_index is not None:
-            # Filter results by book_index
-            filtered_results = [
-                (paragraph, score)
-                for paragraph, score in results
-                if paragraph.book_index == book_index
-            ]
-            return filtered_results[:limit]
-
-        return results[:limit]
+        return results
 
     def search_paragraphs_by_page_range(
         self, start_page: int, end_page: int, book_index: int | None = None
@@ -196,17 +187,19 @@ class ChatMessageRepository(WeaviateRepository["ChatMessage"]):
             List of messages sorted by relevance
         """
         # Use the vector search from the base repository
+        where_filter = None
         if session_id:
-            # Search within a specific session
             where_filter = {"session_id": session_id}
-            return self.vector_search(
-                query_text=query_text,
-                limit=limit,
-                where_filter=where_filter
-            )
-        else:
-            # Search across all messages
-            return self.vector_search(query_text=query_text, limit=limit)
+
+        # Get results with similarity scores
+        results_with_scores = self.similarity_search_by_text(
+            query_text=query_text,
+            limit=limit,
+            where_filter=where_filter
+        )
+        
+        # Extract just the messages (without similarity scores)
+        return [message for message, score in results_with_scores]
 
 
 class BookRepositoryManager:

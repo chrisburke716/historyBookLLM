@@ -4,6 +4,7 @@ import os
 from typing import Dict, Any
 from dataclasses import dataclass, field
 
+DEFAULT_MODEL_NAME = "gpt-4o-mini"
 
 @dataclass
 class LLMConfig:
@@ -11,7 +12,7 @@ class LLMConfig:
     
     # Provider settings
     provider: str = "openai"  # openai, anthropic, etc.
-    model_name: str = "gpt-3.5-turbo"
+    model_name: str = DEFAULT_MODEL_NAME
     api_key: str | None = None
     api_base: str | None = None
     
@@ -49,8 +50,8 @@ class LLMConfig:
         
         # Provider and model
         config.provider = provider or os.getenv("LLM_PROVIDER", "openai")
-        config.model_name = os.getenv("LLM_MODEL_NAME", "gpt-3.5-turbo")
-        
+        config.model_name = os.getenv("LLM_MODEL_NAME", DEFAULT_MODEL_NAME)
+
         # API settings
         config.api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
         config.api_base = os.getenv("LLM_API_BASE")
