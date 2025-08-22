@@ -1,14 +1,16 @@
-"""Pure data models without database operations."""
+"""Data models for the history book application."""
 
-from typing import List, Optional, ClassVar
+from typing import List, ClassVar
 from pydantic import BaseModel, Field
+from datetime import datetime, timezone
+from enum import Enum
 import uuid
 
 
 class Book(BaseModel):
-    """Pure data model for a book (no database operations)."""
+    """Represents a single book within the complete history book volume."""
 
-    id: Optional[str] = Field(default_factory=lambda: str(uuid.uuid4()))
+    id: str | None = Field(default_factory=lambda: str(uuid.uuid4()))
     title: str
     start_page: int
     end_page: int
@@ -16,9 +18,9 @@ class Book(BaseModel):
 
 
 class Chapter(BaseModel):
-    """Pure data model for a chapter (no database operations)."""
+    """Represents a section or chapter within a book."""
 
-    id: Optional[str] = Field(default_factory=lambda: str(uuid.uuid4()))
+    id: str | None = Field(default_factory=lambda: str(uuid.uuid4()))
     title: str
     start_page: int
     end_page: int
@@ -27,11 +29,11 @@ class Chapter(BaseModel):
 
 
 class Paragraph(BaseModel):
-    """Pure data model for a paragraph (no database operations)."""
+    """Represents a text chunk with optional vector embeddings for semantic search."""
 
-    id: Optional[str] = Field(default_factory=lambda: str(uuid.uuid4()))
+    id: str | None = Field(default_factory=lambda: str(uuid.uuid4()))
     text: str
-    embedding: Optional[List[float]] = None
+    embedding: List[float] | None = None
     page: int
     paragraph_index: int
     book_index: int
@@ -39,3 +41,34 @@ class Paragraph(BaseModel):
 
     # Specify which fields should be vectorized by Weaviate
     vectorize_fields: ClassVar[List[str]] = ["text"]
+
+
+class MessageRole(str, Enum):
+    """Enumeration for message roles in chat."""
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+
+
+class ChatMessage(BaseModel):
+    """Represents a single message in a chat conversation."""
+
+    id: str | None = Field(default_factory=lambda: str(uuid.uuid4()))
+    content: str
+    role: MessageRole
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    session_id: str
+    retrieved_paragraphs: List[str] | None = None  # IDs of paragraphs used as context
+
+    # Specify which fields should be vectorized by Weaviate (for semantic search of chat history)
+    vectorize_fields: ClassVar[List[str]] = ["content"]
+
+
+class ChatSession(BaseModel):
+    """Represents a chat conversation session containing multiple messages."""
+
+    id: str | None = Field(default_factory=lambda: str(uuid.uuid4()))
+    title: str | None = None  # Auto-generated or user-provided
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Note: messages are stored separately and linked by session_id for better performance

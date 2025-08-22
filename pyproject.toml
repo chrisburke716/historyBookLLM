@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{ include = "history_book", from = "src" }]
 
 [tool.poetry.dependencies]
-python = ">=3.11"
+python = ">=3.11,<4.0"
 pymupdf = ">=1.25.5,<2.0.0"
 unstructured = ">=0.17.2,<0.18.0"
 tiktoken = "^0.9.0"
@@ -15,6 +15,8 @@ weaviate-client = "^4.15.0"
 pandas = "^2.3.0"
 matplotlib = "^3.10.3"
 marimo = {extras = ["recommended"], version = "^0.14.12"}
+langchain = "^0.3.27"
+langchain-openai = "^0.3.28"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.12.1"

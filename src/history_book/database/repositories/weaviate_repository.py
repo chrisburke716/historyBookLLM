@@ -260,14 +260,21 @@ class WeaviateRepository(VectorRepository[T]):
         query_vector: List[float],
         limit: int = 10,
         threshold: Optional[float] = None,
+        where_filter: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> List[Tuple[T, float]]:
         """Synchronous version of similarity_search."""
         try:
+            # Build where filter if provided
+            where = None
+            if where_filter:
+                where = self._build_where_filter(where_filter)
+
             query = self.collection.query.near_vector(
                 near_vector=query_vector,
                 limit=limit,
                 distance=threshold,
+                filters=where,
                 return_metadata=["distance"],  # Include distance in results
                 **kwargs,
             )
@@ -292,14 +299,21 @@ class WeaviateRepository(VectorRepository[T]):
         query_text: str,
         limit: int = 10,
         threshold: Optional[float] = None,
+        where_filter: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> List[Tuple[T, float]]:
         """Synchronous version of similarity_search_by_text."""
         try:
+            # Build where filter if provided
+            where = None
+            if where_filter:
+                where = self._build_where_filter(where_filter)
+
             query = self.collection.query.near_text(
                 query=query_text,
                 limit=limit,
                 distance=threshold,
+                filters=where,
                 return_metadata=["distance"],  # Include distance in results
                 **kwargs,
             )
