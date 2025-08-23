@@ -17,6 +17,8 @@ matplotlib = "^3.10.3"
 marimo = {extras = ["recommended"], version = "^0.14.12"}
 langchain = "^0.3.27"
 langchain-openai = "^0.3.28"
+fastapi = "^0.104.1"
+uvicorn = {extras = ["standard"], version = "^0.24.0"}
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.12.1"
