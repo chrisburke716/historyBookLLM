@@ -1,31 +1,44 @@
-# History Book Vector Database
+# History Book Chat Application
 
-A Python application for ingesting, storing, and querying a specific history book using Weaviate vector database. The system processes the book PDF into a structured hierarchy (Books → Chapters → Paragraphs) with vector embeddings for semantic search.
+A full-stack RAG-powered chat application for conversational interactions with historical documents. The system combines a Python FastAPI backend with vector search capabilities and a React TypeScript frontend for an intuitive chat experience.
 
 ## Features
 
-- **PDF Processing**: Extract structured content from PDF book
-- **Vector Storage**: Store books, chapters, and paragraphs with semantic embeddings in Weaviate
-- **Repository Pattern**: Clean separation of concerns with repository and service layers
-- **Environment Management**: Flexible configuration for development, testing, and production
+- **🤖 RAG-Powered Chat**: Conversational interface with retrieval-augmented generation
+- **📚 Real Citations**: Responses include actual page numbers from source documents  
+- **💬 Session Management**: Create, switch between, and persist conversation sessions
+- **🎨 Modern UI**: Clean Material-UI interface with TypeScript and accessibility
+- **📡 REST API**: FastAPI backend with automatic OpenAPI documentation
+- **🔍 Vector Search**: Semantic search using Weaviate vector database
+- **⚡ Real-time**: Live responses with loading states and error handling
 
 ## Architecture
 
-### Core Components
+### Full-Stack Architecture
 
 ```
-src/history_book/
-├── services/           # Business logic layer
-│   ├── ingestion_service.py    # Main ingestion orchestration
-│   └── paragraph_service.py    # Paragraph query operations
-├── database/           # Data persistence layer
-│   ├── repositories/   # Data access abstractions
-│   ├── config/        # Database configuration
-│   ├── collections.py # Weaviate collection definitions
-│   └── interfaces/    # Repository contracts
-├── entities/          # Pure data models
-├── text_processing/   # Text normalization utilities
-└── utils/            # Common utilities
+├── Backend (Python FastAPI)
+│   ├── src/history_book/
+│   │   ├── api/              # FastAPI routes and models
+│   │   │   ├── main.py       # FastAPI application
+│   │   │   ├── routes/       # API endpoints (chat, sessions)
+│   │   │   └── models/       # Pydantic request/response models
+│   │   ├── services/         # Business logic (chat, ingestion)
+│   │   ├── database/         # Weaviate integration & repositories
+│   │   ├── llm/             # LangChain LLM providers
+│   │   └── data_models/     # Entity definitions
+│
+├── Frontend (React + TypeScript)
+│   ├── frontend/src/
+│   │   ├── components/       # Chat UI components
+│   │   ├── pages/           # Main chat page
+│   │   ├── services/        # API client (Axios)
+│   │   ├── hooks/           # React state management
+│   │   └── types/           # TypeScript interfaces
+│
+└── Tests
+    ├── test_api.py          # Backend API test suite
+    └── test_full_integration.py  # End-to-end tests
 ```
 
 ### Data Model
@@ -38,19 +51,18 @@ src/history_book/
 
 ### Prerequisites
 
-- Python 3.11+
-- Weaviate database (running locally in Docker)
-- Poetry for dependency management
+- **Backend**: Python 3.11+, Poetry, Weaviate database (Docker)
+- **Frontend**: Node.js 16+, npm
+- **LLM**: OpenAI API key (optional, uses Mock provider by default)
 
-### Installation
+### Installation & Setup
 
-1. Clone the repository
-2. Install dependencies:
+1. **Clone and install backend dependencies:**
    ```bash
    poetry install
    ```
 
-3. Set up your environment:
+2. **Set up your environment:**
    ```bash
    # For development
    poetry run python scripts/setup_development_config.py
@@ -58,33 +70,65 @@ src/history_book/
    # For testing
    poetry run python scripts/setup_test_config.py
    ```
-   Note: the above scripts will provide instructions on running Weaviate through Docker.
+   Note: These scripts provide instructions for running Weaviate through Docker.
 
-### Usage
+3. **Ingest historical documents:**
+   ```bash
+   poetry run python scripts/run_ingestion.py
+   ```
+   This processes the PDF and ingests it into your Weaviate instance with vector embeddings.
 
-#### Ingest a Book
+4. **Install frontend dependencies:**
+   ```bash
+   cd frontend && npm install
+   ```
 
-```bash
-poetry run python scripts/run_ingestion.py
-```
+### Running the Chat Application
 
-This will process the default PDF and ingest it into your configured Weaviate instance.
+**Start both servers (in separate terminals):**
 
-#### Query the Database
+1. **Backend API:**
+   ```bash
+   PYTHONPATH=src poetry run uvicorn src.history_book.api.main:app --reload --port 8000
+   ```
+
+2. **Frontend UI:**
+   ```bash
+   cd frontend && npm start
+   ```
+
+**Access the application:**
+- **💬 Chat Interface**: http://localhost:3000
+- **📚 API Documentation**: http://localhost:8000/docs  
+- **🔍 Health Check**: http://localhost:8000
+
+### Direct Database Usage
+
+You can also query the database directly:
 
 ```python
 from history_book.database.config import WeaviateConfig
 from history_book.database.repositories import BookRepositoryManager
 
 # Initialize
-config = WeaviateConfig.from_env()
+config = WeaviateConfig.from_environment()
 manager = BookRepositoryManager(config)
 
 # Search paragraphs
 results = manager.paragraphs.similarity_search_by_text(
-    query_text="ancient civilizations",
+    query_text="causes of World War I",
     limit=5
 )
+```
+
+### Testing
+
+```bash
+# Test backend API endpoints
+poetry run python test_api.py
+
+# Test full-stack integration (requires both servers running)
+poetry run python test_full_integration.py
 ```
 
 ## Scripts
