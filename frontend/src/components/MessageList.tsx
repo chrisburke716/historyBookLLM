@@ -27,7 +27,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages }) => {
     return new Date(timestamp).toLocaleTimeString();
   };
 
-  const formatMessage = (content: string): JSX.Element => {
+  const formatMessage = (content: string): React.ReactElement => {
     // Simple markdown-like formatting for bold text
     const formatted = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     return <span dangerouslySetInnerHTML={{ __html: formatted }} />;
@@ -53,7 +53,6 @@ const MessageList: React.FC<MessageListProps> = ({ messages }) => {
     <List sx={{ width: '100%', p: 1 }}>
       {messages.map((message, index) => {
         const isUser = message.role === 'user';
-        const isLast = index === messages.length - 1;
 
         return (
           <ListItem 
