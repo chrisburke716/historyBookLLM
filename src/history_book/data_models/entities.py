@@ -45,6 +45,7 @@ class Paragraph(BaseModel):
 
 class MessageRole(str, Enum):
     """Enumeration for message roles in chat."""
+
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"

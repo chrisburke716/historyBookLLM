@@ -10,22 +10,19 @@ class LLMInterface(ABC):
 
     @abstractmethod
     async def generate_response(
-        self,
-        messages: List[ChatMessage], 
-        context: str | None = None,
-        **kwargs: Any
+        self, messages: List[ChatMessage], context: str | None = None, **kwargs: Any
     ) -> str:
         """
         Generate a response based on chat history and optional context.
-        
+
         Args:
             messages: List of chat messages forming the conversation history
             context: Optional context text (e.g., retrieved paragraphs)
             **kwargs: Additional provider-specific parameters
-            
+
         Returns:
             Generated response text
-            
+
         Raises:
             LLMError: If generation fails
         """
@@ -33,22 +30,19 @@ class LLMInterface(ABC):
 
     @abstractmethod
     async def generate_stream_response(
-        self,
-        messages: List[ChatMessage],
-        context: str | None = None,
-        **kwargs: Any
+        self, messages: List[ChatMessage], context: str | None = None, **kwargs: Any
     ) -> Any:  # AsyncIterator[str] - but avoiding complex typing for now
         """
         Generate a streaming response based on chat history and optional context.
-        
+
         Args:
             messages: List of chat messages forming the conversation history
             context: Optional context text (e.g., retrieved paragraphs)
             **kwargs: Additional provider-specific parameters
-            
+
         Yields:
             Response text chunks
-            
+
         Raises:
             LLMError: If generation fails
         """
@@ -58,10 +52,10 @@ class LLMInterface(ABC):
     def count_tokens(self, text: str) -> int:
         """
         Count the number of tokens in the given text.
-        
+
         Args:
             text: Text to count tokens for
-            
+
         Returns:
             Number of tokens
         """
@@ -71,10 +65,10 @@ class LLMInterface(ABC):
     def validate_messages(self, messages: List[ChatMessage]) -> bool:
         """
         Validate that the message list is compatible with this LLM provider.
-        
+
         Args:
             messages: Messages to validate
-            
+
         Returns:
             True if valid, False otherwise
         """

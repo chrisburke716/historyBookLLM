@@ -7,7 +7,13 @@ from ..config.database_config import WeaviateConfig
 
 # Use TYPE_CHECKING to avoid circular imports
 if TYPE_CHECKING:
-    from ...data_models.entities import Book, Chapter, Paragraph, ChatMessage, ChatSession
+    from ...data_models.entities import (
+        Book,
+        Chapter,
+        Paragraph,
+        ChatMessage,
+        ChatSession,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -170,19 +176,16 @@ class ChatMessageRepository(WeaviateRepository["ChatMessage"]):
         return sorted(messages, key=lambda m: m.timestamp)
 
     def search_message_content(
-        self,
-        query_text: str,
-        session_id: str | None = None,
-        limit: int = 10
+        self, query_text: str, session_id: str | None = None, limit: int = 10
     ) -> List["ChatMessage"]:
         """
         Search for messages by content similarity.
-        
+
         Args:
             query_text: Text to search for
             session_id: Optional session to limit search to
             limit: Maximum number of results
-            
+
         Returns:
             List of messages sorted by relevance
         """
@@ -193,11 +196,9 @@ class ChatMessageRepository(WeaviateRepository["ChatMessage"]):
 
         # Get results with similarity scores
         results_with_scores = self.similarity_search_by_text(
-            query_text=query_text,
-            limit=limit,
-            where_filter=where_filter
+            query_text=query_text, limit=limit, where_filter=where_filter
         )
-        
+
         # Extract just the messages (without similarity scores)
         return [message for message, score in results_with_scores]
 
@@ -255,11 +256,11 @@ class BookRepositoryManager:
     def close_all(self):
         """Close all repository connections."""
         repositories = [
-            self._book_repo, 
-            self._chapter_repo, 
+            self._book_repo,
+            self._chapter_repo,
             self._paragraph_repo,
             self._chat_session_repo,
-            self._chat_message_repo
+            self._chat_message_repo,
         ]
         for repo in repositories:
             if repo is not None:

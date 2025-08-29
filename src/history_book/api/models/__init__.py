@@ -1,0 +1,1 @@
+"""API models for the history book application."""
