@@ -7,11 +7,13 @@ from pydantic import BaseModel
 
 class SessionCreateRequest(BaseModel):
     """Request to create a new chat session."""
+
     title: Optional[str] = None
 
 
 class MessageRequest(BaseModel):
     """Request to send a message in a chat session."""
+
     content: str
     enable_retrieval: bool = True
     max_context_paragraphs: int = 5
@@ -19,6 +21,7 @@ class MessageRequest(BaseModel):
 
 class SessionResponse(BaseModel):
     """Response containing chat session information."""
+
     id: str
     title: Optional[str]
     created_at: datetime
@@ -27,6 +30,7 @@ class SessionResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     """Response containing a chat message."""
+
     id: str
     content: str
     role: str  # "user" or "assistant"
@@ -37,14 +41,17 @@ class MessageResponse(BaseModel):
 
 class SessionListResponse(BaseModel):
     """Response containing a list of recent sessions."""
+
     sessions: List[SessionResponse]
 
 
 class MessageListResponse(BaseModel):
     """Response containing a list of messages for a session."""
+
     messages: List[MessageResponse]
 
 
 class ChatResponse(BaseModel):
     """Response after sending a message - includes the AI's reply."""
+
     message: MessageResponse

@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
+
 # Dependency to get ChatService instance with proper cleanup
 # Using generator pattern for automatic resource cleanup
 def get_chat_service():
@@ -29,6 +30,7 @@ def get_chat_service():
         yield chat_service
     finally:
         chat_service.close()
+
 
 def convert_session_to_response(session: ChatSession) -> SessionResponse:
     """Convert ChatSession entity to SessionResponse."""
@@ -40,7 +42,9 @@ def convert_session_to_response(session: ChatSession) -> SessionResponse:
     )
 
 
-def convert_message_to_response(message: ChatMessage, chat_service: ChatService = None) -> MessageResponse:
+def convert_message_to_response(
+    message: ChatMessage, chat_service: ChatService = None
+) -> MessageResponse:
     """Convert ChatMessage entity to MessageResponse."""
     citations = None
     if message.retrieved_paragraphs and chat_service:
@@ -50,7 +54,9 @@ def convert_message_to_response(message: ChatMessage, chat_service: ChatService 
             try:
                 # Get paragraph from database to extract page number
                 # TODO: don't love the idea of accessing repository_manager from chat_service here. might make that a singleton?
-                paragraph = chat_service.repository_manager.paragraphs.get_by_id(para_id)
+                paragraph = chat_service.repository_manager.paragraphs.get_by_id(
+                    para_id
+                )
                 if paragraph:
                     citations.append(f"Page {paragraph.page}")
             except Exception:
@@ -58,8 +64,10 @@ def convert_message_to_response(message: ChatMessage, chat_service: ChatService 
                 citations.append("Source document")
     elif message.retrieved_paragraphs:
         # Fallback when chat_service not available
-        citations = [f"Source {i}" for i in range(1, len(message.retrieved_paragraphs) + 1)]
-    
+        citations = [
+            f"Source {i}" for i in range(1, len(message.retrieved_paragraphs) + 1)
+        ]
+
     return MessageResponse(
         id=message.id,
         content=message.content,
@@ -72,8 +80,7 @@ def convert_message_to_response(message: ChatMessage, chat_service: ChatService 
 
 @router.post("/sessions", response_model=SessionResponse)
 async def create_session(
-    request: SessionCreateRequest,
-    chat_service: ChatService = Depends(get_chat_service)
+    request: SessionCreateRequest, chat_service: ChatService = Depends(get_chat_service)
 ):
     """Create a new chat session."""
     try:
@@ -86,8 +93,7 @@ async def create_session(
 
 @router.get("/sessions", response_model=SessionListResponse)
 async def get_sessions(
-    limit: int = 10,
-    chat_service: ChatService = Depends(get_chat_service)
+    limit: int = 10, chat_service: ChatService = Depends(get_chat_service)
 ):
     """Get recent chat sessions."""
     try:
@@ -101,13 +107,14 @@ async def get_sessions(
 
 @router.get("/sessions/{session_id}/messages", response_model=MessageListResponse)
 async def get_session_messages(
-    session_id: str,
-    chat_service: ChatService = Depends(get_chat_service)
+    session_id: str, chat_service: ChatService = Depends(get_chat_service)
 ):
     """Get all messages for a session."""
     try:
         messages = await chat_service.get_session_messages(session_id)
-        message_responses = [convert_message_to_response(m, chat_service) for m in messages]
+        message_responses = [
+            convert_message_to_response(m, chat_service) for m in messages
+        ]
         return MessageListResponse(messages=message_responses)
     except Exception as e:
         logger.error(f"Failed to get messages for session {session_id}: {e}")
@@ -118,7 +125,7 @@ async def get_session_messages(
 async def send_message(
     session_id: str,
     request: MessageRequest,
-    chat_service: ChatService = Depends(get_chat_service)
+    chat_service: ChatService = Depends(get_chat_service),
 ):
     """Send a message and get AI response."""
     try:
@@ -126,18 +133,18 @@ async def send_message(
         session = await chat_service.get_session(session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
-        
+
         # Send message and get response
         ai_message = await chat_service.send_message(
             session_id=session_id,
             user_message=request.content,
             max_context_paragraphs=request.max_context_paragraphs,
-            enable_retrieval=request.enable_retrieval
+            enable_retrieval=request.enable_retrieval,
         )
-        
+
         response_message = convert_message_to_response(ai_message, chat_service)
         return ChatResponse(message=response_message)
-        
+
     except HTTPException:
         raise
     except Exception as e:

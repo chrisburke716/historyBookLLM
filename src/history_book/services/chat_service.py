@@ -20,7 +20,7 @@ class ChatService:
         self,
         config: WeaviateConfig | None = None,
         llm_provider: LLMInterface | None = None,
-        llm_config: LLMConfig | None = None
+        llm_config: LLMConfig | None = None,
     ):
         """
         Initialize the chat service.
@@ -42,6 +42,7 @@ class ChatService:
             # TODO: do we want to set mock here? or just fail?
             try:
                 from ..llm import LangChainProvider
+
                 self.llm_provider = LangChainProvider(llm_config)
                 logger.info("Using LangChain provider for LLM")
             except ImportError:
@@ -126,7 +127,7 @@ class ChatService:
         session_id: str,
         user_message: str,
         max_context_paragraphs: int = 5,
-        enable_retrieval: bool = True
+        enable_retrieval: bool = True,
     ) -> ChatMessage:
         """
         Send a message and get AI response with optional retrieval.
@@ -147,9 +148,7 @@ class ChatService:
         try:
             # 1. Create and save user message
             user_msg = ChatMessage(
-                content=user_message,
-                role=MessageRole.USER,
-                session_id=session_id
+                content=user_message, role=MessageRole.USER, session_id=session_id
             )
             user_msg_id = self.repository_manager.chat_messages.create(user_msg)
             user_msg.id = user_msg_id
@@ -164,7 +163,7 @@ class ChatService:
 
             # 3. Get recent chat history
             chat_history = await self.get_session_messages(session_id)
-            
+
             # Include the new user message in history for LLM
             if user_msg not in chat_history:
                 chat_history.append(user_msg)
@@ -172,8 +171,7 @@ class ChatService:
             # 4. Generate AI response
             context_text = self._format_context(context_paragraphs)
             ai_response = await self.llm_provider.generate_response(
-                messages=chat_history,
-                context=context_text
+                messages=chat_history, context=context_text
             )
 
             # 5. Create and save AI message
@@ -181,7 +179,9 @@ class ChatService:
                 content=ai_response,
                 role=MessageRole.ASSISTANT,
                 session_id=session_id,
-                retrieved_paragraphs=[p.id for p in context_paragraphs] if context_paragraphs else None
+                retrieved_paragraphs=[p.id for p in context_paragraphs]
+                if context_paragraphs
+                else None,
             )
             ai_msg_id = self.repository_manager.chat_messages.create(ai_msg)
             ai_msg.id = ai_msg_id
@@ -204,7 +204,7 @@ class ChatService:
         session_id: str,
         user_message: str,
         max_context_paragraphs: int = 5,
-        enable_retrieval: bool = True
+        enable_retrieval: bool = True,
     ) -> AsyncIterator[str]:
         """
         Send a message and get streaming AI response with optional retrieval.
@@ -224,9 +224,7 @@ class ChatService:
         try:
             # 1. Create and save user message
             user_msg = ChatMessage(
-                content=user_message,
-                role=MessageRole.USER,
-                session_id=session_id
+                content=user_message, role=MessageRole.USER, session_id=session_id
             )
             user_msg_id = self.repository_manager.chat_messages.create(user_msg)
             user_msg.id = user_msg_id
@@ -240,19 +238,18 @@ class ChatService:
 
             # 3. Get recent chat history
             chat_history = await self.get_session_messages(session_id)
-            
+
             # Include the new user message in history
             if user_msg not in chat_history:
                 chat_history.append(user_msg)
 
             # 4. Generate streaming AI response
             context_text = self._format_context(context_paragraphs)
-            
+
             # Collect response chunks for saving later
             response_chunks = []
             async for chunk in self.llm_provider.generate_stream_response(
-                messages=chat_history,
-                context=context_text
+                messages=chat_history, context=context_text
             ):
                 response_chunks.append(chunk)
                 yield chunk
@@ -263,23 +260,25 @@ class ChatService:
                 content=complete_response,
                 role=MessageRole.ASSISTANT,
                 session_id=session_id,
-                retrieved_paragraphs=[p.id for p in context_paragraphs] if context_paragraphs else None
+                retrieved_paragraphs=[p.id for p in context_paragraphs]
+                if context_paragraphs
+                else None,
             )
             ai_msg_id = self.repository_manager.chat_messages.create(ai_msg)
 
             # 6. Update session timestamp
             await self._update_session_timestamp(session_id)
 
-            logger.info(f"Completed streaming response {ai_msg_id} for session {session_id}")
+            logger.info(
+                f"Completed streaming response {ai_msg_id} for session {session_id}"
+            )
 
         except Exception as e:
             logger.error(f"Failed to stream message: {e}")
             raise
 
     async def _retrieve_context(
-        self,
-        query: str,
-        max_paragraphs: int
+        self, query: str, max_paragraphs: int
     ) -> List[Paragraph]:
         """
         Retrieve relevant paragraphs for the query.
@@ -296,10 +295,11 @@ class ChatService:
             # return self.repository_manager.paragraphs.vector_search(
             #     query_text=query,
             #     limit=max_paragraphs
-            # )            
-            search_result = self.repository_manager.paragraphs.similarity_search_by_text(
-                query_text=query,
-                limit=max_paragraphs
+            # )
+            search_result = (
+                self.repository_manager.paragraphs.similarity_search_by_text(
+                    query_text=query, limit=max_paragraphs
+                )
             )
             return [para[0] for para in search_result] if search_result else []
         #
@@ -370,10 +370,7 @@ class ChatService:
             return False
 
     async def search_messages(
-        self,
-        query: str,
-        session_id: str | None = None,
-        limit: int = 10
+        self, query: str, session_id: str | None = None, limit: int = 10
     ) -> List[ChatMessage]:
         """
         Search for messages by content.
@@ -388,9 +385,7 @@ class ChatService:
         """
         try:
             return self.repository_manager.chat_messages.search_message_content(
-                query_text=query,
-                session_id=session_id,
-                limit=limit
+                query_text=query, session_id=session_id, limit=limit
             )
         except Exception as e:
             logger.error(f"Failed to search messages: {e}")

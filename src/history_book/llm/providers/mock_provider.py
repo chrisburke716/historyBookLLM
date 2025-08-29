@@ -4,7 +4,11 @@ import asyncio
 from typing import List, Any, AsyncIterator
 from ..interfaces.llm_interface import LLMInterface
 from ..config import LLMConfig
-from ..utils import format_messages_for_llm, format_context_for_llm, estimate_token_count
+from ..utils import (
+    format_messages_for_llm,
+    format_context_for_llm,
+    estimate_token_count,
+)
 from ...data_models.entities import ChatMessage, MessageRole
 
 
@@ -14,7 +18,7 @@ class MockLLMProvider(LLMInterface):
     def __init__(self, config: LLMConfig | None = None):
         """
         Initialize the mock provider.
-        
+
         Args:
             config: LLM configuration (not used in mock but kept for interface compatibility)
         """
@@ -22,20 +26,17 @@ class MockLLMProvider(LLMInterface):
         self.response_delay = 0.1  # Simulate response time
 
     async def generate_response(
-        self,
-        messages: List[ChatMessage],
-        context: str | None = None,
-        **kwargs: Any
+        self, messages: List[ChatMessage], context: str | None = None, **kwargs: Any
     ) -> str:
         """Generate a mock response."""
         # Simulate processing time
         await asyncio.sleep(self.response_delay)
-        
+
         if not messages:
             return "I don't have any messages to respond to."
-        
+
         last_message = messages[-1]
-        
+
         # Create a mock response based on the last message
         if context:
             response = (
@@ -50,27 +51,24 @@ class MockLLMProvider(LLMInterface):
                 f"This is a mock response from the development LLM provider. "
                 f"In production, this would be replaced with an actual LLM response."
             )
-        
+
         return response
 
     async def generate_stream_response(
-        self,
-        messages: List[ChatMessage],
-        context: str | None = None,
-        **kwargs: Any
+        self, messages: List[ChatMessage], context: str | None = None, **kwargs: Any
     ) -> AsyncIterator[str]:
         """Generate a mock streaming response."""
         response = await self.generate_response(messages, context, **kwargs)
-        
+
         # Split response into chunks and yield them
         words = response.split()
         chunk_size = 3  # Words per chunk
-        
+
         for i in range(0, len(words), chunk_size):
-            chunk = " ".join(words[i:i + chunk_size])
+            chunk = " ".join(words[i : i + chunk_size])
             if i + chunk_size < len(words):
                 chunk += " "
-            
+
             await asyncio.sleep(0.05)  # Simulate streaming delay
             yield chunk
 
@@ -82,13 +80,17 @@ class MockLLMProvider(LLMInterface):
         """Validate message format."""
         if not messages:
             return False
-            
+
         for msg in messages:
             if not isinstance(msg, ChatMessage):
                 return False
             if not msg.content or not msg.content.strip():
                 return False
-            if msg.role not in [MessageRole.USER, MessageRole.ASSISTANT, MessageRole.SYSTEM]:
+            if msg.role not in [
+                MessageRole.USER,
+                MessageRole.ASSISTANT,
+                MessageRole.SYSTEM,
+            ]:
                 return False
-                
+
         return True
