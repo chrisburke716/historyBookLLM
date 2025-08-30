@@ -2,9 +2,9 @@
 
 import logging
 
-from ..data_models.entities import Paragraph
-from ..database.config import WeaviateConfig
-from ..database.repositories import ParagraphRepository
+from history_book.data_models.entities import Paragraph
+from history_book.database.config import WeaviateConfig
+from history_book.database.repositories import ParagraphRepository
 
 logger = logging.getLogger(__name__)
 

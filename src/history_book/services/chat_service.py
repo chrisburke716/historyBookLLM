@@ -4,11 +4,16 @@ import logging
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
-from ..data_models.entities import ChatMessage, ChatSession, MessageRole, Paragraph
-from ..database.config import WeaviateConfig
-from ..database.repositories import BookRepositoryManager
-from ..llm import LLMConfig, LLMInterface, MockLLMProvider
-from ..llm.exceptions import LLMError
+from history_book.data_models.entities import (
+    ChatMessage,
+    ChatSession,
+    MessageRole,
+    Paragraph,
+)
+from history_book.database.config import WeaviateConfig
+from history_book.database.repositories import BookRepositoryManager
+from history_book.llm import LLMConfig, LLMInterface, MockLLMProvider
+from history_book.llm.exceptions import LLMError
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +46,7 @@ class ChatService:
             # Try to use LangChain provider, fall back to mock
             # TODO: do we want to set mock here? or just fail?
             try:
-                from ..llm import LangChainProvider
+                from ..llm import LangChainProvider # noqa: PLC0415
 
                 self.llm_provider = LangChainProvider(llm_config)
                 logger.info("Using LangChain provider for LLM")

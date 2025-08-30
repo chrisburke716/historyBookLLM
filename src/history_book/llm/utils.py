@@ -1,7 +1,7 @@
 """Utility functions for LLM operations."""
 
 
-from ..data_models.entities import ChatMessage, MessageRole
+from history_book.data_models.entities import ChatMessage, MessageRole
 
 
 def format_messages_for_llm(

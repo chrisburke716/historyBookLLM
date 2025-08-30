@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from ...data_models.entities import ChatMessage
+from history_book.data_models.entities import ChatMessage
 
 
 class LLMInterface(ABC):

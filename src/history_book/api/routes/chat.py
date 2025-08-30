@@ -4,9 +4,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ...data_models.entities import ChatMessage, ChatSession
-from ...services.chat_service import ChatService
-from ..models.api_models import (
+from history_book.api.models.api_models import (
     ChatResponse,
     MessageListResponse,
     MessageRequest,
@@ -15,6 +13,8 @@ from ..models.api_models import (
     SessionListResponse,
     SessionResponse,
 )
+from history_book.data_models.entities import ChatMessage, ChatSession
+from history_book.services.chat_service import ChatService
 
 logger = logging.getLogger(__name__)
 

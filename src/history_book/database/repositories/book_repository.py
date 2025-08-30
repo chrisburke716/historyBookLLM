@@ -3,12 +3,12 @@
 import logging
 from typing import TYPE_CHECKING
 
-from ..config.database_config import WeaviateConfig
-from ..repositories.weaviate_repository import WeaviateRepository
+from history_book.database.config.database_config import WeaviateConfig
+from history_book.database.repositories.weaviate_repository import WeaviateRepository
 
 # Use TYPE_CHECKING to avoid circular imports
 if TYPE_CHECKING:
-    from ...data_models.entities import (
+    from history_book.data_models.entities import (
         Chapter,
         ChatMessage,
         ChatSession,
@@ -22,7 +22,7 @@ class BookRepository(WeaviateRepository["Book"]):
     """Repository for book entities."""
 
     def __init__(self, config: WeaviateConfig):
-        from ...data_models.entities import Book
+        from history_book.data_models.entities import Book  # noqa: PLC0415
 
         super().__init__(
             config=config,
@@ -35,7 +35,7 @@ class ChapterRepository(WeaviateRepository["Chapter"]):
     """Repository for chapter entities."""
 
     def __init__(self, config: WeaviateConfig):
-        from ...data_models.entities import Chapter
+        from history_book.data_models.entities import Chapter  # noqa: PLC0415
 
         super().__init__(
             config=config,
@@ -52,7 +52,7 @@ class ParagraphRepository(WeaviateRepository["Paragraph"]):
     """Repository for paragraph entities with vector search capabilities."""
 
     def __init__(self, config: WeaviateConfig):
-        from ...data_models.entities import Paragraph
+        from history_book.data_models.entities import Paragraph  # noqa: PLC0415
 
         super().__init__(
             config=config,
@@ -137,7 +137,7 @@ class ChatSessionRepository(WeaviateRepository["ChatSession"]):
     """Repository for chat session entities."""
 
     def __init__(self, config: WeaviateConfig):
-        from ...data_models.entities import ChatSession
+        from history_book.data_models.entities import ChatSession  # noqa: PLC0415
 
         super().__init__(
             config=config,
@@ -157,7 +157,7 @@ class ChatMessageRepository(WeaviateRepository["ChatMessage"]):
     """Repository for chat message entities with vector search capabilities."""
 
     def __init__(self, config: WeaviateConfig):
-        from ...data_models.entities import ChatMessage
+        from history_book.data_models.entities import ChatMessage  # noqa: PLC0415
 
         super().__init__(
             config=config,

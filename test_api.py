@@ -167,7 +167,7 @@ class APITester:
 
                 print(f"   ✅ Retrieved {len(messages)} messages")
 
-                for i, msg in enumerate(messages):
+                for _i, msg in enumerate(messages):
                     role_icon = "👤" if msg["role"] == "user" else "🤖"
                     role_text = msg["role"].capitalize()
                     content_preview = (
@@ -267,18 +267,18 @@ def test_api_models():
 
     try:
         # Test SessionCreateRequest
-        session_req = SessionCreateRequest(title="Test Session")
+        _session_req = SessionCreateRequest(title="Test Session")
         print("   ✅ SessionCreateRequest validates correctly")
 
         # Test MessageRequest
-        message_req = MessageRequest(
+        _message_req = MessageRequest(
             content="Test message", enable_retrieval=True, max_context_paragraphs=5
         )
         print("   ✅ MessageRequest validates correctly")
 
         # Test default values
         message_req_minimal = MessageRequest(content="Minimal test")
-        assert message_req_minimal.enable_retrieval == True  # Default
+        assert message_req_minimal.enable_retrieval  # Default
         assert message_req_minimal.max_context_paragraphs == 5  # Default
         print("   ✅ Default values work correctly")
 
@@ -309,7 +309,7 @@ def run_full_test_suite():
     try:
         requests.get("http://localhost:8000/", timeout=2)
         server_available = True
-    except:
+    except Exception:
         server_available = False
         print("   ❌ Server not accessible at http://localhost:8000")
         print(
@@ -358,4 +358,4 @@ def run_full_test_suite():
 
 if __name__ == "__main__":
     success = run_full_test_suite()
-    exit(0 if success else 1)
+    sys.exit(0 if success else 1)

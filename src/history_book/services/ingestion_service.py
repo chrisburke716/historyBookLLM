@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pymupdf
 
-from ..data_models.entities import Book, Chapter, Paragraph
-from ..database.config import WeaviateConfig
-from ..database.repositories import BookRepositoryManager
-from ..text_processing.text_processing import clean_text
+from history_book.data_models.entities import Book, Chapter, Paragraph
+from history_book.database.config import WeaviateConfig
+from history_book.database.repositories import BookRepositoryManager
+from history_book.text_processing.text_processing import clean_text
 
 logger = logging.getLogger(__name__)
 

@@ -15,7 +15,7 @@ from .providers import MockLLMProvider
 
 # Try to import LangChain provider if available
 try:
-    from .providers import LangChainProvider
+    from .providers import LangChainProvider  # noqa: F401
 
     langchain_available = True
 except ImportError:

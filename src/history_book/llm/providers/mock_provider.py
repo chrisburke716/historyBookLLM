@@ -4,12 +4,10 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
-from ...data_models.entities import ChatMessage, MessageRole
-from ..config import LLMConfig
-from ..interfaces.llm_interface import LLMInterface
-from ..utils import (
-    estimate_token_count,
-)
+from history_book.data_models.entities import ChatMessage, MessageRole
+from history_book.llm.config import LLMConfig
+from history_book.llm.interfaces.llm_interface import LLMInterface
+from history_book.llm.utils import estimate_token_count
 
 
 class MockLLMProvider(LLMInterface):
