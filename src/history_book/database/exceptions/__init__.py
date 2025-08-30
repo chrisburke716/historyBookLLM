@@ -1,15 +1,15 @@
 """Database exceptions module."""
 
 from .database_exceptions import (
-    DatabaseError,
-    ConnectionError,
+    BatchOperationError,
     CollectionError,
+    ConfigurationError,
+    ConnectionError,
+    DatabaseError,
     EntityNotFoundError,
+    QueryError,
     ValidationError,
     VectorError,
-    ConfigurationError,
-    QueryError,
-    BatchOperationError,
 )
 
 __all__ = [

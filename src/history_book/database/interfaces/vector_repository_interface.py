@@ -1,7 +1,8 @@
 """Vector repository interface for vector database operations."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
+
 from .repository_interface import BaseRepository, T
 
 
@@ -16,12 +17,12 @@ class VectorRepository(BaseRepository[T], ABC):
     @abstractmethod
     def similarity_search(
         self,
-        query_vector: List[float],
+        query_vector: list[float],
         limit: int = 10,
-        threshold: Optional[float] = None,
-        where_filter: Optional[Dict[str, Any]] = None,
+        threshold: float | None = None,
+        where_filter: dict[str, Any] | None = None,
         **kwargs,
-    ) -> List[Tuple[T, float]]:
+    ) -> list[tuple[T, float]]:
         """
         Perform similarity search using a query vector.
 
@@ -42,10 +43,10 @@ class VectorRepository(BaseRepository[T], ABC):
         self,
         query_text: str,
         limit: int = 10,
-        threshold: Optional[float] = None,
-        where_filter: Optional[Dict[str, Any]] = None,
+        threshold: float | None = None,
+        where_filter: dict[str, Any] | None = None,
         **kwargs,
-    ) -> List[Tuple[T, float]]:
+    ) -> list[tuple[T, float]]:
         """
         Perform similarity search using text query.
 
@@ -63,7 +64,7 @@ class VectorRepository(BaseRepository[T], ABC):
 
     @abstractmethod
     def create_with_vector(
-        self, entity: T, vector: Optional[List[float]] = None, **kwargs
+        self, entity: T, vector: list[float] | None = None, **kwargs
     ) -> str:
         """
         Create an entity with an associated vector.
@@ -79,7 +80,7 @@ class VectorRepository(BaseRepository[T], ABC):
         pass
 
     @abstractmethod
-    def update_vector(self, entity_id: str, vector: List[float], **kwargs) -> bool:
+    def update_vector(self, entity_id: str, vector: list[float], **kwargs) -> bool:
         """
         Update the vector for an existing entity.
 
@@ -94,7 +95,7 @@ class VectorRepository(BaseRepository[T], ABC):
         pass
 
     @abstractmethod
-    def get_vector(self, entity_id: str, **kwargs) -> Optional[List[float]]:
+    def get_vector(self, entity_id: str, **kwargs) -> list[float] | None:
         """
         Retrieve the vector for an entity.
 
@@ -109,8 +110,8 @@ class VectorRepository(BaseRepository[T], ABC):
 
     @abstractmethod
     def batch_create_with_vectors(
-        self, entities_and_vectors: List[Tuple[T, Optional[List[float]]]], **kwargs
-    ) -> List[str]:
+        self, entities_and_vectors: list[tuple[T, list[float] | None]], **kwargs
+    ) -> list[str]:
         """
         Create multiple entities with their vectors in a batch operation.
 
@@ -127,11 +128,11 @@ class VectorRepository(BaseRepository[T], ABC):
     def hybrid_search(
         self,
         query_text: str,
-        query_vector: Optional[List[float]] = None,
+        query_vector: list[float] | None = None,
         alpha: float = 0.5,
         limit: int = 10,
         **kwargs,
-    ) -> List[Tuple[T, float]]:
+    ) -> list[tuple[T, float]]:
         """
         Perform hybrid search combining text and vector search.
 

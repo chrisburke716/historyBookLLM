@@ -1,14 +1,14 @@
 """Pydantic models for API requests and responses."""
 
 from datetime import datetime
-from typing import List, Optional
+
 from pydantic import BaseModel
 
 
 class SessionCreateRequest(BaseModel):
     """Request to create a new chat session."""
 
-    title: Optional[str] = None
+    title: str | None = None
 
 
 class MessageRequest(BaseModel):
@@ -23,7 +23,7 @@ class SessionResponse(BaseModel):
     """Response containing chat session information."""
 
     id: str
-    title: Optional[str]
+    title: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -36,19 +36,19 @@ class MessageResponse(BaseModel):
     role: str  # "user" or "assistant"
     timestamp: datetime
     session_id: str
-    citations: Optional[List[str]] = None  # Simple page references like "Page 123"
+    citations: list[str] | None = None  # Simple page references like "Page 123"
 
 
 class SessionListResponse(BaseModel):
     """Response containing a list of recent sessions."""
 
-    sessions: List[SessionResponse]
+    sessions: list[SessionResponse]
 
 
 class MessageListResponse(BaseModel):
     """Response containing a list of messages for a session."""
 
-    messages: List[MessageResponse]
+    messages: list[MessageResponse]
 
 
 class ChatResponse(BaseModel):

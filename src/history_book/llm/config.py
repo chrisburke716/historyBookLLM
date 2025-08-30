@@ -1,8 +1,8 @@
 """LLM configuration management."""
 
 import os
-from typing import Dict, Any
 from dataclasses import dataclass, field
+from typing import Any
 
 DEFAULT_MODEL_NAME = "gpt-4o-mini"
 
@@ -34,7 +34,7 @@ class LLMConfig:
     max_conversation_length: int = 20  # Max messages to include in history
 
     # Provider-specific settings
-    provider_kwargs: Dict[str, Any] = field(default_factory=dict)
+    provider_kwargs: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_environment(cls, provider: str | None = None) -> "LLMConfig":

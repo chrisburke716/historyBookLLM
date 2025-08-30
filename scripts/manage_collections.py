@@ -7,6 +7,7 @@ Use this when you need to reset collections or ensure they have the correct sche
 """
 
 import logging
+
 from history_book.database.config import WeaviateConfig
 from history_book.database.repositories import BookRepositoryManager
 

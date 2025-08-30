@@ -1,9 +1,8 @@
 """Full integration test for frontend + backend chat functionality."""
 
-import requests
-import time
-import json
 import sys
+
+import requests
 
 
 def test_backend_api():
@@ -170,11 +169,11 @@ def main():
     print(f"   🔗 CORS Setup:       {'✅ PASS' if cors_ok else '❌ FAIL'}")
 
     if backend_ok and frontend_ok:
-        print(f"\n🎉 INTEGRATION TEST: ✅ PASS")
+        print("\n🎉 INTEGRATION TEST: ✅ PASS")
         summarize_setup()
         return True
     else:
-        print(f"\n⚠️  INTEGRATION TEST: ❌ FAIL")
+        print("\n⚠️  INTEGRATION TEST: ❌ FAIL")
         print("\n💡 Make sure both servers are running:")
         print(
             "   Backend: PYTHONPATH=src poetry run uvicorn src.history_book.api.main:app --reload --port 8000"

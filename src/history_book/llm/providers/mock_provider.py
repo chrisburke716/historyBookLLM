@@ -1,15 +1,15 @@
 """Mock LLM provider for testing purposes."""
 
 import asyncio
-from typing import List, Any, AsyncIterator
-from ..interfaces.llm_interface import LLMInterface
+from collections.abc import AsyncIterator
+from typing import Any
+
+from ...data_models.entities import ChatMessage, MessageRole
 from ..config import LLMConfig
+from ..interfaces.llm_interface import LLMInterface
 from ..utils import (
-    format_messages_for_llm,
-    format_context_for_llm,
     estimate_token_count,
 )
-from ...data_models.entities import ChatMessage, MessageRole
 
 
 class MockLLMProvider(LLMInterface):
@@ -26,7 +26,7 @@ class MockLLMProvider(LLMInterface):
         self.response_delay = 0.1  # Simulate response time
 
     async def generate_response(
-        self, messages: List[ChatMessage], context: str | None = None, **kwargs: Any
+        self, messages: list[ChatMessage], context: str | None = None, **kwargs: Any
     ) -> str:
         """Generate a mock response."""
         # Simulate processing time
@@ -55,7 +55,7 @@ class MockLLMProvider(LLMInterface):
         return response
 
     async def generate_stream_response(
-        self, messages: List[ChatMessage], context: str | None = None, **kwargs: Any
+        self, messages: list[ChatMessage], context: str | None = None, **kwargs: Any
     ) -> AsyncIterator[str]:
         """Generate a mock streaming response."""
         response = await self.generate_response(messages, context, **kwargs)
@@ -76,7 +76,7 @@ class MockLLMProvider(LLMInterface):
         """Count tokens using estimation."""
         return estimate_token_count(text)
 
-    def validate_messages(self, messages: List[ChatMessage]) -> bool:
+    def validate_messages(self, messages: list[ChatMessage]) -> bool:
         """Validate message format."""
         if not messages:
             return False

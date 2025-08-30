@@ -1,19 +1,19 @@
 """Chat API routes."""
 
-from fastapi import APIRouter, HTTPException, Depends
-from typing import List
 import logging
 
+from fastapi import APIRouter, Depends, HTTPException
+
+from ...data_models.entities import ChatMessage, ChatSession
 from ...services.chat_service import ChatService
-from ...data_models.entities import ChatSession, ChatMessage
 from ..models.api_models import (
-    SessionCreateRequest,
-    MessageRequest,
-    SessionResponse,
-    MessageResponse,
-    SessionListResponse,
-    MessageListResponse,
     ChatResponse,
+    MessageListResponse,
+    MessageRequest,
+    MessageResponse,
+    SessionCreateRequest,
+    SessionListResponse,
+    SessionResponse,
 )
 
 logger = logging.getLogger(__name__)

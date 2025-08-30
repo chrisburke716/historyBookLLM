@@ -1,8 +1,8 @@
 # import weaviate
 
-from history_book.database.config.database_config import WeaviateConfig
-
 import weaviate
+
+from history_book.database.config.database_config import WeaviateConfig
 
 print("WARNING: This script will delete all collections in the Weaviate database.")
 print("do you want to continue? (yes/no)")

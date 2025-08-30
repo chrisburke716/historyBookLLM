@@ -6,9 +6,10 @@ This script helps set up and validate configuration for testing the new ingestio
 on a separate test Weaviate instance to avoid affecting your production data.
 """
 
-import os
 import logging
-from history_book.database.config import WeaviateConfig, DatabaseEnvironment
+import os
+
+from history_book.database.config import DatabaseEnvironment, WeaviateConfig
 from history_book.database.repositories.weaviate_repository import WeaviateRepository
 
 # Set up logging

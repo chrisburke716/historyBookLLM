@@ -6,9 +6,10 @@ This script helps set up and validate configuration for the development environm
 so you can easily switch between development and test environments.
 """
 
-import os
 import logging
-from history_book.database.config import WeaviateConfig, DatabaseEnvironment
+import os
+
+from history_book.database.config import DatabaseEnvironment, WeaviateConfig
 from history_book.database.repositories.weaviate_repository import WeaviateRepository
 
 # Set up logging

@@ -1,7 +1,8 @@
 """Abstract interface for LLM operations."""
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import Any
+
 from ...data_models.entities import ChatMessage
 
 
@@ -10,7 +11,7 @@ class LLMInterface(ABC):
 
     @abstractmethod
     async def generate_response(
-        self, messages: List[ChatMessage], context: str | None = None, **kwargs: Any
+        self, messages: list[ChatMessage], context: str | None = None, **kwargs: Any
     ) -> str:
         """
         Generate a response based on chat history and optional context.
@@ -30,7 +31,7 @@ class LLMInterface(ABC):
 
     @abstractmethod
     async def generate_stream_response(
-        self, messages: List[ChatMessage], context: str | None = None, **kwargs: Any
+        self, messages: list[ChatMessage], context: str | None = None, **kwargs: Any
     ) -> Any:  # AsyncIterator[str] - but avoiding complex typing for now
         """
         Generate a streaming response based on chat history and optional context.
@@ -62,7 +63,7 @@ class LLMInterface(ABC):
         pass
 
     @abstractmethod
-    def validate_messages(self, messages: List[ChatMessage]) -> bool:
+    def validate_messages(self, messages: list[ChatMessage]) -> bool:
         """
         Validate that the message list is compatible with this LLM provider.
 

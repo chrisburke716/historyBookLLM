@@ -11,6 +11,7 @@ If you need to delete the collections, use the `manage_collections.py` script.
 
 import logging
 import os
+
 from history_book.database.config import WeaviateConfig
 from history_book.database.repositories import BookRepositoryManager
 

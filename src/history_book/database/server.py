@@ -1,6 +1,7 @@
-import weaviate
 import logging
-from typing import Optional
+
+import weaviate
+
 from .config.database_config import WeaviateConfig
 
 logger = logging.getLogger(__name__)
@@ -9,7 +10,7 @@ _client = None
 _config = None
 
 
-def get_client(config: Optional[WeaviateConfig] = None) -> weaviate.WeaviateClient:
+def get_client(config: WeaviateConfig | None = None) -> weaviate.WeaviateClient:
     """
     Create and return a Weaviate client instance.
 
@@ -69,6 +70,6 @@ def close_client():
             _config = None
 
 
-def get_config() -> Optional[WeaviateConfig]:
+def get_config() -> WeaviateConfig | None:
     """Get the current configuration."""
     return _config

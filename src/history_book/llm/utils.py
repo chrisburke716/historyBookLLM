@@ -1,14 +1,14 @@
 """Utility functions for LLM operations."""
 
-from typing import List
+
 from ..data_models.entities import ChatMessage, MessageRole
 
 
 def format_messages_for_llm(
-    messages: List[ChatMessage],
+    messages: list[ChatMessage],
     system_message: str | None = None,
     max_messages: int | None = None,
-) -> List[ChatMessage]:
+) -> list[ChatMessage]:
     """
     Format chat messages for LLM consumption.
 

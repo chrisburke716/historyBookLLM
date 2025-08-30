@@ -1,7 +1,7 @@
 """Base repository interface for database operations."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, TypeVar, Generic
+from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -30,7 +30,7 @@ class BaseRepository(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    def get_by_id(self, entity_id: str, **kwargs) -> Optional[T]:
+    def get_by_id(self, entity_id: str, **kwargs) -> T | None:
         """
         Retrieve an entity by its ID.
 
@@ -44,7 +44,7 @@ class BaseRepository(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    def update(self, entity_id: str, updates: Dict[str, Any], **kwargs) -> bool:
+    def update(self, entity_id: str, updates: dict[str, Any], **kwargs) -> bool:
         """
         Update an existing entity.
 
@@ -74,8 +74,8 @@ class BaseRepository(ABC, Generic[T]):
 
     @abstractmethod
     def list_all(
-        self, limit: Optional[int] = None, offset: Optional[int] = None, **kwargs
-    ) -> List[T]:
+        self, limit: int | None = None, offset: int | None = None, **kwargs
+    ) -> list[T]:
         """
         List all entities with optional pagination.
 
@@ -117,7 +117,7 @@ class BaseRepository(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    def find_by_criteria(self, criteria: Dict[str, Any], **kwargs) -> List[T]:
+    def find_by_criteria(self, criteria: dict[str, Any], **kwargs) -> list[T]:
         """
         Find entities matching specific criteria.
 

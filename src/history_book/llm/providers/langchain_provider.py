@@ -1,23 +1,25 @@
 """LangChain implementation of LLM interface."""
 
 import logging
-from typing import List, Dict, Any, AsyncIterator
-from ..interfaces.llm_interface import LLMInterface
+from collections.abc import AsyncIterator
+from typing import Any
+
+from ...data_models.entities import ChatMessage, MessageRole
 from ..config import LLMConfig
 from ..exceptions import (
-    LLMError,
     LLMConnectionError,
+    LLMError,
     LLMRateLimitError,
+    LLMResponseError,
     LLMTokenLimitError,
     LLMValidationError,
-    LLMResponseError,
 )
+from ..interfaces.llm_interface import LLMInterface
 from ..utils import (
-    format_messages_for_llm,
-    format_context_for_llm,
     estimate_token_count,
+    format_context_for_llm,
+    format_messages_for_llm,
 )
-from ...data_models.entities import ChatMessage, MessageRole
 
 logger = logging.getLogger(__name__)
 
@@ -96,10 +98,10 @@ class LangChainProvider(LLMInterface):
         return self._create_llm()
 
     def _convert_to_langchain_messages(
-        self, messages: List[ChatMessage], context: str | None = None
+        self, messages: list[ChatMessage], context: str | None = None
     ):
         """Convert ChatMessage objects to LangChain message format."""
-        from langchain.schema import HumanMessage, AIMessage, SystemMessage
+        from langchain.schema import AIMessage, HumanMessage, SystemMessage
 
         # Format messages for LLM
         formatted_messages = format_messages_for_llm(
@@ -137,7 +139,7 @@ class LangChainProvider(LLMInterface):
         return lc_messages
 
     async def generate_response(
-        self, messages: List[ChatMessage], context: str | None = None, **kwargs: Any
+        self, messages: list[ChatMessage], context: str | None = None, **kwargs: Any
     ) -> str:
         """Generate a response using LangChain."""
         try:
@@ -168,7 +170,7 @@ class LangChainProvider(LLMInterface):
                 raise LLMError(f"Generation failed: {e}")
 
     async def generate_stream_response(
-        self, messages: List[ChatMessage], context: str | None = None, **kwargs: Any
+        self, messages: list[ChatMessage], context: str | None = None, **kwargs: Any
     ) -> AsyncIterator[str]:
         """Generate a streaming response using LangChain."""
         try:
@@ -208,7 +210,7 @@ class LangChainProvider(LLMInterface):
             # Fall back to estimation if anything goes wrong
             return estimate_token_count(text)
 
-    def validate_messages(self, messages: List[ChatMessage]) -> bool:
+    def validate_messages(self, messages: list[ChatMessage]) -> bool:
         """Validate message format and content."""
         if not messages:
             return False
