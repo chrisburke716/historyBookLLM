@@ -2,10 +2,9 @@
 
 import asyncio
 import logging
-from typing import List
 
+from src.history_book.llm import LangChainProvider, LLMConfig, MockLLMProvider
 from src.history_book.services import ChatService
-from src.history_book.llm import MockLLMProvider, LLMConfig, LangChainProvider
 
 # Configure logging - suppress external modules, show only history_book
 logging.basicConfig(
@@ -58,7 +57,7 @@ async def demonstrate_chat_service():
                 print(f"   📚 Context paragraphs: {len(response.retrieved_paragraphs)}")
 
         # 3. Demonstrate streaming response
-        print(f"\n🌊 Demonstrating streaming response...")
+        print("\n🌊 Demonstrating streaming response...")
         print("🤔 Question: Tell me more about the Treaty of Versailles")
         print("🤖 Streaming Response: ", end="")
 
@@ -74,7 +73,7 @@ async def demonstrate_chat_service():
         print(f"\n   📊 Streamed {len(chunks)} chunks")
 
         # 4. Review conversation history
-        print(f"\n📜 Conversation history...")
+        print("\n📜 Conversation history...")
         messages = await chat_service.get_session_messages(session.id)
         print(f"   💬 Total messages in session: {len(messages)}")
 
@@ -84,7 +83,7 @@ async def demonstrate_chat_service():
             print(f"   {role_icon} {role_text}: {msg.content[:60]}...")
 
         # 5. Demonstrate session management
-        print(f"\n📁 Session management...")
+        print("\n📁 Session management...")
         recent_sessions = await chat_service.list_recent_sessions(3)
         print(f"   📈 Recent sessions: {len(recent_sessions)}")
 
@@ -93,7 +92,7 @@ async def demonstrate_chat_service():
             print(f"      🕒 Updated: {session_info.updated_at}")
 
         # 6. Demonstrate message search (if implemented)
-        print(f"\n🔍 Message search demonstration...")
+        print("\n🔍 Message search demonstration...")
         search_results = await chat_service.search_messages(
             query="alliance system", session_id=session.id, limit=3
         )
@@ -102,7 +101,7 @@ async def demonstrate_chat_service():
         )
 
         # 7. Show session statistics
-        print(f"\n📊 Session statistics...")
+        print("\n📊 Session statistics...")
         all_messages = await chat_service.get_session_messages(session.id)
         user_messages = [m for m in all_messages if str(m.role) == "user"]
         ai_messages = [m for m in all_messages if str(m.role) == "assistant"]
@@ -121,7 +120,7 @@ async def demonstrate_chat_service():
                 f"   📏 Average AI response length: {avg_response_length:.0f} characters"
             )
 
-        print(f"\n✨ ChatService demonstration completed successfully!")
+        print("\n✨ ChatService demonstration completed successfully!")
 
     except Exception as e:
         logger.error(f"Error during demonstration: {e}")
@@ -129,13 +128,13 @@ async def demonstrate_chat_service():
     finally:
         # Always clean up
         chat_service.close()
-        print(f"\n🧹 ChatService closed and cleaned up")
+        print("\n🧹 ChatService closed and cleaned up")
 
 
 async def demonstrate_error_handling():
     """Demonstrate error handling in ChatService."""
 
-    print(f"\n🚨 Error handling demonstration")
+    print("\n🚨 Error handling demonstration")
     print("-" * 30)
 
     chat_service = ChatService(llm_provider=MockLLMProvider(LLMConfig()))
@@ -174,7 +173,7 @@ if __name__ == "__main__":
     # Run error handling demonstration
     asyncio.run(demonstrate_error_handling())
 
-    print(f"\n🎉 All demonstrations completed!")
+    print("\n🎉 All demonstrations completed!")
     print("\n💡 Next steps:")
     print("   - Install LangChain dependencies for production LLM providers")
     print("   - Load historical documents into the database")
