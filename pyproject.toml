@@ -52,6 +52,7 @@ extend-exclude = [
     "dist",
     "node_modules",
     "venv",
+    "notebooks/*.py" # marimo notebooks
 ]
 
 # Same as Black.
