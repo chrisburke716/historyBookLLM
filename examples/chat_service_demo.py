@@ -77,7 +77,7 @@ async def demonstrate_chat_service():
         messages = await chat_service.get_session_messages(session.id)
         print(f"   💬 Total messages in session: {len(messages)}")
 
-        for i, msg in enumerate(messages[-4:]):  # Show last 4 messages
+        for _i, msg in enumerate(messages[-4:]):  # Show last 4 messages
             role_icon = "🤔" if str(msg.role) == "user" else "🤖"
             role_text = str(msg.role).capitalize()
             print(f"   {role_icon} {role_text}: {msg.content[:60]}...")

@@ -46,7 +46,7 @@ class ChatService:
             # Try to use LangChain provider, fall back to mock
             # TODO: do we want to set mock here? or just fail?
             try:
-                from ..llm import LangChainProvider # noqa: PLC0415
+                from history_book.llm import LangChainProvider  # noqa: PLC0415
 
                 self.llm_provider = LangChainProvider(llm_config)
                 logger.info("Using LangChain provider for LLM")

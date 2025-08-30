@@ -1,6 +1,5 @@
 """Utility functions for LLM operations."""
 
-
 from history_book.data_models.entities import ChatMessage, MessageRole
 
 

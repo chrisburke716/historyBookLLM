@@ -55,7 +55,7 @@ def validate_test_connection(config: WeaviateConfig) -> bool:
 
     try:
         # Try to create a basic repository to test connection
-        from history_book.data_models.entities import Book
+        from history_book.data_models.entities import Book  # noqa: PLC0415
 
         test_repo = WeaviateRepository(
             config=config, collection_name="TestBooks", entity_class=Book

@@ -1,7 +1,6 @@
 """Custom exceptions for database operations."""
 
 
-
 class DatabaseError(Exception):
     """Base exception for all database-related errors."""
 

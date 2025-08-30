@@ -14,6 +14,7 @@ from .interfaces import LLMInterface
 from .providers import MockLLMProvider
 
 # Try to import LangChain provider if available
+# TODO: why wouldn't this be available? Should we make it a hard dependency?
 try:
     from .providers import LangChainProvider  # noqa: F401
 

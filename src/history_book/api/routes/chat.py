@@ -84,7 +84,7 @@ async def create_session(
         return convert_session_to_response(session)
     except Exception as e:
         logger.error(f"Failed to create session: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create session")
+        raise HTTPException(status_code=500, detail="Failed to create session") from e
 
 
 @router.get("/sessions", response_model=SessionListResponse)
@@ -98,7 +98,9 @@ async def get_sessions(
         return SessionListResponse(sessions=session_responses)
     except Exception as e:
         logger.error(f"Failed to get sessions: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve sessions")
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve sessions"
+        ) from e
 
 
 @router.get("/sessions/{session_id}/messages", response_model=MessageListResponse)
@@ -114,7 +116,9 @@ async def get_session_messages(
         return MessageListResponse(messages=message_responses)
     except Exception as e:
         logger.error(f"Failed to get messages for session {session_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve messages")
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve messages"
+        ) from e
 
 
 @router.post("/sessions/{session_id}/messages", response_model=ChatResponse)
@@ -145,4 +149,4 @@ async def send_message(
         raise
     except Exception as e:
         logger.error(f"Failed to send message: {e}")
-        raise HTTPException(status_code=500, detail="Failed to send message")
+        raise HTTPException(status_code=500, detail="Failed to send message") from e
