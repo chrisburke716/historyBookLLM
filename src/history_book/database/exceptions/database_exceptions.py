@@ -1,12 +1,10 @@
 """Custom exceptions for database operations."""
 
-from typing import Optional
-
 
 class DatabaseError(Exception):
     """Base exception for all database-related errors."""
 
-    def __init__(self, message: str, original_error: Optional[Exception] = None):
+    def __init__(self, message: str, original_error: Exception | None = None):
         super().__init__(message)
         self.original_error = original_error
 
@@ -26,7 +24,7 @@ class CollectionError(DatabaseError):
 class EntityNotFoundError(DatabaseError):
     """Raised when a requested entity is not found."""
 
-    def __init__(self, entity_id: str, entity_type: Optional[str] = None):
+    def __init__(self, entity_id: str, entity_type: str | None = None):
         self.entity_id = entity_id
         self.entity_type = entity_type
         message = f"Entity with ID '{entity_id}' not found"
@@ -65,8 +63,8 @@ class BatchOperationError(DatabaseError):
     def __init__(
         self,
         message: str,
-        failed_items: Optional[list] = None,
-        original_error: Optional[Exception] = None,
+        failed_items: list | None = None,
+        original_error: Exception | None = None,
     ):
         super().__init__(message, original_error)
         self.failed_items = failed_items or []

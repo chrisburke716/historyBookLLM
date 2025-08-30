@@ -1,9 +1,9 @@
 """Full integration test for frontend + backend chat functionality."""
 
-import requests
-import time
-import json
 import sys
+from http import HTTPStatus
+
+import requests
 
 
 def test_backend_api():
@@ -13,7 +13,7 @@ def test_backend_api():
     try:
         # Test health check
         response = requests.get("http://localhost:8000/", timeout=5)
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         print("   ✅ Backend health check passed")
 
         # Test create session
@@ -22,7 +22,7 @@ def test_backend_api():
             json={"title": "Integration Test"},
             timeout=5,
         )
-        assert session_response.status_code == 200
+        assert session_response.status_code == HTTPStatus.OK
         session_id = session_response.json()["id"]
         print(f"   ✅ Session created: {session_id[:8]}...")
 
@@ -36,7 +36,7 @@ def test_backend_api():
             },
             timeout=30,
         )
-        assert message_response.status_code == 200
+        assert message_response.status_code == HTTPStatus.OK
         ai_message = message_response.json()["message"]
         print(f"   ✅ AI response received: {len(ai_message['content'])} chars")
         print(f"   📚 Citations: {ai_message.get('citations', [])}")
@@ -54,7 +54,7 @@ def test_frontend_availability():
 
     try:
         response = requests.get("http://localhost:3000", timeout=5)
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         assert "History Book Chat" in response.text or "React App" in response.text
         print("   ✅ Frontend is accessible")
         return True
@@ -170,11 +170,11 @@ def main():
     print(f"   🔗 CORS Setup:       {'✅ PASS' if cors_ok else '❌ FAIL'}")
 
     if backend_ok and frontend_ok:
-        print(f"\n🎉 INTEGRATION TEST: ✅ PASS")
+        print("\n🎉 INTEGRATION TEST: ✅ PASS")
         summarize_setup()
         return True
     else:
-        print(f"\n⚠️  INTEGRATION TEST: ❌ FAIL")
+        print("\n⚠️  INTEGRATION TEST: ❌ FAIL")
         print("\n💡 Make sure both servers are running:")
         print(
             "   Backend: PYTHONPATH=src poetry run uvicorn src.history_book.api.main:app --reload --port 8000"

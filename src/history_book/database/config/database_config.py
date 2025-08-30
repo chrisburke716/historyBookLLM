@@ -2,7 +2,6 @@
 
 import os
 from dataclasses import dataclass
-from typing import Optional
 from enum import Enum
 
 
@@ -22,8 +21,8 @@ class WeaviateConfig:
     port: int = 8080
     grpc_port: int = 50051
     scheme: str = "http"
-    api_key: Optional[str] = None
-    openai_api_key: Optional[str] = None
+    api_key: str | None = None
+    openai_api_key: str | None = None
     timeout: int = 30
     environment: DatabaseEnvironment = DatabaseEnvironment.PRODUCTION
 

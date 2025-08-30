@@ -1,24 +1,21 @@
 """Comprehensive test suite for the History Book Chat API."""
 
 import asyncio
-import requests
-import json
-import time
-import sys
 import os
-from typing import Optional
+import sys
+import time
+
+import requests
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
-from src.history_book.services.chat_service import ChatService
-from src.history_book.llm import MockLLMProvider, LLMConfig
 from src.history_book.api.models.api_models import (
-    SessionCreateRequest,
     MessageRequest,
-    SessionResponse,
-    MessageResponse,
+    SessionCreateRequest,
 )
+from src.history_book.llm import LLMConfig, MockLLMProvider
+from src.history_book.services.chat_service import ChatService
 
 
 class APITester:
@@ -26,7 +23,7 @@ class APITester:
 
     def __init__(self, base_url: str = "http://localhost:8000"):
         self.base_url = base_url
-        self.session_id: Optional[str] = None
+        self.session_id: str | None = None
 
     def test_health_check(self) -> bool:
         """Test the health check endpoint."""
@@ -134,7 +131,7 @@ class APITester:
                         cite.startswith("Page ") for cite in message["citations"]
                     )
                     if citation_format_ok:
-                        print(f"   ✅ Citation format correct")
+                        print("   ✅ Citation format correct")
                     else:
                         print(
                             f"   ⚠️  Citation format unexpected: {message['citations']}"
@@ -170,7 +167,7 @@ class APITester:
 
                 print(f"   ✅ Retrieved {len(messages)} messages")
 
-                for i, msg in enumerate(messages):
+                for _i, msg in enumerate(messages):
                     role_icon = "👤" if msg["role"] == "user" else "🤖"
                     role_text = msg["role"].capitalize()
                     content_preview = (
@@ -251,7 +248,7 @@ async def test_chat_service_direct():
             max_context_paragraphs=2,
         )
 
-        print(f"   ✅ Backend ChatService working")
+        print("   ✅ Backend ChatService working")
         print(f"   📝 Mock response length: {len(response.content)} chars")
         print(f"   📚 Retrieved {len(response.retrieved_paragraphs or [])} paragraphs")
 
@@ -270,20 +267,20 @@ def test_api_models():
 
     try:
         # Test SessionCreateRequest
-        session_req = SessionCreateRequest(title="Test Session")
-        print(f"   ✅ SessionCreateRequest validates correctly")
+        _session_req = SessionCreateRequest(title="Test Session")
+        print("   ✅ SessionCreateRequest validates correctly")
 
         # Test MessageRequest
-        message_req = MessageRequest(
+        _message_req = MessageRequest(
             content="Test message", enable_retrieval=True, max_context_paragraphs=5
         )
-        print(f"   ✅ MessageRequest validates correctly")
+        print("   ✅ MessageRequest validates correctly")
 
         # Test default values
         message_req_minimal = MessageRequest(content="Minimal test")
-        assert message_req_minimal.enable_retrieval == True  # Default
+        assert message_req_minimal.enable_retrieval  # Default
         assert message_req_minimal.max_context_paragraphs == 5  # Default
-        print(f"   ✅ Default values work correctly")
+        print("   ✅ Default values work correctly")
 
         return True
 
@@ -312,7 +309,7 @@ def run_full_test_suite():
     try:
         requests.get("http://localhost:8000/", timeout=2)
         server_available = True
-    except:
+    except Exception:
         server_available = False
         print("   ❌ Server not accessible at http://localhost:8000")
         print(
@@ -345,7 +342,7 @@ def run_full_test_suite():
             f"🌐 API Endpoints:     {'✅ PASS' if all(api_tests_passed) else '❌ FAIL'} ({passed_count}/{total_count})"
         )
     else:
-        print(f"🌐 API Endpoints:     ⏸️  SKIPPED (server not running)")
+        print("🌐 API Endpoints:     ⏸️  SKIPPED (server not running)")
 
     overall_success = (
         models_ok and backend_ok and (not server_available or all(api_tests_passed))
@@ -361,4 +358,4 @@ def run_full_test_suite():
 
 if __name__ == "__main__":
     success = run_full_test_suite()
-    exit(0 if success else 1)
+    sys.exit(0 if success else 1)

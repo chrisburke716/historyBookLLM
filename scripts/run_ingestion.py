@@ -12,8 +12,9 @@ This script demonstrates the new clean architecture:
 import logging
 import os
 from pathlib import Path
-from history_book.services import IngestionService
+
 from history_book.database.config import WeaviateConfig
+from history_book.services import IngestionService
 
 # Set up logging
 logging.basicConfig(

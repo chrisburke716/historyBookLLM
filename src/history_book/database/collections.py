@@ -1,17 +1,15 @@
 # from weaviate.classes.config import DataType
-from typing import Optional
+
 from pydantic import BaseModel
-from weaviate.collections.collection.sync import Collection
-
-from weaviate.classes.config import Configure, Property, DataType
 from pydantic.fields import FieldInfo
-
 from weaviate import WeaviateClient
+from weaviate.classes.config import Configure, DataType, Property
+from weaviate.collections.collection.sync import Collection
 
 
 def pydantic_field_to_weaviate_property(
     field_name: str, field_info: FieldInfo
-) -> Optional[Property]:
+) -> Property | None:
     # Ignore internal fields like embeddings or anything you don't want in schema
     if field_name == "embedding":
         return None

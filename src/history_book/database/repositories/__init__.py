@@ -1,14 +1,14 @@
 """Repository implementations."""
 
-from .weaviate_repository import WeaviateRepository
 from .book_repository import (
     BookRepository,
-    ChapterRepository,
-    ParagraphRepository,
-    ChatSessionRepository,
-    ChatMessageRepository,
     BookRepositoryManager,
+    ChapterRepository,
+    ChatMessageRepository,
+    ChatSessionRepository,
+    ParagraphRepository,
 )
+from .weaviate_repository import WeaviateRepository
 
 __all__ = [
     "WeaviateRepository",

@@ -1,23 +1,27 @@
 """LangChain implementation of LLM interface."""
 
 import logging
-from typing import List, Dict, Any, AsyncIterator
-from ..interfaces.llm_interface import LLMInterface
-from ..config import LLMConfig
-from ..exceptions import (
-    LLMError,
+from collections.abc import AsyncIterator
+from typing import Any
+
+from langchain.schema import AIMessage, HumanMessage, SystemMessage
+
+from history_book.data_models.entities import ChatMessage, MessageRole
+from history_book.llm.config import LLMConfig
+from history_book.llm.exceptions import (
     LLMConnectionError,
+    LLMError,
     LLMRateLimitError,
+    LLMResponseError,
     LLMTokenLimitError,
     LLMValidationError,
-    LLMResponseError,
 )
-from ..utils import (
-    format_messages_for_llm,
-    format_context_for_llm,
+from history_book.llm.interfaces.llm_interface import LLMInterface
+from history_book.llm.utils import (
     estimate_token_count,
+    format_context_for_llm,
+    format_messages_for_llm,
 )
-from ...data_models.entities import ChatMessage, MessageRole
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +59,7 @@ class LangChainProvider(LLMInterface):
         """Create the appropriate LLM instance based on configuration."""
         try:
             if self.config.provider == "openai":
-                from langchain_openai import ChatOpenAI
+                from langchain_openai import ChatOpenAI  # noqa: PLC0415
 
                 return ChatOpenAI(
                     model=self.config.model_name,
@@ -69,7 +73,7 @@ class LangChainProvider(LLMInterface):
                     **self.config.provider_kwargs,
                 )
             elif self.config.provider == "anthropic":
-                from langchain_anthropic import ChatAnthropic
+                from langchain_anthropic import ChatAnthropic  # noqa: PLC0415
 
                 return ChatAnthropic(
                     model=self.config.model_name,
@@ -87,19 +91,18 @@ class LangChainProvider(LLMInterface):
         except ImportError as e:
             raise LLMConnectionError(
                 f"Missing dependency for {self.config.provider}: {e}"
-            )
+            ) from e
         except Exception as e:
-            raise LLMConnectionError(f"Failed to create LLM: {e}")
+            raise LLMConnectionError(f"Failed to create LLM: {e}") from e
 
     def _create_chat_model(self):
         """Create chat model (same as LLM for now, but allows for future differentiation)."""
         return self._create_llm()
 
     def _convert_to_langchain_messages(
-        self, messages: List[ChatMessage], context: str | None = None
+        self, messages: list[ChatMessage], context: str | None = None
     ):
         """Convert ChatMessage objects to LangChain message format."""
-        from langchain.schema import HumanMessage, AIMessage, SystemMessage
 
         # Format messages for LLM
         formatted_messages = format_messages_for_llm(
@@ -137,7 +140,7 @@ class LangChainProvider(LLMInterface):
         return lc_messages
 
     async def generate_response(
-        self, messages: List[ChatMessage], context: str | None = None, **kwargs: Any
+        self, messages: list[ChatMessage], context: str | None = None, **kwargs: Any
     ) -> str:
         """Generate a response using LangChain."""
         try:
@@ -159,16 +162,16 @@ class LangChainProvider(LLMInterface):
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")
             if "rate limit" in str(e).lower():
-                raise LLMRateLimitError(f"Rate limit exceeded: {e}")
+                raise LLMRateLimitError(f"Rate limit exceeded: {e}") from e
             elif "token" in str(e).lower() and "limit" in str(e).lower():
-                raise LLMTokenLimitError(f"Token limit exceeded: {e}")
-            elif isinstance(e, (LLMError,)):
+                raise LLMTokenLimitError(f"Token limit exceeded: {e}") from e
+            elif isinstance(e, LLMError):
                 raise
             else:
-                raise LLMError(f"Generation failed: {e}")
+                raise LLMError(f"Generation failed: {e}") from e
 
     async def generate_stream_response(
-        self, messages: List[ChatMessage], context: str | None = None, **kwargs: Any
+        self, messages: list[ChatMessage], context: str | None = None, **kwargs: Any
     ) -> AsyncIterator[str]:
         """Generate a streaming response using LangChain."""
         try:
@@ -187,13 +190,13 @@ class LangChainProvider(LLMInterface):
         except Exception as e:
             logger.error(f"LLM streaming failed: {e}")
             if "rate limit" in str(e).lower():
-                raise LLMRateLimitError(f"Rate limit exceeded: {e}")
+                raise LLMRateLimitError(f"Rate limit exceeded: {e}") from e
             elif "token" in str(e).lower() and "limit" in str(e).lower():
-                raise LLMTokenLimitError(f"Token limit exceeded: {e}")
-            elif isinstance(e, (LLMError,)):
+                raise LLMTokenLimitError(f"Token limit exceeded: {e}") from e
+            elif isinstance(e, LLMError):
                 raise
             else:
-                raise LLMError(f"Streaming failed: {e}")
+                raise LLMError(f"Streaming failed: {e}") from e
 
     def count_tokens(self, text: str) -> int:
         """Count tokens using LangChain's tokenizer if available, otherwise estimate."""
@@ -208,7 +211,7 @@ class LangChainProvider(LLMInterface):
             # Fall back to estimation if anything goes wrong
             return estimate_token_count(text)
 
-    def validate_messages(self, messages: List[ChatMessage]) -> bool:
+    def validate_messages(self, messages: list[ChatMessage]) -> bool:
         """Validate message format and content."""
         if not messages:
             return False

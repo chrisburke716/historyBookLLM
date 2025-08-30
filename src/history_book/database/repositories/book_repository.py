@@ -1,18 +1,18 @@
 """Book-specific repository implementation."""
 
 import logging
-from typing import List, Tuple, TYPE_CHECKING
-from ..repositories.weaviate_repository import WeaviateRepository
-from ..config.database_config import WeaviateConfig
+from typing import TYPE_CHECKING
+
+from history_book.database.config.database_config import WeaviateConfig
+from history_book.database.repositories.weaviate_repository import WeaviateRepository
 
 # Use TYPE_CHECKING to avoid circular imports
 if TYPE_CHECKING:
-    from ...data_models.entities import (
-        Book,
+    from history_book.data_models.entities import (
         Chapter,
-        Paragraph,
         ChatMessage,
         ChatSession,
+        Paragraph,
     )
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ class BookRepository(WeaviateRepository["Book"]):
     """Repository for book entities."""
 
     def __init__(self, config: WeaviateConfig):
-        from ...data_models.entities import Book
+        from history_book.data_models.entities import Book  # noqa: PLC0415
 
         super().__init__(
             config=config,
@@ -35,7 +35,7 @@ class ChapterRepository(WeaviateRepository["Chapter"]):
     """Repository for chapter entities."""
 
     def __init__(self, config: WeaviateConfig):
-        from ...data_models.entities import Chapter
+        from history_book.data_models.entities import Chapter  # noqa: PLC0415
 
         super().__init__(
             config=config,
@@ -43,7 +43,7 @@ class ChapterRepository(WeaviateRepository["Chapter"]):
             entity_class=Chapter,
         )
 
-    def find_by_book_index(self, book_index: int) -> List["Chapter"]:
+    def find_by_book_index(self, book_index: int) -> list["Chapter"]:
         """Find all chapters for a specific book."""
         return self.find_by_criteria({"book_index": book_index})
 
@@ -52,7 +52,7 @@ class ParagraphRepository(WeaviateRepository["Paragraph"]):
     """Repository for paragraph entities with vector search capabilities."""
 
     def __init__(self, config: WeaviateConfig):
-        from ...data_models.entities import Paragraph
+        from history_book.data_models.entities import Paragraph  # noqa: PLC0415
 
         super().__init__(
             config=config,
@@ -60,13 +60,13 @@ class ParagraphRepository(WeaviateRepository["Paragraph"]):
             entity_class=Paragraph,
         )
 
-    def find_by_book_index(self, book_index: int) -> List["Paragraph"]:
+    def find_by_book_index(self, book_index: int) -> list["Paragraph"]:
         """Find all paragraphs for a specific book."""
         return self.find_by_criteria({"book_index": book_index})
 
     def find_by_chapter_index(
         self, book_index: int, chapter_index: int
-    ) -> List["Paragraph"]:
+    ) -> list["Paragraph"]:
         """Find all paragraphs for a specific chapter."""
         return self.find_by_criteria(
             {"book_index": book_index, "chapter_index": chapter_index}
@@ -78,7 +78,7 @@ class ParagraphRepository(WeaviateRepository["Paragraph"]):
         limit: int = 10,
         book_index: int | None = None,
         threshold: float | None = None,
-    ) -> List[Tuple["Paragraph", float]]:
+    ) -> list[tuple["Paragraph", float]]:
         """
         Search for similar paragraphs using text similarity.
 
@@ -107,7 +107,7 @@ class ParagraphRepository(WeaviateRepository["Paragraph"]):
 
     def search_paragraphs_by_page_range(
         self, start_page: int, end_page: int, book_index: int | None = None
-    ) -> List["Paragraph"]:
+    ) -> list["Paragraph"]:
         """
         Find paragraphs within a specific page range.
 
@@ -137,7 +137,7 @@ class ChatSessionRepository(WeaviateRepository["ChatSession"]):
     """Repository for chat session entities."""
 
     def __init__(self, config: WeaviateConfig):
-        from ...data_models.entities import ChatSession
+        from history_book.data_models.entities import ChatSession  # noqa: PLC0415
 
         super().__init__(
             config=config,
@@ -145,7 +145,7 @@ class ChatSessionRepository(WeaviateRepository["ChatSession"]):
             entity_class=ChatSession,
         )
 
-    def find_recent_sessions(self, limit: int = 10) -> List["ChatSession"]:
+    def find_recent_sessions(self, limit: int = 10) -> list["ChatSession"]:
         """Find the most recently updated chat sessions."""
         # Note: This would need to be implemented in the base WeaviateRepository
         # For now, return all and sort in Python (not optimal for large datasets)
@@ -157,7 +157,7 @@ class ChatMessageRepository(WeaviateRepository["ChatMessage"]):
     """Repository for chat message entities with vector search capabilities."""
 
     def __init__(self, config: WeaviateConfig):
-        from ...data_models.entities import ChatMessage
+        from history_book.data_models.entities import ChatMessage  # noqa: PLC0415
 
         super().__init__(
             config=config,
@@ -165,19 +165,19 @@ class ChatMessageRepository(WeaviateRepository["ChatMessage"]):
             entity_class=ChatMessage,
         )
 
-    def find_by_session(self, session_id: str) -> List["ChatMessage"]:
+    def find_by_session(self, session_id: str) -> list["ChatMessage"]:
         """Find all messages for a specific session, ordered by timestamp."""
         messages = self.find_by_criteria({"session_id": session_id})
         return sorted(messages, key=lambda m: m.timestamp)
 
-    def find_by_role(self, session_id: str, role: str) -> List["ChatMessage"]:
+    def find_by_role(self, session_id: str, role: str) -> list["ChatMessage"]:
         """Find all messages for a specific session and role."""
         messages = self.find_by_criteria({"session_id": session_id, "role": role})
         return sorted(messages, key=lambda m: m.timestamp)
 
     def search_message_content(
         self, query_text: str, session_id: str | None = None, limit: int = 10
-    ) -> List["ChatMessage"]:
+    ) -> list["ChatMessage"]:
         """
         Search for messages by content similarity.
 

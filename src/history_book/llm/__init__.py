@@ -1,21 +1,22 @@
 """LLM abstraction layer for the history book application."""
 
+from . import utils
 from .config import LLMConfig
 from .exceptions import (
-    LLMError,
     LLMConnectionError,
+    LLMError,
     LLMRateLimitError,
+    LLMResponseError,
     LLMTokenLimitError,
     LLMValidationError,
-    LLMResponseError,
 )
 from .interfaces import LLMInterface
 from .providers import MockLLMProvider
-from . import utils
 
 # Try to import LangChain provider if available
+# TODO: why wouldn't this be available? Should we make it a hard dependency?
 try:
-    from .providers import LangChainProvider
+    from .providers import LangChainProvider  # noqa: F401
 
     langchain_available = True
 except ImportError:

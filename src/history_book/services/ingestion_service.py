@@ -1,14 +1,14 @@
 """Service for ingesting book data from PDF files into the vector database."""
 
-from typing import List, Tuple, Optional
 import logging
 from pathlib import Path
+
 import pymupdf
 
-from ..data_models.entities import Book, Chapter, Paragraph
-from ..database.repositories import BookRepositoryManager
-from ..database.config import WeaviateConfig
-from ..text_processing.text_processing import clean_text
+from history_book.data_models.entities import Book, Chapter, Paragraph
+from history_book.database.config import WeaviateConfig
+from history_book.database.repositories import BookRepositoryManager
+from history_book.text_processing.text_processing import clean_text
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class IngestionService:
     """Service for ingesting book data from PDF files into the vector database."""
 
-    def __init__(self, config: Optional[WeaviateConfig] = None):
+    def __init__(self, config: WeaviateConfig | None = None):
         """
         Initialize the ingestion service.
 
@@ -26,7 +26,7 @@ class IngestionService:
         if config is None:
             config = WeaviateConfig.from_environment()
         self.config = config
-        self._repo_manager: Optional[BookRepositoryManager] = None
+        self._repo_manager: BookRepositoryManager | None = None
 
     @property
     def repositories(self) -> BookRepositoryManager:
@@ -108,7 +108,7 @@ class IngestionService:
 
     def ingest_book_from_pdf(
         self, pdf_path: Path, final_page: int = 1699, clear_existing: bool = False
-    ) -> Tuple[List[str], List[str], List[str]]:
+    ) -> tuple[list[str], list[str], list[str]]:
         """
         Ingest a complete book from PDF into the database.
 
@@ -153,7 +153,7 @@ class IngestionService:
             # note: book_index is 1-indexed
             # We account for this in the entity creation
             for book_index, (book_title, chapter_titles) in enumerate(
-                zip(book_titles, chapters_by_book)
+                zip(book_titles, chapters_by_book, strict=False)
             ):
                 book_entity, chapter_entities, paragraph_entities = (
                     self._process_book_to_entities(
@@ -215,7 +215,7 @@ class IngestionService:
 
     def _get_chapter_starts(
         self, doc: pymupdf.Document, final_page: int
-    ) -> List[List[int]]:
+    ) -> list[list[int]]:
         """
         Extract the starting pages of each chapter from the history book.
 
@@ -252,7 +252,7 @@ class IngestionService:
 
     def _get_chapter_titles_from_toc(
         self, doc: pymupdf.Document
-    ) -> Tuple[List[str], List[List[str]]]:
+    ) -> tuple[list[str], list[list[str]]]:
         """
         Extract book and chapter titles from the Table of Contents.
 
@@ -284,9 +284,7 @@ class IngestionService:
         chapter_titles = []
 
         for i, block in enumerate(toc_blocks):
-            if i == 0:
-                continue
-            elif i == 1:
+            if i == 0 or i == 1:
                 continue
             elif i % 3 == 0:
                 text = block[4].strip()
@@ -299,7 +297,7 @@ class IngestionService:
 
         return book_titles, chapters_by_book
 
-    def _combine_blocks(self, blocks: List[List], index1: int, index2: int):
+    def _combine_blocks(self, blocks: list[list], index1: int, index2: int):
         """
         Combine two text blocks into one by concatenating their text.
 
@@ -311,7 +309,7 @@ class IngestionService:
         blocks[index1][4] += " " + blocks[index2][4]  # concatenate text
         del blocks[index2]  # remove the second block
 
-    def _convert_blocks_to_lists(self, blocks: List) -> List[List]:
+    def _convert_blocks_to_lists(self, blocks: list) -> list[list]:
         """
         Convert a list of text blocks from tuples to lists.
 
@@ -323,7 +321,7 @@ class IngestionService:
         """
         return [list(block) for block in blocks]
 
-    def _extract_chapter_titles(self, block: List) -> List[str]:
+    def _extract_chapter_titles(self, block: list) -> list[str]:
         """
         Extract chapter titles from a block of text.
 
@@ -354,8 +352,8 @@ class IngestionService:
         return chapter_titles
 
     def _organize_chapter_titles_by_book(
-        self, chapter_titles: List[str]
-    ) -> List[List[str]]:
+        self, chapter_titles: list[str]
+    ) -> list[list[str]]:
         """
         Group chapter titles by book.
 
@@ -395,9 +393,9 @@ class IngestionService:
         doc: pymupdf.Document,
         book_index: int,
         book_title: str,
-        book_start_pages: List[List[int]],
-        chapter_titles: List[str],
-    ) -> Tuple[Book, List[Chapter], List[Paragraph]]:
+        book_start_pages: list[list[int]],
+        chapter_titles: list[str],
+    ) -> tuple[Book, list[Chapter], list[Paragraph]]:
         """
         Process a book and create pure entity objects (no database operations).
 
@@ -429,7 +427,7 @@ class IngestionService:
         paragraph_entities = []
 
         for i, (chapter_title, chapter_page) in enumerate(
-            zip(chapter_titles, chapter_pages)
+            zip(chapter_titles, chapter_pages, strict=False)
         ):
             chapter_start = chapter_page + 1
             chapter_end = (
@@ -463,7 +461,7 @@ class IngestionService:
         end_page: int,
         chapter_index: int,
         book_index: int,
-    ) -> List[Paragraph]:
+    ) -> list[Paragraph]:
         """
         Extract paragraph entities from a chapter.
 
@@ -490,7 +488,7 @@ class IngestionService:
         # 'Chapter 0' for each book is the introduction
         paragraph_entities = []
         for i, (text_block, page) in enumerate(
-            zip(concatenated_blocks, concatenated_pages)
+            zip(concatenated_blocks, concatenated_pages, strict=False)
         ):
             paragraph = Paragraph(
                 text=text_block,
@@ -506,7 +504,7 @@ class IngestionService:
 
     def _get_chapter_text_blocks(
         self, doc: pymupdf.Document, start_page: int, end_page: int
-    ) -> Tuple[List[str], List[int]]:
+    ) -> tuple[list[str], list[int]]:
         """Extract text blocks from chapter pages."""
         blocks = []
         block_pages = []
@@ -528,8 +526,8 @@ class IngestionService:
         return blocks, block_pages
 
     def _concatenate_paragraphs(
-        self, blocks: List[str], block_pages: List[int]
-    ) -> Tuple[List[str], List[int]]:
+        self, blocks: list[str], block_pages: list[int]
+    ) -> tuple[list[str], list[int]]:
         """
         Concatenate paragraphs that are split across multiple blocks/pages.
 

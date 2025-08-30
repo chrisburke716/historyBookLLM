@@ -1,14 +1,19 @@
 """Chat service for handling conversational interactions with historical documents."""
 
 import logging
-from typing import List, Optional, AsyncIterator
-from datetime import datetime, timezone
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
-from ..data_models.entities import ChatSession, ChatMessage, MessageRole, Paragraph
-from ..database.repositories import BookRepositoryManager
-from ..database.config import WeaviateConfig
-from ..llm import LLMInterface, MockLLMProvider, LLMConfig
-from ..llm.exceptions import LLMError
+from history_book.data_models.entities import (
+    ChatMessage,
+    ChatSession,
+    MessageRole,
+    Paragraph,
+)
+from history_book.database.config import WeaviateConfig
+from history_book.database.repositories import BookRepositoryManager
+from history_book.llm import LLMConfig, LLMInterface, MockLLMProvider
+from history_book.llm.exceptions import LLMError
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +46,7 @@ class ChatService:
             # Try to use LangChain provider, fall back to mock
             # TODO: do we want to set mock here? or just fail?
             try:
-                from ..llm import LangChainProvider
+                from history_book.llm import LangChainProvider  # noqa: PLC0415
 
                 self.llm_provider = LangChainProvider(llm_config)
                 logger.info("Using LangChain provider for LLM")
@@ -90,7 +95,7 @@ class ChatService:
             logger.error(f"Failed to get session {session_id}: {e}")
             return None
 
-    async def list_recent_sessions(self, limit: int = 10) -> List[ChatSession]:
+    async def list_recent_sessions(self, limit: int = 10) -> list[ChatSession]:
         """
         List recent chat sessions.
 
@@ -106,7 +111,7 @@ class ChatService:
             logger.error(f"Failed to list recent sessions: {e}")
             return []
 
-    async def get_session_messages(self, session_id: str) -> List[ChatMessage]:
+    async def get_session_messages(self, session_id: str) -> list[ChatMessage]:
         """
         Get all messages for a session.
 
@@ -279,7 +284,7 @@ class ChatService:
 
     async def _retrieve_context(
         self, query: str, max_paragraphs: int
-    ) -> List[Paragraph]:
+    ) -> list[Paragraph]:
         """
         Retrieve relevant paragraphs for the query.
 
@@ -302,12 +307,11 @@ class ChatService:
                 )
             )
             return [para[0] for para in search_result] if search_result else []
-        #
         except Exception as e:
             logger.warning(f"Failed to retrieve context: {e}")
             return []
 
-    def _format_context(self, paragraphs: List[Paragraph]) -> str | None:
+    def _format_context(self, paragraphs: list[Paragraph]) -> str | None:
         """
         Format retrieved paragraphs as context for the LLM.
 
@@ -338,7 +342,7 @@ class ChatService:
             session = await self.get_session(session_id)
             if session:
                 # Update using dictionary format that the repository expects
-                updates = {"updated_at": datetime.now(timezone.utc)}
+                updates = {"updated_at": datetime.now(UTC)}
                 self.repository_manager.chat_sessions.update(session_id, updates)
         except Exception as e:
             logger.warning(f"Failed to update session timestamp: {e}")
@@ -371,7 +375,7 @@ class ChatService:
 
     async def search_messages(
         self, query: str, session_id: str | None = None, limit: int = 10
-    ) -> List[ChatMessage]:
+    ) -> list[ChatMessage]:
         """
         Search for messages by content.
 

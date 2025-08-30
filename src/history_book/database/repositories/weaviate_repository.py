@@ -1,20 +1,25 @@
 """Weaviate implementation of the vector repository interface."""
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar
-import weaviate
+from typing import Any, TypeVar
+
 from weaviate import WeaviateClient
+from weaviate.classes.query import Filter
 from weaviate.collections import Collection
 
-from ..interfaces.vector_repository_interface import VectorRepository
-from ..config.database_config import WeaviateConfig
-from ..exceptions.database_exceptions import (
-    ConnectionError,
-    CollectionError,
-    VectorError,
-    QueryError,
+from history_book.database import server
+from history_book.database.collections import create_collection_from_pydantic
+from history_book.database.config.database_config import WeaviateConfig
+from history_book.database.exceptions.database_exceptions import (
     BatchOperationError,
+    CollectionError,
+    ConnectionError,
+    QueryError,
     ValidationError,
+    VectorError,
+)
+from history_book.database.interfaces.vector_repository_interface import (
+    VectorRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,8 +44,8 @@ class WeaviateRepository(VectorRepository[T]):
         self,
         config: WeaviateConfig,
         collection_name: str,
-        entity_class: Type[T],
-        client: Optional[WeaviateClient] = None,
+        entity_class: type[T],
+        client: WeaviateClient | None = None,
     ):
         """
         Initialize the Weaviate repository.
@@ -57,27 +62,23 @@ class WeaviateRepository(VectorRepository[T]):
         )  # Weaviate uses capitalized names
         self.entity_class = entity_class
         self._client = client
-        self._collection: Optional[Collection] = None
+        self._collection: Collection | None = None
 
     @property
     def client(self) -> WeaviateClient:
         """Get or create the Weaviate client."""
-        if self._client is None:
+        if self._client is None or not self._client.is_connected():
             try:
-                if self.config.is_local:
-                    self._client = weaviate.connect_to_local(
-                        port=self.config.port, grpc_port=self.config.grpc_port
-                    )
-                else:
-                    # For remote connections, you'd configure differently
-                    # This is a placeholder for future remote connection support
-                    raise NotImplementedError(
-                        "Remote Weaviate connections not yet implemented"
-                    )
+                # If client exists but is not connected, clear it
+                if self._client is not None and not self._client.is_connected():
+                    self._client = None
+                    self._collection = None  # Reset collection reference too
 
-                logger.info(f"Connected to Weaviate at {self.config.connection_string}")
+                self._client = server.get_client(self.config)
             except Exception as e:
-                raise ConnectionError(f"Failed to connect to Weaviate: {str(e)}", e)
+                raise ConnectionError(
+                    f"Failed to connect to Weaviate: {str(e)}", e
+                ) from e
 
         return self._client
 
@@ -87,7 +88,7 @@ class WeaviateRepository(VectorRepository[T]):
         if self._collection is None:
             try:
                 # Check if collection exists
-                if self.collection_name in self.client.collections.list_all().keys():
+                if self.collection_name in self.client.collections.list_all():
                     self._collection = self.client.collections.get(self.collection_name)
                     logger.info(
                         f"Retrieved existing collection: {self.collection_name}"
@@ -102,13 +103,12 @@ class WeaviateRepository(VectorRepository[T]):
                     raise
                 raise CollectionError(
                     f"Failed to access collection '{self.collection_name}': {str(e)}", e
-                )
+                ) from e
 
         return self._collection
 
     def _create_collection(self) -> Collection:
         """Create a new collection with proper configuration."""
-        from ..collections import create_collection_from_pydantic
 
         return create_collection_from_pydantic(
             client=self.client,
@@ -147,9 +147,9 @@ class WeaviateRepository(VectorRepository[T]):
             return str(result)
 
         except Exception as e:
-            raise CollectionError(f"Failed to create entity: {str(e)}", e)
+            raise CollectionError(f"Failed to create entity: {str(e)}", e) from e
 
-    def get_by_id(self, entity_id: str, **kwargs) -> Optional[T]:
+    def get_by_id(self, entity_id: str, **kwargs) -> T | None:
         """Synchronous version of get_by_id."""
         try:
             # Fetch object with vector included
@@ -166,7 +166,7 @@ class WeaviateRepository(VectorRepository[T]):
             logger.error(f"Failed to retrieve entity {entity_id}: {str(e)}")
             return None
 
-    def update(self, entity_id: str, updates: Dict[str, Any], **kwargs) -> bool:
+    def update(self, entity_id: str, updates: dict[str, Any], **kwargs) -> bool:
         """Synchronous version of update."""
         try:
             self.collection.data.update(uuid=entity_id, properties=updates, **kwargs)
@@ -189,8 +189,8 @@ class WeaviateRepository(VectorRepository[T]):
             return False
 
     def list_all(
-        self, limit: Optional[int] = None, offset: Optional[int] = None, **kwargs
-    ) -> List[T]:
+        self, limit: int | None = None, offset: int | None = None, **kwargs
+    ) -> list[T]:
         """Synchronous version of list_all."""
         try:
             query = self.collection.query.fetch_objects(
@@ -206,7 +206,7 @@ class WeaviateRepository(VectorRepository[T]):
             return entities
 
         except Exception as e:
-            raise QueryError(f"Failed to list entities: {str(e)}", e)
+            raise QueryError(f"Failed to list entities: {str(e)}", e) from e
 
     def count(self, **kwargs) -> int:
         """Synchronous version of count."""
@@ -222,7 +222,7 @@ class WeaviateRepository(VectorRepository[T]):
         """Synchronous version of exists."""
         return self.get_by_id(entity_id, **kwargs) is not None
 
-    def find_by_criteria(self, criteria: Dict[str, Any], **kwargs) -> List[T]:
+    def find_by_criteria(self, criteria: dict[str, Any], **kwargs) -> list[T]:
         """Synchronous version of find_by_criteria."""
         try:
             # For now, let's implement a simple version that fetches all and filters in Python
@@ -232,17 +232,15 @@ class WeaviateRepository(VectorRepository[T]):
             entities = []
             for obj in query.objects:
                 entity = self._weaviate_object_to_entity(obj)
-                if entity:
-                    # Apply criteria filtering in Python
-                    if self._entity_matches_criteria(entity, criteria):
-                        entities.append(entity)
+                if entity and self._entity_matches_criteria(entity, criteria):
+                    entities.append(entity)
 
             return entities
 
         except Exception as e:
-            raise QueryError(f"Failed to find entities by criteria: {str(e)}", e)
+            raise QueryError(f"Failed to find entities by criteria: {str(e)}", e) from e
 
-    def _entity_matches_criteria(self, entity: T, criteria: Dict[str, Any]) -> bool:
+    def _entity_matches_criteria(self, entity: T, criteria: dict[str, Any]) -> bool:
         """Check if an entity matches the given criteria."""
         for field, value in criteria.items():
             if hasattr(entity, field):
@@ -257,12 +255,12 @@ class WeaviateRepository(VectorRepository[T]):
 
     def similarity_search(
         self,
-        query_vector: List[float],
+        query_vector: list[float],
         limit: int = 10,
-        threshold: Optional[float] = None,
-        where_filter: Optional[Dict[str, Any]] = None,
+        threshold: float | None = None,
+        where_filter: dict[str, Any] | None = None,
         **kwargs,
-    ) -> List[Tuple[T, float]]:
+    ) -> list[tuple[T, float]]:
         """Synchronous version of similarity_search."""
         try:
             # Build where filter if provided
@@ -292,16 +290,16 @@ class WeaviateRepository(VectorRepository[T]):
             return results
 
         except Exception as e:
-            raise VectorError(f"Vector similarity search failed: {str(e)}", e)
+            raise VectorError(f"Vector similarity search failed: {str(e)}", e) from e
 
     def similarity_search_by_text(
         self,
         query_text: str,
         limit: int = 10,
-        threshold: Optional[float] = None,
-        where_filter: Optional[Dict[str, Any]] = None,
+        threshold: float | None = None,
+        where_filter: dict[str, Any] | None = None,
         **kwargs,
-    ) -> List[Tuple[T, float]]:
+    ) -> list[tuple[T, float]]:
         """Synchronous version of similarity_search_by_text."""
         try:
             # Build where filter if provided
@@ -333,10 +331,10 @@ class WeaviateRepository(VectorRepository[T]):
             return results
 
         except Exception as e:
-            raise VectorError(f"Text similarity search failed: {str(e)}", e)
+            raise VectorError(f"Text similarity search failed: {str(e)}", e) from e
 
     def create_with_vector(
-        self, entity: T, vector: Optional[List[float]] = None, **kwargs
+        self, entity: T, vector: list[float] | None = None, **kwargs
     ) -> str:
         """Synchronous version of create_with_vector."""
         try:
@@ -355,9 +353,11 @@ class WeaviateRepository(VectorRepository[T]):
             return str(result)
 
         except Exception as e:
-            raise VectorError(f"Failed to create entity with vector: {str(e)}", e)
+            raise VectorError(
+                f"Failed to create entity with vector: {str(e)}", e
+            ) from e
 
-    def update_vector(self, entity_id: str, vector: List[float], **kwargs) -> bool:
+    def update_vector(self, entity_id: str, vector: list[float], **kwargs) -> bool:
         """Synchronous version of update_vector."""
         try:
             self.collection.data.update(uuid=entity_id, vector=vector, **kwargs)
@@ -368,7 +368,7 @@ class WeaviateRepository(VectorRepository[T]):
             logger.error(f"Failed to update vector for entity {entity_id}: {str(e)}")
             return False
 
-    def get_vector(self, entity_id: str, **kwargs) -> Optional[List[float]]:
+    def get_vector(self, entity_id: str, **kwargs) -> list[float] | None:
         """Synchronous version of get_vector."""
         try:
             result = self.collection.query.fetch_object_by_id(
@@ -388,8 +388,8 @@ class WeaviateRepository(VectorRepository[T]):
             return None
 
     def batch_create_with_vectors(
-        self, entities_and_vectors: List[Tuple[T, Optional[List[float]]]], **kwargs
-    ) -> List[str]:
+        self, entities_and_vectors: list[tuple[T, list[float] | None]], **kwargs
+    ) -> list[str]:
         """Synchronous version of batch_create_with_vectors."""
         try:
             # Prepare batch data
@@ -419,16 +419,16 @@ class WeaviateRepository(VectorRepository[T]):
         except Exception as e:
             raise BatchOperationError(
                 f"Batch create operation failed: {str(e)}", original_error=e
-            )
+            ) from e
 
     def hybrid_search(
         self,
         query_text: str,
-        query_vector: Optional[List[float]] = None,
+        query_vector: list[float] | None = None,
         alpha: float = 0.5,
         limit: int = 10,
         **kwargs,
-    ) -> List[Tuple[T, float]]:
+    ) -> list[tuple[T, float]]:
         """Synchronous version of hybrid_search."""
         try:
             # Use Weaviate's hybrid search if available
@@ -450,11 +450,11 @@ class WeaviateRepository(VectorRepository[T]):
             return results
 
         except Exception as e:
-            raise VectorError(f"Hybrid search failed: {str(e)}", e)
+            raise VectorError(f"Hybrid search failed: {str(e)}", e) from e
 
     # Helper methods
 
-    def _entity_to_dict(self, entity: T) -> Dict[str, Any]:
+    def _entity_to_dict(self, entity: T) -> dict[str, Any]:
         """Convert entity to dictionary suitable for Weaviate."""
         if hasattr(entity, "model_dump"):
             # Pydantic model
@@ -477,7 +477,7 @@ class WeaviateRepository(VectorRepository[T]):
 
         return filtered_data
 
-    def _weaviate_object_to_entity(self, weaviate_obj) -> Optional[T]:
+    def _weaviate_object_to_entity(self, weaviate_obj) -> T | None:
         """Convert Weaviate object back to entity."""
         try:
             # Extract properties - handle both direct properties and nested 'properties' field
@@ -504,30 +504,33 @@ class WeaviateRepository(VectorRepository[T]):
             properties["id"] = str(weaviate_obj.uuid)
 
             # Add vector embedding if available and entity supports it
-            if hasattr(weaviate_obj, "vector") and weaviate_obj.vector is not None:
-                if "embedding" in self.entity_class.model_fields:
-                    # Handle different vector formats
-                    if isinstance(weaviate_obj.vector, dict):
-                        # For named vectors, look for text_vector first, then default
-                        if "text_vector" in weaviate_obj.vector and isinstance(
-                            weaviate_obj.vector["text_vector"], list
-                        ):
-                            properties["embedding"] = weaviate_obj.vector["text_vector"]
-                        elif "default" in weaviate_obj.vector and isinstance(
-                            weaviate_obj.vector["default"], list
-                        ):
-                            properties["embedding"] = weaviate_obj.vector["default"]
-                        else:
-                            # Handle other dict formats or skip if unrecognized
-                            logger.debug(
-                                f"Skipping vector - unrecognized dict format: {list(weaviate_obj.vector.keys())}"
-                            )
-                    elif isinstance(weaviate_obj.vector, list):
-                        properties["embedding"] = weaviate_obj.vector
+            if (
+                hasattr(weaviate_obj, "vector")
+                and weaviate_obj.vector is not None
+                and "embedding" in self.entity_class.model_fields
+            ):
+                # Handle different vector formats
+                if isinstance(weaviate_obj.vector, dict):
+                    # For named vectors, look for text_vector first, then default
+                    if "text_vector" in weaviate_obj.vector and isinstance(
+                        weaviate_obj.vector["text_vector"], list
+                    ):
+                        properties["embedding"] = weaviate_obj.vector["text_vector"]
+                    elif "default" in weaviate_obj.vector and isinstance(
+                        weaviate_obj.vector["default"], list
+                    ):
+                        properties["embedding"] = weaviate_obj.vector["default"]
                     else:
+                        # Handle other dict formats or skip if unrecognized
                         logger.debug(
-                            f"Skipping vector - unrecognized format: {type(weaviate_obj.vector)}"
+                            f"Skipping vector - unrecognized dict format: {list(weaviate_obj.vector.keys())}"
                         )
+                elif isinstance(weaviate_obj.vector, list):
+                    properties["embedding"] = weaviate_obj.vector
+                else:
+                    logger.debug(
+                        f"Skipping vector - unrecognized format: {type(weaviate_obj.vector)}"
+                    )
 
             # Filter out legacy fields that don't belong in pure entities
             legacy_fields = {"client", "collection", "uuid"}
@@ -551,9 +554,8 @@ class WeaviateRepository(VectorRepository[T]):
             logger.error(f"Properties: {getattr(weaviate_obj, 'properties', 'N/A')}")
             return None
 
-    def _build_where_filter(self, criteria: Dict[str, Any]):
+    def _build_where_filter(self, criteria: dict[str, Any]):
         """Build Weaviate where filter from criteria dictionary."""
-        from weaviate.classes.query import Filter
 
         if not criteria:
             return None
@@ -561,11 +563,7 @@ class WeaviateRepository(VectorRepository[T]):
         # Build filter conditions
         filters = []
         for field, value in criteria.items():
-            if isinstance(value, str):
-                filters.append(Filter.by_property(field).equal(value))
-            elif isinstance(value, (int, float)):
-                filters.append(Filter.by_property(field).equal(value))
-            elif isinstance(value, bool):
+            if isinstance(value, (str | int | float | bool)):
                 filters.append(Filter.by_property(field).equal(value))
 
         if len(filters) == 1:

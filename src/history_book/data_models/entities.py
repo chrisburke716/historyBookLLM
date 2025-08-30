@@ -1,10 +1,11 @@
 """Data models for the history book application."""
 
-from typing import List, ClassVar
-from pydantic import BaseModel, Field
-from datetime import datetime, timezone
-from enum import Enum
 import uuid
+from datetime import UTC, datetime
+from enum import Enum
+from typing import ClassVar
+
+from pydantic import BaseModel, Field
 
 
 class Book(BaseModel):
@@ -33,14 +34,14 @@ class Paragraph(BaseModel):
 
     id: str | None = Field(default_factory=lambda: str(uuid.uuid4()))
     text: str
-    embedding: List[float] | None = None
+    embedding: list[float] | None = None
     page: int
     paragraph_index: int
     book_index: int
     chapter_index: int
 
     # Specify which fields should be vectorized by Weaviate
-    vectorize_fields: ClassVar[List[str]] = ["text"]
+    vectorize_fields: ClassVar[list[str]] = ["text"]
 
 
 class MessageRole(str, Enum):
@@ -57,12 +58,12 @@ class ChatMessage(BaseModel):
     id: str | None = Field(default_factory=lambda: str(uuid.uuid4()))
     content: str
     role: MessageRole
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     session_id: str
-    retrieved_paragraphs: List[str] | None = None  # IDs of paragraphs used as context
+    retrieved_paragraphs: list[str] | None = None  # IDs of paragraphs used as context
 
     # Specify which fields should be vectorized by Weaviate (for semantic search of chat history)
-    vectorize_fields: ClassVar[List[str]] = ["content"]
+    vectorize_fields: ClassVar[list[str]] = ["content"]
 
 
 class ChatSession(BaseModel):
@@ -70,6 +71,6 @@ class ChatSession(BaseModel):
 
     id: str | None = Field(default_factory=lambda: str(uuid.uuid4()))
     title: str | None = None  # Auto-generated or user-provided
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     # Note: messages are stored separately and linked by session_id for better performance

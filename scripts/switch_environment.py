@@ -6,9 +6,10 @@ This script provides an interactive way to switch between production, developmen
 and test environments with proper validation.
 """
 
+import logging
 import os
 import sys
-import logging
+
 from history_book.database.config import WeaviateConfig
 
 # Set up logging
@@ -110,10 +111,10 @@ class EnvironmentSwitcher:
             logger.info(f"Testing connection to {config.connection_string}...")
 
             # Import here to avoid circular imports
-            from history_book.database.repositories.weaviate_repository import (
-                WeaviateRepository,
-            )
-            from history_book.data_models.entities import Book
+            from history_book.data_models.entities import Book  # noqa: PLC0415
+            from history_book.database.repositories.weaviate_repository import (  # noqa: PLC0415
+                WeaviateRepository,  # noqa: PLC0415
+            )  # noqa: PLC0415
 
             test_repo = WeaviateRepository(
                 config=config, collection_name="Books", entity_class=Book

@@ -6,9 +6,10 @@ This script helps set up and validate configuration for testing the new ingestio
 on a separate test Weaviate instance to avoid affecting your production data.
 """
 
-import os
 import logging
-from history_book.database.config import WeaviateConfig, DatabaseEnvironment
+import os
+
+from history_book.database.config import DatabaseEnvironment, WeaviateConfig
 from history_book.database.repositories.weaviate_repository import WeaviateRepository
 
 # Set up logging
@@ -54,7 +55,7 @@ def validate_test_connection(config: WeaviateConfig) -> bool:
 
     try:
         # Try to create a basic repository to test connection
-        from history_book.data_models.entities import Book
+        from history_book.data_models.entities import Book  # noqa: PLC0415
 
         test_repo = WeaviateRepository(
             config=config, collection_name="TestBooks", entity_class=Book

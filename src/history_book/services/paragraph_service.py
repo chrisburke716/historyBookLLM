@@ -1,10 +1,10 @@
 """Service layer for paragraph operations with complex vector functionality."""
 
-from typing import List, Optional, Tuple
 import logging
-from ..data_models.entities import Paragraph
-from ..database.repositories import ParagraphRepository
-from ..database.config import WeaviateConfig
+
+from history_book.data_models.entities import Paragraph
+from history_book.database.config import WeaviateConfig
+from history_book.database.repositories import ParagraphRepository
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class ParagraphService:
     """Service for paragraph operations with vector capabilities."""
 
-    def __init__(self, config: Optional[WeaviateConfig] = None):
+    def __init__(self, config: WeaviateConfig | None = None):
         """
         Initialize the paragraph service.
 
@@ -22,7 +22,7 @@ class ParagraphService:
         if config is None:
             config = WeaviateConfig.from_environment()
         self.config = config
-        self._repository: Optional[ParagraphRepository] = None
+        self._repository: ParagraphRepository | None = None
 
     @property
     def repository(self) -> ParagraphRepository:
@@ -78,7 +78,7 @@ class ParagraphService:
             logger.error(f"Failed to create paragraph: {e}")
             raise
 
-    def get_paragraph_by_id(self, paragraph_id: str) -> Optional[Paragraph]:
+    def get_paragraph_by_id(self, paragraph_id: str) -> Paragraph | None:
         """Get a paragraph by ID."""
         return self.repository.get_by_id(paragraph_id)
 
@@ -86,9 +86,9 @@ class ParagraphService:
         self,
         query_text: str,
         limit: int = 10,
-        book_index: Optional[int] = None,
-        threshold: Optional[float] = None,
-    ) -> List[Tuple[Paragraph, float]]:
+        book_index: int | None = None,
+        threshold: float | None = None,
+    ) -> list[tuple[Paragraph, float]]:
         """
         Search for paragraphs similar to the given text query.
 
@@ -122,19 +122,19 @@ class ParagraphService:
             logger.error(f"Failed to search similar paragraphs: {e}")
             return []
 
-    def get_paragraphs_by_book(self, book_index: int) -> List[Paragraph]:
+    def get_paragraphs_by_book(self, book_index: int) -> list[Paragraph]:
         """Get all paragraphs for a specific book."""
         return self.repository.find_by_book_index(book_index)
 
     def get_paragraphs_by_chapter(
         self, book_index: int, chapter_index: int
-    ) -> List[Paragraph]:
+    ) -> list[Paragraph]:
         """Get all paragraphs for a specific chapter."""
         return self.repository.find_by_chapter_index(book_index, chapter_index)
 
     def get_paragraphs_by_page_range(
-        self, start_page: int, end_page: int, book_index: Optional[int] = None
-    ) -> List[Paragraph]:
+        self, start_page: int, end_page: int, book_index: int | None = None
+    ) -> list[Paragraph]:
         """
         Get paragraphs within a specific page range.
 
@@ -145,7 +145,7 @@ class ParagraphService:
             start_page=start_page, end_page=end_page, book_index=book_index
         )
 
-    def batch_create_paragraphs(self, paragraphs: List[Paragraph]) -> List[str]:
+    def batch_create_paragraphs(self, paragraphs: list[Paragraph]) -> list[str]:
         """
         Create multiple paragraphs efficiently.
 
@@ -170,7 +170,7 @@ class ParagraphService:
             )
 
             # Update the paragraph objects with their new IDs and fetch embeddings
-            for paragraph, paragraph_id in zip(paragraphs, paragraph_ids):
+            for paragraph, paragraph_id in zip(paragraphs, paragraph_ids, strict=False):
                 paragraph.id = paragraph_id
                 # Fetch the vector for this paragraph
                 try:
