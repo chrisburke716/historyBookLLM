@@ -3,12 +3,14 @@
 import logging
 from typing import Any, TypeVar
 
-import weaviate
 from weaviate import WeaviateClient
+from weaviate.classes.query import Filter
 from weaviate.collections import Collection
 
-from ..config.database_config import WeaviateConfig
-from ..exceptions.database_exceptions import (
+from history_book.database import server
+from history_book.database.collections import create_collection_from_pydantic
+from history_book.database.config.database_config import WeaviateConfig
+from history_book.database.exceptions.database_exceptions import (
     BatchOperationError,
     CollectionError,
     ConnectionError,
@@ -16,7 +18,9 @@ from ..exceptions.database_exceptions import (
     ValidationError,
     VectorError,
 )
-from ..interfaces.vector_repository_interface import VectorRepository
+from history_book.database.interfaces.vector_repository_interface import (
+    VectorRepository,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,22 +67,16 @@ class WeaviateRepository(VectorRepository[T]):
     @property
     def client(self) -> WeaviateClient:
         """Get or create the Weaviate client."""
-        if self._client is None:
+        if self._client is None or not self._client.is_connected():
             try:
-                if self.config.is_local:
-                    self._client = weaviate.connect_to_local(
-                        port=self.config.port, grpc_port=self.config.grpc_port
-                    )
-                else:
-                    # For remote connections, you'd configure differently
-                    # This is a placeholder for future remote connection support
-                    raise NotImplementedError(
-                        "Remote Weaviate connections not yet implemented"
-                    )
-
-                logger.info(f"Connected to Weaviate at {self.config.connection_string}")
+                # If client exists but is not connected, clear it
+                if self._client is not None and not self._client.is_connected():
+                    self._client = None
+                    self._collection = None  # Reset collection reference too
+                
+                self._client = server.get_client(self.config)
             except Exception as e:
-                raise ConnectionError(f"Failed to connect to Weaviate: {str(e)}", e)
+                raise ConnectionError(f"Failed to connect to Weaviate: {str(e)}", e) from e
 
         return self._client
 
@@ -109,7 +107,6 @@ class WeaviateRepository(VectorRepository[T]):
 
     def _create_collection(self) -> Collection:
         """Create a new collection with proper configuration."""
-        from ..collections import create_collection_from_pydantic
 
         return create_collection_from_pydantic(
             client=self.client,
@@ -554,7 +551,6 @@ class WeaviateRepository(VectorRepository[T]):
 
     def _build_where_filter(self, criteria: dict[str, Any]):
         """Build Weaviate where filter from criteria dictionary."""
-        from weaviate.classes.query import Filter
 
         if not criteria:
             return None

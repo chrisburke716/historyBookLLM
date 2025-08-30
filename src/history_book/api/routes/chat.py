@@ -21,15 +21,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-# Dependency to get ChatService instance with proper cleanup
-# Using generator pattern for automatic resource cleanup
+# Dependency to get ChatService instance
+# Note: We don't close the service per request since it shares a global client
 def get_chat_service():
-    """Get a ChatService instance with automatic cleanup."""
-    chat_service = ChatService()
-    try:
-        yield chat_service
-    finally:
-        chat_service.close()
+    """Get a ChatService instance."""
+    return ChatService()
 
 
 def convert_session_to_response(session: ChatSession) -> SessionResponse:

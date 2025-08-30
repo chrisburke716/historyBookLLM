@@ -88,14 +88,10 @@ def clear_and_recreate():
 
     try:
         # Connect to client directly to delete collections
-        import weaviate
 
-        if config.is_local:
-            client = weaviate.connect_to_local(
-                port=config.port, grpc_port=config.grpc_port
-            )
-        else:
-            raise NotImplementedError("Remote connections not yet supported")
+        from history_book.database import server  # noqa: PLC0415
+
+        client = server.get_client(config)
 
         with client:
             # List existing collections
@@ -122,7 +118,7 @@ def clear_and_recreate():
 
 def main():
     """Main collection management interface."""
-    import sys
+    import sys  # noqa: PLC0415
 
     if len(sys.argv) > 1 and sys.argv[1] == "--clear":
         success = clear_and_recreate()
