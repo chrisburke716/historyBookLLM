@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, setup-gh-ruff ]  # Add your branch temporarily
   pull_request:
     branches: [ main ]
 
