@@ -3,8 +3,8 @@
 import logging
 from typing import TYPE_CHECKING
 
-from history_book.database.repositories.weaviate_repository import WeaviateRepository
 from history_book.database.config.database_config import WeaviateConfig
+from history_book.database.repositories.weaviate_repository import WeaviateRepository
 
 # Use TYPE_CHECKING to avoid circular imports
 if TYPE_CHECKING:
