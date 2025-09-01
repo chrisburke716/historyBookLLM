@@ -103,7 +103,6 @@ class APITester:
             message_data = {
                 "content": "What were the main causes of World War I?",
                 "enable_retrieval": True,
-                "max_context_paragraphs": 3,
             }
 
             print("   📤 Sending message with retrieval enabled...")
@@ -245,7 +244,6 @@ async def test_chat_service_direct():
             session_id=session.id,
             user_message="Test backend",
             enable_retrieval=True,
-            max_context_paragraphs=2,
         )
 
         print("   ✅ Backend ChatService working")

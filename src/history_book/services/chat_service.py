@@ -17,6 +17,9 @@ from history_book.llm.exceptions import LLMError
 
 logger = logging.getLogger(__name__)
 
+CONTEXT_MIN_RESULTS = 5
+CONTEXT_MAX_RESULTS = 40
+CONTEXT_SIMILARITY_CUTOFF = 0.4
 
 class ChatService:
     """Service for chat operations with retrieval-augmented generation."""
@@ -131,7 +134,6 @@ class ChatService:
         self,
         session_id: str,
         user_message: str,
-        max_context_paragraphs: int = 5,
         enable_retrieval: bool = True,
     ) -> ChatMessage:
         """
@@ -161,10 +163,10 @@ class ChatService:
 
             # 2. Retrieve relevant context if enabled
             context_paragraphs = []
-            if enable_retrieval and max_context_paragraphs > 0:
+            if enable_retrieval:
                 # TODO: don't hardcode these parameters, and update elsewhere (streaming)
                 context_paragraphs = await self._retrieve_context_min_max_count_and_score_cutoff(
-                    user_message, min_paragraphs=5, max_paragraphs=40, score_cutoff=0.4
+                    user_message, min_paragraphs=CONTEXT_MIN_RESULTS, max_paragraphs=CONTEXT_MAX_RESULTS, score_cutoff=CONTEXT_SIMILARITY_CUTOFF
                 )
 
             # 3. Get recent chat history
@@ -209,7 +211,6 @@ class ChatService:
         self,
         session_id: str,
         user_message: str,
-        max_context_paragraphs: int = 5,
         enable_retrieval: bool = True,
     ) -> AsyncIterator[str]:
         """
@@ -237,9 +238,10 @@ class ChatService:
 
             # 2. Retrieve relevant context if enabled
             context_paragraphs = []
-            if enable_retrieval and max_context_paragraphs > 0:
-                context_paragraphs = await self._retrieve_context(
-                    user_message, max_context_paragraphs
+            if enable_retrieval:
+                # TODO: don't hardcode these parameters, and update elsewhere (streaming)
+                context_paragraphs = await self._retrieve_context_min_max_count_and_score_cutoff(
+                    user_message, min_paragraphs=CONTEXT_MIN_RESULTS, max_paragraphs=CONTEXT_MAX_RESULTS, score_cutoff=CONTEXT_SIMILARITY_CUTOFF
                 )
 
             # 3. Get recent chat history

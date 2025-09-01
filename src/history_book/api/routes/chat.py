@@ -138,7 +138,6 @@ async def send_message(
         ai_message = await chat_service.send_message(
             session_id=session_id,
             user_message=request.content,
-            max_context_paragraphs=request.max_context_paragraphs,
             enable_retrieval=request.enable_retrieval,
         )
 
