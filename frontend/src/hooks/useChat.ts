@@ -117,7 +117,6 @@ export const useChat = () => {
       const request: MessageRequest = {
         content,
         enable_retrieval: enableRetrieval,
-        max_context_paragraphs: 5,
       };
 
       // Add user message optimistically
