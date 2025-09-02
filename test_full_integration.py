@@ -32,7 +32,6 @@ def test_backend_api():
             json={
                 "content": "What were the causes of World War I?",
                 "enable_retrieval": True,
-                "max_context_paragraphs": 3,
             },
             timeout=30,
         )

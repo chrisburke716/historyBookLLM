@@ -17,6 +17,10 @@ from history_book.llm.exceptions import LLMError
 
 logger = logging.getLogger(__name__)
 
+CONTEXT_MIN_RESULTS = 5
+CONTEXT_MAX_RESULTS = 40
+CONTEXT_SIMILARITY_CUTOFF = 0.4
+
 
 class ChatService:
     """Service for chat operations with retrieval-augmented generation."""
@@ -131,7 +135,6 @@ class ChatService:
         self,
         session_id: str,
         user_message: str,
-        max_context_paragraphs: int = 5,
         enable_retrieval: bool = True,
     ) -> ChatMessage:
         """
@@ -161,9 +164,15 @@ class ChatService:
 
             # 2. Retrieve relevant context if enabled
             context_paragraphs = []
-            if enable_retrieval and max_context_paragraphs > 0:
-                context_paragraphs = await self._retrieve_context(
-                    user_message, max_context_paragraphs
+            if enable_retrieval:
+                # TODO: don't hardcode these parameters, and update elsewhere (streaming)
+                context_paragraphs = (
+                    await self._retrieve_context_min_max_count_and_score_cutoff(
+                        user_message,
+                        min_paragraphs=CONTEXT_MIN_RESULTS,
+                        max_paragraphs=CONTEXT_MAX_RESULTS,
+                        score_cutoff=CONTEXT_SIMILARITY_CUTOFF,
+                    )
                 )
 
             # 3. Get recent chat history
@@ -208,7 +217,6 @@ class ChatService:
         self,
         session_id: str,
         user_message: str,
-        max_context_paragraphs: int = 5,
         enable_retrieval: bool = True,
     ) -> AsyncIterator[str]:
         """
@@ -236,9 +244,15 @@ class ChatService:
 
             # 2. Retrieve relevant context if enabled
             context_paragraphs = []
-            if enable_retrieval and max_context_paragraphs > 0:
-                context_paragraphs = await self._retrieve_context(
-                    user_message, max_context_paragraphs
+            if enable_retrieval:
+                # TODO: don't hardcode these parameters, and update elsewhere (streaming)
+                context_paragraphs = (
+                    await self._retrieve_context_min_max_count_and_score_cutoff(
+                        user_message,
+                        min_paragraphs=CONTEXT_MIN_RESULTS,
+                        max_paragraphs=CONTEXT_MAX_RESULTS,
+                        score_cutoff=CONTEXT_SIMILARITY_CUTOFF,
+                    )
                 )
 
             # 3. Get recent chat history
@@ -306,6 +320,44 @@ class ChatService:
                     query_text=query, limit=max_paragraphs
                 )
             )
+            return [para[0] for para in search_result] if search_result else []
+        except Exception as e:
+            logger.warning(f"Failed to retrieve context: {e}")
+            return []
+
+    async def _retrieve_context_min_max_count_and_score_cutoff(
+        self, query: str, min_paragraphs: int, max_paragraphs: int, score_cutoff: float
+    ) -> list[Paragraph]:
+        """
+        Retrieve relevant paragraphs for the query.
+
+        Args:
+            query: User query
+            min_paragraphs: Minimum number of paragraphs to retrieve
+            max_paragraphs: Maximum number of paragraphs to retrieve
+            score_cutoff: Similarity score threshold for filtering results, if at least min_paragraphs are found
+
+        Returns:
+            List of relevant paragraphs
+        """
+        try:
+            # Use vector search to find relevant paragraphs
+            # return self.repository_manager.paragraphs.vector_search(
+            #     query_text=query,
+            #     limit=max_paragraphs
+            # )
+            search_result = (
+                self.repository_manager.paragraphs.similarity_search_by_text(
+                    query_text=query, limit=max_paragraphs, threshold=score_cutoff
+                )
+            )
+            if len(search_result) < min_paragraphs:
+                # If we didn't get enough results above the threshold, do a fallback search without threshold
+                search_result = (
+                    self.repository_manager.paragraphs.similarity_search_by_text(
+                        query_text=query, limit=min_paragraphs
+                    )
+                )
             return [para[0] for para in search_result] if search_result else []
         except Exception as e:
             logger.warning(f"Failed to retrieve context: {e}")

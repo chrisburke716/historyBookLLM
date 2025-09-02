@@ -310,7 +310,7 @@ class WeaviateRepository(VectorRepository[T]):
             query = self.collection.query.near_text(
                 query=query_text,
                 limit=limit,
-                distance=threshold,
+                certainty=threshold,
                 filters=where,
                 return_metadata=["distance"],  # Include distance in results
                 **kwargs,
