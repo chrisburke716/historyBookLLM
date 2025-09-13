@@ -14,6 +14,8 @@ from history_book.database.config import WeaviateConfig
 from history_book.database.repositories import BookRepositoryManager
 from history_book.llm import LLMConfig, LLMInterface, MockLLMProvider
 from history_book.llm.exceptions import LLMError
+from history_book.chains.rag_chain import RAGChain
+from history_book.chains.response_chain import ResponseChain
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,10 @@ class ChatService:
         config: WeaviateConfig | None = None,
         llm_provider: LLMInterface | None = None,
         llm_config: LLMConfig | None = None,
+        min_context_results: int = CONTEXT_MIN_RESULTS,
+        max_context_results: int = CONTEXT_MAX_RESULTS,
+        context_similarity_cutoff: float = CONTEXT_SIMILARITY_CUTOFF,
+        retrieval_strategy: str = "similarity_search",
     ):
         """
         Initialize the chat service.
@@ -38,6 +44,10 @@ class ChatService:
             config: Database configuration. If None, loads from environment.
             llm_provider: LLM provider instance. If None, creates default provider.
             llm_config: LLM configuration. If None, loads from environment.
+            min_context_results: Minimum number of context documents to retrieve.
+            max_context_results: Maximum number of context documents to retrieve.
+            context_similarity_cutoff: Similarity threshold for context retrieval.
+            retrieval_strategy: Strategy for document retrieval.
         """
         if config is None:
             config = WeaviateConfig.from_environment()
@@ -59,6 +69,16 @@ class ChatService:
                 logger.info("Using Mock provider for LLM (LangChain not available)")
         else:
             self.llm_provider = llm_provider
+
+        # Store retrieval configuration
+        self.min_context_results = min_context_results
+        self.max_context_results = max_context_results
+        self.context_similarity_cutoff = context_similarity_cutoff
+        self.retrieval_strategy = retrieval_strategy
+
+        # Initialize chains
+        self.response_chain = ResponseChain(self.llm_provider)
+        self.rag_chain = RAGChain(self.response_chain, self.repository_manager)
 
     async def create_session(self, title: str | None = None) -> ChatSession:
         """
@@ -162,31 +182,42 @@ class ChatService:
             user_msg.id = user_msg_id
             logger.info(f"Saved user message {user_msg_id} to session {session_id}")
 
-            # 2. Retrieve relevant context if enabled
-            context_paragraphs = []
-            if enable_retrieval:
-                # TODO: don't hardcode these parameters, and update elsewhere (streaming)
-                context_paragraphs = (
-                    await self._retrieve_context_min_max_count_and_score_cutoff(
-                        user_message,
-                        min_paragraphs=CONTEXT_MIN_RESULTS,
-                        max_paragraphs=CONTEXT_MAX_RESULTS,
-                        score_cutoff=CONTEXT_SIMILARITY_CUTOFF,
-                    )
-                )
-
-            # 3. Get recent chat history
+            # 2. Get recent chat history
             chat_history = await self.get_session_messages(session_id)
 
             # Include the new user message in history for LLM
             if user_msg not in chat_history:
                 chat_history.append(user_msg)
 
-            # 4. Generate AI response
-            context_text = self._format_context(context_paragraphs)
-            ai_response = await self.llm_provider.generate_response(
-                messages=chat_history, context=context_text
+            # 3. Use RAG chain to generate response
+            rag_pipeline = self.rag_chain.build(
+                min_results=self.min_context_results,
+                max_results=self.max_context_results,
+                similarity_cutoff=self.context_similarity_cutoff,
+                retrieval_strategy=self.retrieval_strategy,
+                enable_retrieval=enable_retrieval
             )
+            
+            chain_result = await rag_pipeline.ainvoke({
+                "query": user_message,
+                "messages": chat_history
+            })
+            
+            ai_response = chain_result
+            
+            # Extract context paragraphs if they were used (for saving retrieved_paragraphs)
+            context_paragraphs = []
+            if enable_retrieval:
+                # We need to retrieve them again for saving - this is temporary
+                # until we modify the chain output to include source_paragraphs
+                context_paragraphs = (
+                    await self._retrieve_context_min_max_count_and_score_cutoff(
+                        user_message,
+                        min_paragraphs=self.min_context_results,
+                        max_paragraphs=self.max_context_results,
+                        score_cutoff=self.context_similarity_cutoff,
+                    )
+                )
 
             # 5. Create and save AI message
             ai_msg = ChatMessage(
@@ -242,36 +273,42 @@ class ChatService:
             user_msg_id = self.repository_manager.chat_messages.create(user_msg)
             user_msg.id = user_msg_id
 
-            # 2. Retrieve relevant context if enabled
-            context_paragraphs = []
-            if enable_retrieval:
-                # TODO: don't hardcode these parameters, and update elsewhere (streaming)
-                context_paragraphs = (
-                    await self._retrieve_context_min_max_count_and_score_cutoff(
-                        user_message,
-                        min_paragraphs=CONTEXT_MIN_RESULTS,
-                        max_paragraphs=CONTEXT_MAX_RESULTS,
-                        score_cutoff=CONTEXT_SIMILARITY_CUTOFF,
-                    )
-                )
-
-            # 3. Get recent chat history
+            # 2. Get recent chat history
             chat_history = await self.get_session_messages(session_id)
 
             # Include the new user message in history
             if user_msg not in chat_history:
                 chat_history.append(user_msg)
 
-            # 4. Generate streaming AI response
-            context_text = self._format_context(context_paragraphs)
-
+            # 3. Use RAG chain for streaming response
+            rag_pipeline = self.rag_chain.build_streaming(
+                min_results=self.min_context_results,
+                max_results=self.max_context_results,
+                similarity_cutoff=self.context_similarity_cutoff,
+                retrieval_strategy=self.retrieval_strategy,
+                enable_retrieval=enable_retrieval
+            )
+            
             # Collect response chunks for saving later
             response_chunks = []
-            async for chunk in self.llm_provider.generate_stream_response(
-                messages=chat_history, context=context_text
-            ):
+            async for chunk in rag_pipeline.astream({
+                "query": user_message,
+                "messages": chat_history
+            }):
                 response_chunks.append(chunk)
                 yield chunk
+                
+            # Get context paragraphs for saving (temporary until chain output includes them)
+            context_paragraphs = []
+            if enable_retrieval:
+                context_paragraphs = (
+                    await self._retrieve_context_min_max_count_and_score_cutoff(
+                        user_message,
+                        min_paragraphs=self.min_context_results,
+                        max_paragraphs=self.max_context_results,
+                        score_cutoff=self.context_similarity_cutoff,
+                    )
+                )
 
             # 5. Save complete AI response
             complete_response = "".join(response_chunks)
