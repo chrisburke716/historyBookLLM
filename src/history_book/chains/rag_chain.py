@@ -58,7 +58,7 @@ class RAGChain:
             # Simple non-RAG chain - just pass through to response generation
             return (
                 RunnableLambda(self._format_messages_only)
-                | self.response_chain.build(**llm_params)
+                | RunnableLambda(self._generate_with_metadata_no_retrieval)
             )
         
         # Full RAG pipeline
@@ -73,7 +73,7 @@ class RAGChain:
                 "input": RunnablePassthrough()
             })
             | RunnableLambda(self._format_messages_with_context)
-            | self.response_chain.build(**llm_params)
+            | RunnableLambda(self._generate_with_metadata)
         )
     
     def build_streaming(
@@ -247,3 +247,55 @@ class RAGChain:
             context_parts.append(f"[Source {i}, Page {para.page}]: {para.text}")
         
         return "\n\n".join(context_parts)
+    
+    async def _generate_with_metadata(self, formatted_data: dict[str, Any]) -> dict[str, Any]:
+        """
+        Generate response and include metadata like source paragraphs.
+        
+        Args:
+            formatted_data: Formatted data from message formatting step
+            
+        Returns:
+            Dictionary containing response and metadata
+        """
+        # Extract the data we need for the response chain
+        response_input = {
+            "messages": formatted_data.get("messages", []),
+            "context": formatted_data.get("context")
+        }
+        
+        # Generate the response using the response chain
+        response_chain = self.response_chain.build()
+        response_text = await response_chain.ainvoke(response_input)
+        
+        # Return structured output with both response and metadata
+        return {
+            "response": response_text,
+            "source_paragraphs": formatted_data.get("source_paragraphs", [])
+        }
+    
+    async def _generate_with_metadata_no_retrieval(self, formatted_data: dict[str, Any]) -> dict[str, Any]:
+        """
+        Generate response without retrieval and include empty metadata.
+        
+        Args:
+            formatted_data: Formatted data from message formatting step
+            
+        Returns:
+            Dictionary containing response and empty metadata
+        """
+        # Extract the data we need for the response chain
+        response_input = {
+            "messages": formatted_data.get("messages", []),
+            "context": formatted_data.get("context")
+        }
+        
+        # Generate the response using the response chain
+        response_chain = self.response_chain.build()
+        response_text = await response_chain.ainvoke(response_input)
+        
+        # Return structured output with response and empty source paragraphs
+        return {
+            "response": response_text,
+            "source_paragraphs": []
+        }

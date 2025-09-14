@@ -203,21 +203,9 @@ class ChatService:
                 "messages": chat_history
             })
             
-            ai_response = chain_result
-            
-            # Extract context paragraphs if they were used (for saving retrieved_paragraphs)
-            context_paragraphs = []
-            if enable_retrieval:
-                # We need to retrieve them again for saving - this is temporary
-                # until we modify the chain output to include source_paragraphs
-                context_paragraphs = (
-                    await self._retrieve_context_min_max_count_and_score_cutoff(
-                        user_message,
-                        min_paragraphs=self.min_context_results,
-                        max_paragraphs=self.max_context_results,
-                        score_cutoff=self.context_similarity_cutoff,
-                    )
-                )
+            # Extract response and source paragraphs from structured output
+            ai_response = chain_result["response"]
+            context_paragraphs = chain_result["source_paragraphs"]
 
             # 5. Create and save AI message
             ai_msg = ChatMessage(
@@ -298,7 +286,9 @@ class ChatService:
                 response_chunks.append(chunk)
                 yield chunk
                 
-            # Get context paragraphs for saving (temporary until chain output includes them)
+            # TODO: For streaming, we still need to retrieve paragraphs separately
+            # because we can't return structured data while streaming text chunks.
+            # Future enhancement: modify streaming chain to return metadata at the end.
             context_paragraphs = []
             if enable_retrieval:
                 context_paragraphs = (
