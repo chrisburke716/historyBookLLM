@@ -14,7 +14,7 @@ from history_book.database.config import WeaviateConfig
 from history_book.database.repositories import BookRepositoryManager
 from history_book.llm import LLMConfig, LLMInterface, MockLLMProvider
 from history_book.llm.exceptions import LLMError
-from history_book.chains.rag_chain import RAGChain
+from history_book.services.rag_service import RagService
 from history_book.chains.response_chain import ResponseChain
 
 logger = logging.getLogger(__name__)
@@ -76,9 +76,9 @@ class ChatService:
         self.context_similarity_cutoff = context_similarity_cutoff
         self.retrieval_strategy = retrieval_strategy
 
-        # Initialize chains
+        # Initialize services and chains
         self.response_chain = ResponseChain(self.llm_provider)
-        self.rag_chain = RAGChain(self.response_chain, self.repository_manager)
+        self.rag_service = RagService(self.response_chain, self.repository_manager)
 
     async def create_session(self, title: str | None = None) -> ChatSession:
         """
@@ -174,56 +174,26 @@ class ChatService:
             DatabaseError: If database operations fail
         """
         try:
-            # 1. Create and save user message
-            user_msg = ChatMessage(
-                content=user_message, role=MessageRole.USER, session_id=session_id
+            # Prepare user message and chat history
+            user_msg, chat_history = await self._prepare_message_and_history(
+                session_id, user_message
             )
-            user_msg_id = self.repository_manager.chat_messages.create(user_msg)
-            user_msg.id = user_msg_id
-            logger.info(f"Saved user message {user_msg_id} to session {session_id}")
 
-            # 2. Get recent chat history
-            chat_history = await self.get_session_messages(session_id)
-
-            # Include the new user message in history for LLM
-            if user_msg not in chat_history:
-                chat_history.append(user_msg)
-
-            # 3. Use RAG chain to generate response
-            rag_pipeline = self.rag_chain.build(
+            # Generate response using RAG service
+            rag_result = await self.rag_service.generate_response(
+                query=user_message,
+                messages=chat_history,
                 min_results=self.min_context_results,
                 max_results=self.max_context_results,
                 similarity_cutoff=self.context_similarity_cutoff,
                 retrieval_strategy=self.retrieval_strategy,
                 enable_retrieval=enable_retrieval
             )
-            
-            chain_result = await rag_pipeline.ainvoke({
-                "query": user_message,
-                "messages": chat_history
-            })
-            
-            # Extract response and source paragraphs from structured output
-            ai_response = chain_result["response"]
-            context_paragraphs = chain_result["source_paragraphs"]
 
-            # 5. Create and save AI message
-            ai_msg = ChatMessage(
-                content=ai_response,
-                role=MessageRole.ASSISTANT,
-                session_id=session_id,
-                retrieved_paragraphs=[p.id for p in context_paragraphs]
-                if context_paragraphs
-                else None,
+            # Save AI message and update session
+            return await self._save_ai_message_and_update_session(
+                session_id, rag_result.response, rag_result.source_paragraphs
             )
-            ai_msg_id = self.repository_manager.chat_messages.create(ai_msg)
-            ai_msg.id = ai_msg_id
-
-            # 6. Update session timestamp
-            await self._update_session_timestamp(session_id)
-
-            logger.info(f"Generated AI response {ai_msg_id} for session {session_id}")
-            return ai_msg
 
         except LLMError:
             # Re-raise LLM errors as-is
@@ -254,161 +224,100 @@ class ChatService:
             The final complete response is saved to the database after streaming completes.
         """
         try:
-            # 1. Create and save user message
-            user_msg = ChatMessage(
-                content=user_message, role=MessageRole.USER, session_id=session_id
+            # Prepare user message and chat history
+            user_msg, chat_history = await self._prepare_message_and_history(
+                session_id, user_message
             )
-            user_msg_id = self.repository_manager.chat_messages.create(user_msg)
-            user_msg.id = user_msg_id
 
-            # 2. Get recent chat history
-            chat_history = await self.get_session_messages(session_id)
-
-            # Include the new user message in history
-            if user_msg not in chat_history:
-                chat_history.append(user_msg)
-
-            # 3. Use RAG chain for streaming response
-            rag_pipeline = self.rag_chain.build_streaming(
+            # Get streaming response from RAG service
+            stream, context_paragraphs = await self.rag_service.stream_response(
+                query=user_message,
+                messages=chat_history,
                 min_results=self.min_context_results,
                 max_results=self.max_context_results,
                 similarity_cutoff=self.context_similarity_cutoff,
                 retrieval_strategy=self.retrieval_strategy,
                 enable_retrieval=enable_retrieval
             )
-            
-            # Collect response chunks for saving later
+
+            # Collect response chunks while yielding them to the client
             response_chunks = []
-            async for chunk in rag_pipeline.astream({
-                "query": user_message,
-                "messages": chat_history
-            }):
+            async for chunk in stream:
                 response_chunks.append(chunk)
                 yield chunk
-                
-            # TODO: For streaming, we still need to retrieve paragraphs separately
-            # because we can't return structured data while streaming text chunks.
-            # Future enhancement: modify streaming chain to return metadata at the end.
-            context_paragraphs = []
-            if enable_retrieval:
-                context_paragraphs = (
-                    await self._retrieve_context_min_max_count_and_score_cutoff(
-                        user_message,
-                        min_paragraphs=self.min_context_results,
-                        max_paragraphs=self.max_context_results,
-                        score_cutoff=self.context_similarity_cutoff,
-                    )
-                )
 
-            # 5. Save complete AI response
+            # Save complete AI response and update session
             complete_response = "".join(response_chunks)
-            ai_msg = ChatMessage(
-                content=complete_response,
-                role=MessageRole.ASSISTANT,
-                session_id=session_id,
-                retrieved_paragraphs=[p.id for p in context_paragraphs]
-                if context_paragraphs
-                else None,
-            )
-            ai_msg_id = self.repository_manager.chat_messages.create(ai_msg)
-
-            # 6. Update session timestamp
-            await self._update_session_timestamp(session_id)
-
-            logger.info(
-                f"Completed streaming response {ai_msg_id} for session {session_id}"
+            await self._save_ai_message_and_update_session(
+                session_id, complete_response, context_paragraphs
             )
 
         except Exception as e:
             logger.error(f"Failed to stream message: {e}")
             raise
 
-    async def _retrieve_context(
-        self, query: str, max_paragraphs: int
-    ) -> list[Paragraph]:
+    async def _prepare_message_and_history(
+        self, session_id: str, user_message: str
+    ) -> tuple[ChatMessage, list[ChatMessage]]:
         """
-        Retrieve relevant paragraphs for the query.
+        Create user message and get chat history.
 
         Args:
-            query: User query
-            max_paragraphs: Maximum number of paragraphs to retrieve
+            session_id: Session ID
+            user_message: User's message content
 
         Returns:
-            List of relevant paragraphs
+            Tuple of (user_message, chat_history)
         """
-        try:
-            # Use vector search to find relevant paragraphs
-            # return self.repository_manager.paragraphs.vector_search(
-            #     query_text=query,
-            #     limit=max_paragraphs
-            # )
-            search_result = (
-                self.repository_manager.paragraphs.similarity_search_by_text(
-                    query_text=query, limit=max_paragraphs
-                )
-            )
-            return [para[0] for para in search_result] if search_result else []
-        except Exception as e:
-            logger.warning(f"Failed to retrieve context: {e}")
-            return []
+        # 1. Create and save user message
+        user_msg = ChatMessage(
+            content=user_message, role=MessageRole.USER, session_id=session_id
+        )
+        user_msg_id = self.repository_manager.chat_messages.create(user_msg)
+        user_msg.id = user_msg_id
+        logger.info(f"Saved user message {user_msg_id} to session {session_id}")
 
-    async def _retrieve_context_min_max_count_and_score_cutoff(
-        self, query: str, min_paragraphs: int, max_paragraphs: int, score_cutoff: float
-    ) -> list[Paragraph]:
+        # 2. Get recent chat history
+        chat_history = await self.get_session_messages(session_id)
+
+        # Include the new user message in history for LLM
+        if user_msg not in chat_history:
+            chat_history.append(user_msg)
+
+        return user_msg, chat_history
+
+    async def _save_ai_message_and_update_session(
+        self, session_id: str, ai_response: str, context_paragraphs: list
+    ) -> ChatMessage:
         """
-        Retrieve relevant paragraphs for the query.
+        Save AI message and update session timestamp.
 
         Args:
-            query: User query
-            min_paragraphs: Minimum number of paragraphs to retrieve
-            max_paragraphs: Maximum number of paragraphs to retrieve
-            score_cutoff: Similarity score threshold for filtering results, if at least min_paragraphs are found
+            session_id: Session ID
+            ai_response: AI response text
+            context_paragraphs: Retrieved context paragraphs
 
         Returns:
-            List of relevant paragraphs
+            Created AI message
         """
-        try:
-            # Use vector search to find relevant paragraphs
-            # return self.repository_manager.paragraphs.vector_search(
-            #     query_text=query,
-            #     limit=max_paragraphs
-            # )
-            search_result = (
-                self.repository_manager.paragraphs.similarity_search_by_text(
-                    query_text=query, limit=max_paragraphs, threshold=score_cutoff
-                )
-            )
-            if len(search_result) < min_paragraphs:
-                # If we didn't get enough results above the threshold, do a fallback search without threshold
-                search_result = (
-                    self.repository_manager.paragraphs.similarity_search_by_text(
-                        query_text=query, limit=min_paragraphs
-                    )
-                )
-            return [para[0] for para in search_result] if search_result else []
-        except Exception as e:
-            logger.warning(f"Failed to retrieve context: {e}")
-            return []
+        # Create and save AI message
+        ai_msg = ChatMessage(
+            content=ai_response,
+            role=MessageRole.ASSISTANT,
+            session_id=session_id,
+            retrieved_paragraphs=[p.id for p in context_paragraphs]
+            if context_paragraphs
+            else None,
+        )
+        ai_msg_id = self.repository_manager.chat_messages.create(ai_msg)
+        ai_msg.id = ai_msg_id
 
-    def _format_context(self, paragraphs: list[Paragraph]) -> str | None:
-        """
-        Format retrieved paragraphs as context for the LLM.
+        # Update session timestamp
+        await self._update_session_timestamp(session_id)
 
-        Args:
-            paragraphs: Retrieved paragraphs
+        logger.info(f"Generated AI response {ai_msg_id} for session {session_id}")
+        return ai_msg
 
-        Returns:
-            Formatted context string or None
-        """
-        if not paragraphs:
-            return None
-
-        context_parts = []
-        for i, para in enumerate(paragraphs, 1):
-            # Include page information for citation
-            context_parts.append(f"[Source {i}, Page {para.page}]: {para.text}")
-
-        return "\n\n".join(context_parts)
 
     async def _update_session_timestamp(self, session_id: str) -> None:
         """
