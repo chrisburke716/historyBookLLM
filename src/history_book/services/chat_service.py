@@ -15,7 +15,6 @@ from history_book.database.repositories import BookRepositoryManager
 from history_book.llm import LLMConfig, LLMInterface, MockLLMProvider
 from history_book.llm.exceptions import LLMError
 from history_book.services.rag_service import RagService
-from history_book.chains.response_chain import ResponseChain
 
 logger = logging.getLogger(__name__)
 
@@ -76,9 +75,8 @@ class ChatService:
         self.context_similarity_cutoff = context_similarity_cutoff
         self.retrieval_strategy = retrieval_strategy
 
-        # Initialize services and chains
-        self.response_chain = ResponseChain(self.llm_provider)
-        self.rag_service = RagService(self.response_chain, self.repository_manager)
+        # Initialize RAG service
+        self.rag_service = RagService(self.llm_provider, self.repository_manager)
 
     async def create_session(self, title: str | None = None) -> ChatSession:
         """

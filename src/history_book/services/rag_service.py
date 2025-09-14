@@ -6,6 +6,7 @@ from typing import Any, NamedTuple
 from history_book.data_models.entities import Paragraph, ChatMessage
 from history_book.database.repositories import BookRepositoryManager
 from history_book.chains.response_chain import ResponseChain
+from history_book.llm.interfaces.llm_interface import LLMInterface
 
 logger = logging.getLogger(__name__)
 
@@ -19,15 +20,15 @@ class RAGResult(NamedTuple):
 class RagService:
     """Service that orchestrates RAG operations: retrieve → format → generate response."""
 
-    def __init__(self, response_chain: ResponseChain, repository_manager: BookRepositoryManager):
+    def __init__(self, llm_provider: LLMInterface, repository_manager: BookRepositoryManager):
         """
         Initialize the RAG service.
 
         Args:
-            response_chain: The response chain to use for LLM generation
+            llm_provider: The LLM provider to use for response generation
             repository_manager: Repository manager for document retrieval
         """
-        self.response_chain = response_chain
+        self.response_chain = ResponseChain(llm_provider)
         self.repository_manager = repository_manager
 
     async def generate_response(
