@@ -12,7 +12,7 @@ from history_book.data_models.entities import (
 )
 from history_book.database.config import WeaviateConfig
 from history_book.database.repositories import BookRepositoryManager
-from history_book.llm import LLMConfig, LLMInterface, MockLLMProvider
+from history_book.llm.config import LLMConfig
 from history_book.llm.exceptions import LLMError
 from history_book.services.rag_service import RagService
 
@@ -29,7 +29,6 @@ class ChatService:
     def __init__(
         self,
         config: WeaviateConfig | None = None,
-        llm_provider: LLMInterface | None = None,
         llm_config: LLMConfig | None = None,
         min_context_results: int = CONTEXT_MIN_RESULTS,
         max_context_results: int = CONTEXT_MAX_RESULTS,
@@ -41,7 +40,6 @@ class ChatService:
 
         Args:
             config: Database configuration. If None, loads from environment.
-            llm_provider: LLM provider instance. If None, creates default provider.
             llm_config: LLM configuration. If None, loads from environment.
             min_context_results: Minimum number of context documents to retrieve.
             max_context_results: Maximum number of context documents to retrieve.
@@ -53,21 +51,10 @@ class ChatService:
         self.config = config
         self.repository_manager = BookRepositoryManager(config)
 
-        # Initialize LLM provider
-        if llm_provider is None:
-            llm_config = llm_config or LLMConfig.from_environment()
-            # Try to use LangChain provider, fall back to mock
-            # TODO: do we want to set mock here? or just fail?
-            try:
-                from history_book.llm import LangChainProvider  # noqa: PLC0415
-
-                self.llm_provider = LangChainProvider(llm_config)
-                logger.info("Using LangChain provider for LLM")
-            except ImportError:
-                self.llm_provider = MockLLMProvider(llm_config)
-                logger.info("Using Mock provider for LLM (LangChain not available)")
-        else:
-            self.llm_provider = llm_provider
+        # Initialize LLM configuration
+        self.llm_config = llm_config or LLMConfig.from_environment()
+        self.llm_config.validate()
+        logger.info(f"Using LLM provider: {self.llm_config.provider}/{self.llm_config.model_name}")
 
         # Store retrieval configuration
         self.min_context_results = min_context_results
@@ -76,7 +63,7 @@ class ChatService:
         self.retrieval_strategy = retrieval_strategy
 
         # Initialize RAG service
-        self.rag_service = RagService(self.llm_provider, self.repository_manager)
+        self.rag_service = RagService(self.llm_config, self.repository_manager)
 
     async def create_session(self, title: str | None = None) -> ChatSession:
         """
