@@ -8,7 +8,6 @@ from history_book.data_models.entities import (
     ChatMessage,
     ChatSession,
     MessageRole,
-    Paragraph,
 )
 from history_book.database.config import WeaviateConfig
 from history_book.database.repositories import BookRepositoryManager
@@ -54,7 +53,9 @@ class ChatService:
         # Initialize LLM configuration
         self.llm_config = llm_config or LLMConfig.from_environment()
         self.llm_config.validate()
-        logger.info(f"Using LLM provider: {self.llm_config.provider}/{self.llm_config.model_name}")
+        logger.info(
+            f"Using LLM provider: {self.llm_config.provider}/{self.llm_config.model_name}"
+        )
 
         # Store retrieval configuration
         self.min_context_results = min_context_results
@@ -172,7 +173,7 @@ class ChatService:
                 max_results=self.max_context_results,
                 similarity_cutoff=self.context_similarity_cutoff,
                 retrieval_strategy=self.retrieval_strategy,
-                enable_retrieval=enable_retrieval
+                enable_retrieval=enable_retrieval,
             )
 
             # Save AI message and update session
@@ -222,7 +223,7 @@ class ChatService:
                 max_results=self.max_context_results,
                 similarity_cutoff=self.context_similarity_cutoff,
                 retrieval_strategy=self.retrieval_strategy,
-                enable_retrieval=enable_retrieval
+                enable_retrieval=enable_retrieval,
             )
 
             # Collect response chunks while yielding them to the client
@@ -302,7 +303,6 @@ class ChatService:
 
         logger.info(f"Generated AI response {ai_msg_id} for session {session_id}")
         return ai_msg
-
 
     async def _update_session_timestamp(self, session_id: str) -> None:
         """

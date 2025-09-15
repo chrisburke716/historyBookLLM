@@ -3,22 +3,23 @@
 import logging
 from typing import Any, NamedTuple
 
-from langchain.schema import AIMessage, HumanMessage, SystemMessage
+from langchain.schema import AIMessage, HumanMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable
 
-from history_book.data_models.entities import Paragraph, ChatMessage, MessageRole
+from history_book.data_models.entities import ChatMessage, MessageRole, Paragraph
 from history_book.database.repositories import BookRepositoryManager
 from history_book.llm.config import LLMConfig
-from history_book.llm.exceptions import LLMError, LLMConnectionError, LLMValidationError
-from history_book.llm.utils import format_messages_for_llm, format_context_for_llm
+from history_book.llm.exceptions import LLMConnectionError, LLMError, LLMValidationError
+from history_book.llm.utils import format_context_for_llm, format_messages_for_llm
 
 logger = logging.getLogger(__name__)
 
 
 class RAGResult(NamedTuple):
     """Result from RAG service execution."""
+
     response: str
     source_paragraphs: list[Paragraph]
 
@@ -26,7 +27,9 @@ class RAGResult(NamedTuple):
 class RagService:
     """Service that orchestrates RAG operations using LCEL chains."""
 
-    def __init__(self, llm_config: LLMConfig, repository_manager: BookRepositoryManager):
+    def __init__(
+        self, llm_config: LLMConfig, repository_manager: BookRepositoryManager
+    ):
         """
         Initialize the RAG service with direct LangChain integration.
 
@@ -48,7 +51,7 @@ class RagService:
         """Create the appropriate LangChain chat model based on configuration."""
         try:
             if self.config.provider == "openai":
-                from langchain_openai import ChatOpenAI
+                from langchain_openai import ChatOpenAI  # noqa PLC0415
 
                 return ChatOpenAI(
                     model=self.config.model_name,
@@ -62,7 +65,7 @@ class RagService:
                     **self.config.provider_kwargs,
                 )
             elif self.config.provider == "anthropic":
-                from langchain_anthropic import ChatAnthropic
+                from langchain_anthropic import ChatAnthropic  # noqa PLC0415
 
                 return ChatAnthropic(
                     model=self.config.model_name,
@@ -73,21 +76,27 @@ class RagService:
                     **self.config.provider_kwargs,
                 )
             else:
-                raise LLMValidationError(f"Unsupported provider: {self.config.provider}")
+                raise LLMValidationError(
+                    f"Unsupported provider: {self.config.provider}"
+                )
 
         except ImportError as e:
-            raise LLMConnectionError(f"Missing dependency for {self.config.provider}: {e}") from e
+            raise LLMConnectionError(
+                f"Missing dependency for {self.config.provider}: {e}"
+            ) from e
         except Exception as e:
             raise LLMConnectionError(f"Failed to create chat model: {e}") from e
 
     def _build_rag_chain(self) -> Runnable:
         """Build LCEL chain for RAG scenarios with context."""
         # Create prompt template for RAG
-        rag_prompt = ChatPromptTemplate.from_messages([
-            ("system", self.config.system_message),
-            MessagesPlaceholder("chat_history"),
-            ("human", "{context}\n\nQuestion: {query}")
-        ])
+        rag_prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", self.config.system_message),
+                MessagesPlaceholder("chat_history"),
+                ("human", "{context}\n\nQuestion: {query}"),
+            ]
+        )
 
         # Build the chain: prompt -> chat model -> string output parser
         return rag_prompt | self.chat_model | StrOutputParser()
@@ -95,11 +104,13 @@ class RagService:
     def _build_simple_chain(self) -> Runnable:
         """Build LCEL chain for non-RAG scenarios without context."""
         # Create prompt template for simple chat
-        simple_prompt = ChatPromptTemplate.from_messages([
-            ("system", self.config.system_message),
-            MessagesPlaceholder("chat_history"),
-            ("human", "{query}")
-        ])
+        simple_prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", self.config.system_message),
+                MessagesPlaceholder("chat_history"),
+                ("human", "{query}"),
+            ]
+        )
 
         # Build the chain: prompt -> chat model -> string output parser
         return simple_prompt | self.chat_model | StrOutputParser()
@@ -113,7 +124,7 @@ class RagService:
         similarity_cutoff: float = 0.4,
         retrieval_strategy: str = "similarity_search",
         enable_retrieval: bool = True,
-        **llm_params: Any
+        **llm_params: Any,
     ) -> RAGResult:
         """
         Generate a response using RAG pipeline with LCEL chains.
@@ -136,7 +147,11 @@ class RagService:
             source_paragraphs = []
             if enable_retrieval:
                 source_paragraphs = await self._retrieve_context(
-                    query, min_results, max_results, similarity_cutoff, retrieval_strategy
+                    query,
+                    min_results,
+                    max_results,
+                    similarity_cutoff,
+                    retrieval_strategy,
                 )
 
             # Convert chat messages to LangChain format
@@ -146,19 +161,22 @@ class RagService:
             if enable_retrieval and source_paragraphs:
                 # Use RAG chain with context
                 context = self._format_context(source_paragraphs)
-                formatted_context = format_context_for_llm(context, self.config.max_context_length)
+                formatted_context = format_context_for_llm(
+                    context, self.config.max_context_length
+                )
 
-                response = await self.rag_chain.ainvoke({
-                    "chat_history": formatted_messages,
-                    "context": formatted_context,
-                    "query": query
-                })
+                response = await self.rag_chain.ainvoke(
+                    {
+                        "chat_history": formatted_messages,
+                        "context": formatted_context,
+                        "query": query,
+                    }
+                )
             else:
                 # Use simple chain without context
-                response = await self.simple_chain.ainvoke({
-                    "chat_history": formatted_messages,
-                    "query": query
-                })
+                response = await self.simple_chain.ainvoke(
+                    {"chat_history": formatted_messages, "query": query}
+                )
 
             return RAGResult(response=response, source_paragraphs=source_paragraphs)
 
@@ -175,7 +193,7 @@ class RagService:
         similarity_cutoff: float = 0.4,
         retrieval_strategy: str = "similarity_search",
         enable_retrieval: bool = True,
-        **llm_params: Any
+        **llm_params: Any,
     ) -> tuple:
         """
         Generate a streaming response using RAG pipeline with LCEL chains.
@@ -198,7 +216,11 @@ class RagService:
             source_paragraphs = []
             if enable_retrieval:
                 source_paragraphs = await self._retrieve_context(
-                    query, min_results, max_results, similarity_cutoff, retrieval_strategy
+                    query,
+                    min_results,
+                    max_results,
+                    similarity_cutoff,
+                    retrieval_strategy,
                 )
 
             # Convert chat messages to LangChain format
@@ -208,19 +230,22 @@ class RagService:
             if enable_retrieval and source_paragraphs:
                 # Use RAG chain with context
                 context = self._format_context(source_paragraphs)
-                formatted_context = format_context_for_llm(context, self.config.max_context_length)
+                formatted_context = format_context_for_llm(
+                    context, self.config.max_context_length
+                )
 
-                stream = self.rag_chain.astream({
-                    "chat_history": formatted_messages,
-                    "context": formatted_context,
-                    "query": query
-                })
+                stream = self.rag_chain.astream(
+                    {
+                        "chat_history": formatted_messages,
+                        "context": formatted_context,
+                        "query": query,
+                    }
+                )
             else:
                 # Use simple chain without context
-                stream = self.simple_chain.astream({
-                    "chat_history": formatted_messages,
-                    "query": query
-                })
+                stream = self.simple_chain.astream(
+                    {"chat_history": formatted_messages, "query": query}
+                )
 
             return stream, source_paragraphs
 
@@ -255,7 +280,7 @@ class RagService:
         min_results: int,
         max_results: int,
         similarity_cutoff: float,
-        retrieval_strategy: str
+        retrieval_strategy: str,
     ) -> list[Paragraph]:
         """
         Retrieve relevant context documents.
@@ -279,9 +304,7 @@ class RagService:
             if retrieval_strategy == "similarity_search":
                 search_result = (
                     self.repository_manager.paragraphs.similarity_search_by_text(
-                        query_text=query,
-                        limit=max_results,
-                        threshold=similarity_cutoff
+                        query_text=query, limit=max_results, threshold=similarity_cutoff
                     )
                 )
 
@@ -294,7 +317,9 @@ class RagService:
                     )
             else:
                 # For future extension - other retrieval strategies
-                logger.warning(f"Unknown retrieval strategy: {retrieval_strategy}, using similarity_search")
+                logger.warning(
+                    f"Unknown retrieval strategy: {retrieval_strategy}, using similarity_search"
+                )
                 search_result = (
                     self.repository_manager.paragraphs.similarity_search_by_text(
                         query_text=query, limit=max_results
