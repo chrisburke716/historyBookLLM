@@ -330,6 +330,54 @@ For large PDFs:
 3. Monitor Weaviate resource usage
 4. Consider batch size tuning
 
+## Chat Functionality
+
+### Setup Chat Service
+```python
+from history_book.services import ChatService
+from history_book.llm.config import LLMConfig
+from history_book.database.config import WeaviateConfig
+
+# Configure LLM (set LLM_API_KEY environment variable)
+llm_config = LLMConfig.from_environment()
+
+# Initialize chat service
+chat_service = ChatService(llm_config=llm_config)
+```
+
+### Basic Chat Session
+```python
+# Create a session
+session = await chat_service.create_session(title="Historical Discussion")
+
+# Send a message with RAG
+response = await chat_service.send_message(
+    session_id=session.id,
+    user_message="What caused the fall of the Roman Empire?"
+)
+
+print(f"AI: {response.content}")
+print(f"Sources: {len(response.retrieved_paragraphs or [])} paragraphs")
+```
+
+### Streaming Chat
+```python
+# Stream response
+async for chunk in chat_service.send_message_stream(
+    session_id=session.id,
+    user_message="Tell me about medieval trade routes"
+):
+    print(chunk, end="", flush=True)
+```
+
+### Environment Variables for Chat
+```bash
+# Required for chat functionality
+LLM_API_KEY=your-openai-or-anthropic-key
+LLM_PROVIDER=openai                    # or anthropic
+LLM_MODEL_NAME=gpt-4o-mini            # or gpt-4, claude-3-sonnet, etc.
+```
+
 ## Best Practices
 
 1. **Always backup** your Weaviate data before major operations
@@ -337,3 +385,4 @@ For large PDFs:
 3. **Monitor resource usage** during large ingestions
 4. **Validate PDF quality** before processing
 5. **Use meaningful collection names** for organization
+6. **Set LLM_API_KEY** in environment for chat functionality

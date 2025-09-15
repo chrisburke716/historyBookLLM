@@ -1,101 +1,56 @@
-# LLM Abstraction Layer
+# LLM Configuration and Utilities
 
 ## Overview
 
-The LLM abstraction layer provides a clean, provider-agnostic interface for working with Large Language Models in the history book application.
+Simplified LLM module providing configuration and utilities for direct LangChain integration. No abstraction layers - RagService uses LangChain models directly.
 
-## Architecture
+## Components
 
-### Components
+- **`LLMConfig`**: Environment-driven configuration for LLM providers
+- **`utils`**: Message formatting and context handling helpers
+- **`exceptions`**: Typed LLM error handling
 
-1. **Interfaces** (`src/history_book/llm/interfaces/`)
-   - `LLMInterface`: Abstract base class defining the contract for LLM providers
+## Usage
 
-2. **Providers** (`src/history_book/llm/providers/`)
-   - `LangChainProvider`: Production provider using LangChain (requires langchain dependencies)
-   - `MockLLMProvider`: Development/testing provider with simulated responses
-
-3. **Configuration** (`src/history_book/llm/config.py`)
-   - `LLMConfig`: Centralized configuration management with environment variable support
-
-4. **Exceptions** (`src/history_book/llm/exceptions.py`)
-   - Specialized exceptions for different types of LLM errors
-
-5. **Utilities** (`src/history_book/llm/utils.py`)
-   - Helper functions for message formatting, context handling, and token estimation
-
-## Key Features
-
-### Provider Abstraction
-- Consistent interface across different LLM providers (OpenAI, Anthropic, etc.)
-- Easy to swap providers without changing application code
-- Graceful fallback to mock provider when dependencies unavailable
-
-### Configuration Management
-- Environment variable support for all settings
-- Provider-specific configuration options
-- Validation and sensible defaults
-
-### Error Handling
-- Specialized exceptions for rate limits, token limits, connection errors
-- Proper error propagation and logging
-
-### Message Handling
-- Automatic formatting of chat messages for LLM consumption
-- Context injection with length limits
-- Token counting and text truncation
-
-### Streaming Support
-- Both synchronous and streaming response generation
-- Consistent interface for real-time chat experiences
-
-## Usage Examples
-
-### Basic Setup
 ```python
-from src.history_book.llm import LLMConfig, MockLLMProvider
+from history_book.llm.config import LLMConfig
 
+# Load configuration
 config = LLMConfig.from_environment()
-provider = MockLLMProvider(config)
-```
+config.validate()
 
-### Generate Response
-```python
-messages = [ChatMessage(content="What caused WWI?", role=MessageRole.USER, session_id="test")]
-context = "Historical context about WWI..."
-
-response = await provider.generate_response(messages, context=context)
-```
-
-### Streaming Response
-```python
-async for chunk in provider.generate_stream_response(messages, context=context):
-    print(chunk, end="")
+# Used by RagService to create LangChain models directly
+from langchain_openai import ChatOpenAI
+chat_model = ChatOpenAI(
+    model=config.model_name,
+    api_key=config.api_key,
+    temperature=config.temperature
+)
 ```
 
 ## Environment Variables
 
-- `LLM_PROVIDER`: Provider to use (default: "openai")
-- `LLM_MODEL_NAME`: Model name (default: "gpt-3.5-turbo")
-- `LLM_API_KEY` or `OPENAI_API_KEY`: API key for the provider
-- `LLM_TEMPERATURE`: Response temperature (default: 0.7)
-- `LLM_MAX_TOKENS`: Maximum response tokens
-- `LLM_SYSTEM_MESSAGE`: System message for the LLM
-- `LLM_MAX_CONTEXT_LENGTH`: Maximum context length (default: 4000)
-- `LLM_MAX_CONVERSATION_LENGTH`: Maximum messages in conversation (default: 20)
+```bash
+LLM_PROVIDER=openai                    # openai, anthropic
+LLM_MODEL_NAME=gpt-4o-mini            # model to use
+LLM_API_KEY=your-key                  # provider API key
+LLM_TEMPERATURE=0.7                   # response randomness
+LLM_SYSTEM_MESSAGE="You are..."       # system prompt
+LLM_MAX_CONTEXT_LENGTH=4000           # max context chars
+LLM_MAX_CONVERSATION_LENGTH=20        # max messages in history
+```
 
-## Integration with Chat Service
+## Integration
 
-The LLM abstraction layer is designed to integrate seamlessly with the ChatService:
+RagService creates LangChain models and LCEL chains directly:
 
-1. **Dependency Injection**: ChatService accepts any LLMInterface implementation
-2. **Configuration**: Uses same config system as other components
-3. **Error Handling**: LLM errors are properly caught and handled
-4. **Context Integration**: Automatically formats retrieved paragraphs as context
+```python
+# In RagService.__init__()
+self.chat_model = self._create_chat_model()  # Direct LangChain model
+self.rag_chain = prompt | self.chat_model | StrOutputParser()  # LCEL chain
+```
 
-## Future Extensibility
+## Migration Notes
 
-- Easy to add new providers (Cohere, local models, etc.)
-- Support for function calling and tools
-- Custom prompt templates and strategies
-- Advanced context management and retrieval integration
+**Removed**: LLMInterface, providers, ResponseChain - all replaced with direct LangChain usage in RagService.
+**Kept**: Configuration, utilities, exceptions - still needed for LLM operations.
