@@ -20,6 +20,16 @@ The History Book application follows a clean architecture pattern with clear sep
   - Provides high-level paragraph query methods
   - Abstracts complex repository interactions
 
+- `ChatService`: Orchestrates conversational AI with RAG
+  - Manages chat sessions and message history
+  - Coordinates with RagService for AI responses
+  - Handles streaming and non-streaming interactions
+
+- `RagService`: Direct LangChain integration for RAG operations
+  - Creates LangChain models directly (ChatOpenAI, ChatAnthropic)
+  - Builds LCEL chains: PromptTemplate | ChatModel | OutputParser
+  - Handles retrieval, context formatting, and response generation
+
 ### 2. Repository Layer (`src/history_book/database/repositories/`)
 
 **Purpose**: Abstracts data access and provides consistent interfaces.
@@ -85,6 +95,17 @@ Search Query → Repository Interface → Weaviate Vector Search → Entity Mapp
 3. **Vector Search**: Weaviate performs similarity search
 4. **Result Mapping**: Raw results mapped to entity objects
 5. **Response**: Type-safe entities returned to caller
+
+### Chat Pipeline
+
+```
+User Message → ChatService → RagService → [Retrieval → LCEL Chain → LLM] → AI Response
+```
+
+1. **Message Processing**: ChatService saves user message and retrieves history
+2. **RAG Execution**: RagService retrieves context and formats for LLM
+3. **LCEL Chain**: PromptTemplate | ChatModel | StrOutputParser generates response
+4. **Response Storage**: ChatService saves AI response with retrieved paragraph citations
 
 ## Design Patterns
 

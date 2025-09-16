@@ -11,7 +11,7 @@ The ChatService has been successfully implemented and is fully functional! This 
 ### 1. **Complete Chat Architecture**
 - **Data Models**: `ChatSession`, `ChatMessage`, `MessageRole` entities
 - **Repositories**: `ChatSessionRepository`, `ChatMessageRepository` with vector search
-- **LLM Abstraction**: Provider-agnostic interface with OpenAI/Anthropic support
+- **Direct LangChain**: RagService with LCEL chains for LLM operations
 - **Service Layer**: `ChatService` orchestrating all functionality
 
 ### 2. **Core Features Implemented**
@@ -26,7 +26,7 @@ The ChatService has been successfully implemented and is fully functional! This 
 - Synchronous responses via `send_message()`
 - Streaming responses via `send_message_stream()`
 - Context injection from retrieved paragraphs
-- Configurable LLM providers
+- Direct LangChain integration with LCEL chains
 
 #### 🔍 **Retrieval-Augmented Generation (RAG)**
 - Vector search for relevant paragraphs
@@ -46,19 +46,12 @@ The ChatService has been successfully implemented and is fully functional! This 
 - Graceful degradation and logging
 - Resource cleanup and connection management
 
-### 3. **Provider Support**
+### 3. **LLM Integration**
+- **Direct LangChain**: No abstraction layers, uses ChatOpenAI/ChatAnthropic directly
+- **LCEL Chains**: Proper composition with PromptTemplate | ChatModel | StrOutputParser
+- **Configuration**: Environment-driven setup via LLMConfig
+- **Streaming**: Native LangChain streaming support
 
-#### 🎭 **Mock Provider** (Development)
-- Simulates realistic LLM responses
-- Streaming support for testing
-- No external dependencies
-- Realistic timing and behavior
-
-#### 🔗 **LangChain Provider** (Production)
-- OpenAI integration (GPT-3.5, GPT-4, etc.)
-- Anthropic integration (Claude models)
-- Streaming responses
-- Token counting and validation
 
 ### 4. **Configuration System**
 - Environment variable support
