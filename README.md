@@ -53,7 +53,7 @@ A full-stack RAG-powered chat application for conversational interactions with h
 
 - **Backend**: Python 3.11+, Poetry, Weaviate database (Docker)
 - **Frontend**: Node.js 16+, npm
-- **LLM**: OpenAI API key (optional, uses Mock provider by default)
+- **LLM**: OpenAI or Anthropic API key (required for chat functionality)
 
 ### Installation & Setup
 
@@ -144,12 +144,16 @@ poetry run python test_full_integration.py
 
 ### Environment Variables
 
-Create `.env` file with:
+Create `.env` file from template:
 ```bash
-WEAVIATE_URL=http://localhost:8080
-WEAVIATE_API_KEY=your-api-key  # Optional for local
-ENVIRONMENT=development
+cp .env.example .env
+# Edit .env with your actual values
 ```
+
+Required variables:
+- `WEAVIATE_URL`: Weaviate database URL
+- `ENVIRONMENT`: development/test/production
+- `OPENAI_API_KEY`: For LLM functionality (required for chat features)
 
 ### Code Quality
 
@@ -168,9 +172,9 @@ The system supports multiple environments through configuration files:
 
 ## Contributing
 
-1. Ensure all tests pass (once they exist)
-2. Run code formatting: `poetry run ruff format`
-3. Check for issues: `poetry run ruff check`
+1. Run code formatting: `poetry run ruff format`
+2. Check for issues: `poetry run ruff check`
+3. Run tests: `poetry run python test_api.py`
 4. Update documentation for significant changes
 
 ## License

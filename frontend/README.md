@@ -1,46 +1,107 @@
-# Getting Started with Create React App
+# History Book Chat Frontend
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A React TypeScript frontend providing an intuitive chat interface for conversational interactions with historical documents.
 
-## Available Scripts
+## Features
 
-In the project directory, you can run:
+- **💬 Chat Interface**: Clean, modern chat UI with message history
+- **🎨 Material-UI Design**: Responsive design with Material-UI components
+- **📱 Session Management**: Create, switch between, and manage conversation sessions
+- **⚡ Real-time Responses**: Live chat with loading states and error handling
+- **🔍 Citations**: Display source references from historical documents
+- **♿ Accessibility**: Built with accessibility best practices
 
-### `npm start`
+## Tech Stack
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+- **React 19** with TypeScript
+- **Material-UI (MUI)** for components and theming
+- **Axios** for API communication
+- **Create React App** for build tooling
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+## Quick Start
 
-### `npm test`
+### Prerequisites
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+- Node.js 16+
+- npm or yarn
+- Backend API running on port 8000
 
-### `npm run build`
+### Installation
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+```bash
+# Install dependencies
+npm install
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+# Start development server
+npm start
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+The application will open at [http://localhost:3000](http://localhost:3000).
 
-### `npm run eject`
+### Development
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+```bash
+# Run tests
+npm test
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+# Build for production
+npm run build
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+# Type checking
+npx tsc --noEmit
+```
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+## Architecture
 
-## Learn More
+### Components
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+- **MessageInput.tsx**: Input field and send functionality
+- **MessageList.tsx**: Chat message display with citations
+- **SessionDropdown.tsx**: Session selection and management
+- **App.tsx**: Main application layout and state management
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+### Services
+
+- **api.ts**: HTTP client for backend communication
+- Handles authentication, error responses, and data formatting
+
+### State Management
+
+- React hooks for local component state
+- Session and message data managed through API calls
+- Real-time updates through REST polling
+
+## API Integration
+
+The frontend communicates with the FastAPI backend:
+
+- **POST /chat/sessions**: Create new chat sessions
+- **GET /chat/sessions**: List user sessions
+- **POST /chat/sessions/{id}/messages**: Send messages
+- **GET /chat/sessions/{id}/messages**: Retrieve message history
+
+## Environment Configuration
+
+The frontend expects the backend to be available at:
+- Development: `http://localhost:8000`
+- Production: Configure via build process
+
+## Build & Deployment
+
+```bash
+# Production build
+npm run build
+
+# Serve static files
+npx serve -s build -l 3000
+```
+
+Build outputs to `build/` directory, ready for static hosting.
+
+## Development Workflow
+
+1. Ensure backend API is running on port 8000
+2. Start frontend development server: `npm start`
+3. Changes auto-reload in browser
+4. Use browser dev tools for debugging
+5. Run tests before committing: `npm test`

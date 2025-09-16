@@ -373,7 +373,7 @@ async for chunk in chat_service.send_message_stream(
 ### Environment Variables for Chat
 ```bash
 # Required for chat functionality
-LLM_API_KEY=your-openai-or-anthropic-key
+OPENAI_API_KEY=your-openai-or-anthropic-key
 LLM_PROVIDER=openai                    # or anthropic
 LLM_MODEL_NAME=gpt-4o-mini            # or gpt-4, claude-3-sonnet, etc.
 ```
@@ -385,4 +385,4 @@ LLM_MODEL_NAME=gpt-4o-mini            # or gpt-4, claude-3-sonnet, etc.
 3. **Monitor resource usage** during large ingestions
 4. **Validate PDF quality** before processing
 5. **Use meaningful collection names** for organization
-6. **Set LLM_API_KEY** in environment for chat functionality
+6. **Set OPENAI_API_KEY** in environment for chat functionality
