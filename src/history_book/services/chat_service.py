@@ -3,6 +3,7 @@
 import logging
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+
 from langsmith import traceable
 
 from history_book.data_models.entities import (

@@ -41,7 +41,9 @@ def format_messages_for_llm(
     return formatted_messages
 
 
-def format_context_for_llm(context: str | None, max_length: int | None = None) -> str | None:
+def format_context_for_llm(
+    context: str | None, max_length: int | None = None
+) -> str | None:
     """
     Format context text for LLM consumption.
 
