@@ -3,6 +3,7 @@
 import logging
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from langsmith import traceable
 
 from history_book.data_models.entities import (
     ChatMessage,
@@ -137,6 +138,7 @@ class ChatService:
             logger.error(f"Failed to get messages for session {session_id}: {e}")
             return []
 
+    @traceable
     async def send_message(
         self,
         session_id: str,
