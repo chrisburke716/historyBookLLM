@@ -53,6 +53,9 @@ The History Book application follows a clean architecture pattern with clear sep
 - `Book`: Represents a complete historical document
 - `Chapter`: Represents a section within a book
 - `Paragraph`: Represents a text chunk with vector embeddings
+- `ChatSession`: Represents a conversation session
+- `ChatMessage`: Represents individual messages in conversations
+- `MessageRole`: Enum for user/assistant message roles
 
 ### 4. Configuration Layer (`src/history_book/database/config/`)
 
