@@ -30,7 +30,7 @@ class LLMConfig:
         "using the provided context from historical documents. Always base your "
         "answers on the context provided and cite specific information when possible."
     )
-    max_context_length: int = 4000  # Max characters for context
+    max_context_length: int = 100000  # Max characters for context
     max_conversation_length: int = 20  # Max messages to include in history
 
     # Provider-specific settings

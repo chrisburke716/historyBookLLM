@@ -41,7 +41,7 @@ def format_messages_for_llm(
     return formatted_messages
 
 
-def format_context_for_llm(context: str | None, max_length: int = 4000) -> str | None:
+def format_context_for_llm(context: str | None, max_length: int | None = None) -> str | None:
     """
     Format context text for LLM consumption.
 
@@ -56,7 +56,7 @@ def format_context_for_llm(context: str | None, max_length: int = 4000) -> str |
         return None
 
     # Truncate if too long
-    if len(context) > max_length:
+    if max_length and len(context) > max_length:
         # Try to truncate at sentence boundaries
         truncated = context[:max_length]
         last_period = truncated.rfind(".")
