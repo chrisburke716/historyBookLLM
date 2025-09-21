@@ -1,0 +1,101 @@
+query,source,complexity
+What were the first civilizations?,user,simple
+when did julius cesar rule?,user,simple
+how does the author define barbarians?,user,simple
+why are Sunnis and Shia called that?,user,simple
+who were the guptas?,user,simple
+name the Chinese dynasties,user,simple
+what was hellenization?,user,simple
+Can you tell me about groups that moved into europe during the roman empire?,user,simple
+Who were the Magyars?,user,simple
+who were the scythians?,user,simple
+what does 'doge' mean?,user,simple
+tell me about the antonine age in rome,user,simple
+Tell me about the Roman Empire,user,simple
+who were the Seljuks?,user,simple
+What groups had interactions with the Magyars?,user,simple
+What were the main causes of World War I?,user,simple
+What were the major inventions of the Bronze Age?,synth,simple
+Who was the first emperor of China?,synth,simple
+When did the Byzantine Empire fall?,synth,simple
+What is the significance of the Indus Valley Civilization?,synth,simple
+Who founded the Mali Empire?,synth,simple
+What were the key features of the Aztec civilization?,synth,simple
+When did the Mongol Empire reach its greatest extent?,synth,simple
+Who was the ruler of the Ottoman Empire during the Siege of Vienna?,synth,simple
+What were the causes of the Thirty Years' War?,synth,simple
+Who was the first president of the United States?,synth,simple
+When did the Industrial Revolution begin?,synth,simple
+What was the Meiji Restoration?,synth,simple
+Who was the leader of the Zulu Kingdom during the Anglo-Zulu War?,synth,simple
+What was the significance of the Mayan calendar?,synth,simple
+When did the Berlin Wall fall?,synth,simple
+Who was the last Tsar of Russia?,synth,simple
+What was the primary language of the Sumerians?,synth,simple
+Who was the founder of the Persian Empire?,synth,simple
+When was the Magna Carta signed?,synth,simple
+What was the main religion of ancient Egypt?,synth,simple
+Who led the Haitian Revolution?,synth,simple
+When did India gain independence from Britain?,synth,simple
+What was the significance of the Silk Road?,synth,simple
+Who was the first female pharaoh of Egypt?,synth,simple
+What were the Punic Wars?,synth,simple
+When did the Black Death occur in Europe?,synth,simple
+Who was the leader of the Soviet Union during World War II?,synth,simple
+What was the cultural significance of the Renaissance?,synth,simple
+Who was Genghis Khan?,synth,simple
+When did the Taiping Rebellion occur?,synth,simple
+What was the main purpose of the Great Wall of China?,synth,simple
+Who was the first European to reach India by sea?,synth,simple
+What were the primary crops of the Inca Empire?,synth,simple
+When did apartheid end in South Africa?,synth,simple
+What were the key factors that led to the fall of the Roman Empire?,synth,complex
+How did the agricultural revolution influence early human societies?,synth,complex
+In what ways did the Code of Hammurabi impact governance in ancient Mesopotamia?,synth,complex
+What was the significance of the Great Wall of China in terms of defense and trade?,synth,complex
+How did the spread of Buddhism influence cultures across Asia?,synth,complex
+What were the main causes and outcomes of the Crusades?,synth,complex
+How did the Renaissance influence European art and literature?,synth,complex
+What were the economic impacts of the transatlantic slave trade on African societies?,synth,complex
+In what ways did the Industrial Revolution change the social fabric of 19th-century Europe?,synth,complex
+What role did colonialism play in shaping modern African nations?,synth,complex
+How did the Enlightenment contribute to the American and French Revolutions?,synth,complex
+What were the major effects of the Opium Wars on China's sovereignty?,synth,complex
+How did the invention of the steam engine revolutionize transportation and industry?,synth,complex
+What were the causes and consequences of the Russian Revolution of 1917?,synth,complex
+How did the Treaty of Versailles reshape Europe after World War I?,synth,complex
+In what ways did the Civil Rights Movement influence social change in the United States?,synth,complex
+What were the primary motivations behind the Age of Exploration?,synth,complex
+How did the Silk Road facilitate cultural exchange between the East and West?,synth,complex
+What role did women play during World War II in both the home front and military?,synth,complex
+What were the major technological advancements during the Middle Ages?,synth,complex
+How did the Ottoman Empire influence trade and culture in the Mediterranean?,synth,complex
+What were the long-term effects of the Mongol Empire on Eurasian trade routes?,synth,complex
+How did the Enlightenment thinkers challenge traditional authority?,synth,complex
+What impact did the discovery of the Americas have on indigenous populations?,synth,complex
+What were the causes of the fall of the Byzantine Empire?,synth,complex
+How did the development of feudalism shape medieval European society?,synth,complex
+What were the lasting cultural contributions of the ancient Egyptians?,synth,complex
+How did the Cold War affect global politics and alliances?,synth,complex
+What role did propaganda play in the Nazi regime during World War II?,synth,complex
+How did the 19th-century revolutions in Latin America reflect broader global trends?,synth,complex
+What were the effects of the Black Death on European societies?,synth,complex
+How did the establishment of the United Nations aim to promote international peace?,synth,complex
+What was the significance of the Berlin Wall in the context of the Cold War?,synth,complex
+How did trade routes like the Trans-Saharan influence the economy of medieval Africa?,synth,complex
+What were the contributing factors to the rise of totalitarian regimes in the 20th century?,synth,complex
+How did Japan's Meiji Restoration transform its society and economy?,synth,complex
+What were the social and economic impacts of the Gold Rush in the United States?,synth,complex
+How did the discovery of penicillin revolutionize medicine in the 20th century?,synth,complex
+What lessons can be drawn from the failures of the League of Nations?,synth,complex
+How did the cultural and intellectual movements of the Renaissance spread across Europe?,synth,complex
+What were the causes and impacts of the partition of India in 1947?,synth,complex
+How did the concept of citizenship evolve from ancient Greece to modern times?,synth,complex
+What role did religion play in the political conflicts of medieval Europe?,synth,complex
+What were the effects of the American Civil War on the institution of slavery?,synth,complex
+How did the development of the printing press affect literacy and education in Europe?,synth,complex
+What were the major causes of the Great Depression?,synth,complex
+How did the rise of nationalism contribute to the outbreak of World War I?,synth,complex
+What were the implications of the Suez Canal for global trade?,synth,complex
+How did the cultural exchange along the Silk Road influence culinary traditions?,synth,complex
+What was the significance of the Magna Carta in the development of democracy?,synth,complex
