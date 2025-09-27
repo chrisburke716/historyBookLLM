@@ -139,7 +139,7 @@ class ChatService:
             logger.error(f"Failed to get messages for session {session_id}: {e}")
             return []
 
-    @traceable
+    @traceable(name="Chat Service: Send Message")
     async def send_message(
         self,
         session_id: str,

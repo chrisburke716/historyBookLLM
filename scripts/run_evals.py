@@ -4,11 +4,13 @@
 
 import asyncio
 from langchain_openai import ChatOpenAI
-from langsmith import Client
+from langsmith import Client, traceable
 from langchain.evaluation import Criteria, EvaluatorType
+from langsmith.evaluation import LangChainStringEvaluator
 
 from history_book.services import ChatService
 
+@traceable(name="Eval Script: Main")
 async def main():
 
     ls_client = Client()
@@ -39,6 +41,8 @@ async def main():
 
     llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
 
+    # get subset of dataset with metadata source = user
+    data_subset = ls_client.list_examples(dataset_name=dataset_name, metadata={"source": "user"})
 
     evals = []
     for eval_name in eval_names:
@@ -52,7 +56,7 @@ async def main():
 
     eval = await ls_client.aevaluate(
         target_wrapper,
-        data = dataset_name,
+        data = data_subset,
         evaluators = evals,
         description = "setup testing"
     )
