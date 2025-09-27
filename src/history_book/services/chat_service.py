@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from langsmith import traceable
@@ -10,6 +11,7 @@ from history_book.data_models.entities import (
     ChatMessage,
     ChatSession,
     MessageRole,
+    Paragraph,
 )
 from history_book.database.config import WeaviateConfig
 from history_book.database.repositories import BookRepositoryManager
@@ -22,6 +24,14 @@ logger = logging.getLogger(__name__)
 CONTEXT_MIN_RESULTS = 5
 CONTEXT_MAX_RESULTS = 40
 CONTEXT_SIMILARITY_CUTOFF = 0.4
+
+
+@dataclass
+class ChatResult:
+    """Result from chat service containing message and retrieved context."""
+
+    message: ChatMessage
+    retrieved_paragraphs: list[Paragraph]
 
 
 class ChatService:
@@ -145,18 +155,17 @@ class ChatService:
         session_id: str,
         user_message: str,
         enable_retrieval: bool = True,
-    ) -> ChatMessage:
+    ) -> ChatResult:
         """
         Send a message and get AI response with optional retrieval.
 
         Args:
             session_id: Session ID
             user_message: User's message content
-            max_context_paragraphs: Maximum paragraphs to retrieve for context
             enable_retrieval: Whether to enable retrieval augmentation
 
         Returns:
-            AI response message
+            ChatResult containing AI response message and retrieved paragraphs
 
         Raises:
             LLMError: If LLM generation fails
@@ -180,8 +189,13 @@ class ChatService:
             )
 
             # Save AI message and update session
-            return await self._save_ai_message_and_update_session(
+            ai_message = await self._save_ai_message_and_update_session(
                 session_id, rag_result.response, rag_result.source_paragraphs
+            )
+
+            # Return ChatResult with both message and retrieved paragraphs
+            return ChatResult(
+                message=ai_message, retrieved_paragraphs=rag_result.source_paragraphs
             )
 
         except LLMError:
@@ -196,18 +210,17 @@ class ChatService:
         session_id: str,
         user_message: str,
         enable_retrieval: bool = True,
-    ) -> AsyncIterator[str]:
+    ) -> tuple[AsyncIterator[str], list[Paragraph]]:
         """
         Send a message and get streaming AI response with optional retrieval.
 
         Args:
             session_id: Session ID
             user_message: User's message content
-            max_context_paragraphs: Maximum paragraphs to retrieve for context
             enable_retrieval: Whether to enable retrieval augmentation
 
-        Yields:
-            AI response chunks
+        Returns:
+            Tuple of (response_stream, retrieved_paragraphs)
 
         Note:
             The final complete response is saved to the database after streaming completes.
@@ -229,17 +242,20 @@ class ChatService:
                 enable_retrieval=enable_retrieval,
             )
 
-            # Collect response chunks while yielding them to the client
-            response_chunks = []
-            async for chunk in stream:
-                response_chunks.append(chunk)
-                yield chunk
+            # Create a wrapper that handles saving after streaming
+            async def stream_and_save():
+                response_chunks = []
+                async for chunk in stream:
+                    response_chunks.append(chunk)
+                    yield chunk
 
-            # Save complete AI response and update session
-            complete_response = "".join(response_chunks)
-            await self._save_ai_message_and_update_session(
-                session_id, complete_response, context_paragraphs
-            )
+                # Save complete AI response after streaming
+                complete_response = "".join(response_chunks)
+                await self._save_ai_message_and_update_session(
+                    session_id, complete_response, context_paragraphs
+                )
+
+            return stream_and_save(), context_paragraphs
 
         except Exception as e:
             logger.error(f"Failed to stream message: {e}")
