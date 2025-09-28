@@ -53,7 +53,7 @@ async def main():
         data=data_subset,
         evaluators=evals,
         description="setup testing",
-        max_concurrency=4,
+        max_concurrency=5,
     )
 
 

@@ -5,14 +5,17 @@ This module provides a standardized way to define, register, and run evaluations
 on the RAG system's performance.
 """
 
-from .base import BaseEvaluator
-from .evaluators import (
+from history_book.evals.base import BaseEvaluator
+from history_book.evals.evaluators import (
     CoherenceEvaluator,
     FactualAccuracyEvaluator,
     HallucinationEvaluator,
     HelpfulnessEvaluator,
+    IdkAppropriateEvaluator,
+    IdkEvaluator,
+    RelevanceEvaluator,
 )
-from .registry import (
+from history_book.evals.registry import (
     get_all_evaluators,
     get_evaluator,
     list_evaluators,
@@ -29,4 +32,7 @@ __all__ = [
     "FactualAccuracyEvaluator",
     "HallucinationEvaluator",
     "HelpfulnessEvaluator",
+    "IdkAppropriateEvaluator",
+    "IdkEvaluator",
+    "RelevanceEvaluator",
 ]

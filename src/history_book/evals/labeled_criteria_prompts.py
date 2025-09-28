@@ -25,3 +25,29 @@ Provide your reasoning step by step, then respond with:
 - N if the response is factually consistent with the context
 
 Reasoning:""")
+
+
+IDK_APPROPRIATE_PROMPT = PromptTemplate.from_template("""
+You are evaluating whether an "I don't know" response is appropriate given the retrieved context.
+
+Retrieved Context: {reference}
+User Question: {input}
+AI Response: {output}
+
+Evaluation Criteria: {criteria}
+
+Instructions: Determine if the AI's uncertainty or knowledge claim is appropriate given the available context. Look for:
+
+APPROPRIATE (respond Y):
+- AI says "I don't know" AND the retrieved context lacks relevant information
+- AI provides an answer AND the retrieved context contains supporting information
+
+INAPPROPRIATE (respond N):
+- AI says "I don't know" BUT the retrieved context contains relevant information to answer the question
+- AI provides a confident answer BUT the retrieved context lacks sufficient information to support that answer
+
+Provide your reasoning step by step, then respond with:
+- Y if the response is appropriate given the available context
+- N if there is a mismatch (inappropriate idk or inappropriate confidence)
+
+Reasoning:""")

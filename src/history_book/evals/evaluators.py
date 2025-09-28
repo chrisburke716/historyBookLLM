@@ -4,10 +4,18 @@ Built-in evaluator implementations.
 
 from langchain.evaluation import Criteria
 
-from .base import CriteriaEvaluator, LabeledCriteriaEvaluator
-from .criteria_prompts import COHERENCE_PROMPT, FACTUAL_ACCURACY_PROMPT
-from .labeled_criteria_prompts import HALLUCINATION_PROMPT
-from .registry import register_evaluator
+from history_book.evals.base import CriteriaEvaluator, LabeledCriteriaEvaluator
+from history_book.evals.criteria_prompts import (
+    COHERENCE_PROMPT,
+    FACTUAL_ACCURACY_PROMPT,
+    IDK_PROMPT,
+    RELEVANCE_PROMPT,
+)
+from history_book.evals.labeled_criteria_prompts import (
+    HALLUCINATION_PROMPT,
+    IDK_APPROPRIATE_PROMPT,
+)
+from history_book.evals.registry import register_evaluator
 
 
 @register_evaluator
@@ -71,3 +79,54 @@ class HallucinationEvaluator(LabeledCriteriaEvaluator):
 
     def get_prompt(self):
         return HALLUCINATION_PROMPT
+
+
+@register_evaluator
+class IdkEvaluator(CriteriaEvaluator):
+    """Evaluates whether the response appropriately expresses uncertainty or lack of knowledge."""
+
+    @property
+    def name(self) -> str:
+        return "idk"
+
+    def get_criteria(self):
+        return {
+            "idk": "Determine if this AI response appropriately expresses uncertainty or admits lack of knowledge when it doesn't know the answer or couldn't find the information."
+        }
+
+    def get_prompt(self):
+        return IDK_PROMPT
+
+
+@register_evaluator
+class RelevanceEvaluator(CriteriaEvaluator):
+    """Evaluates whether the response is relevant to and directly addresses the user's question."""
+
+    @property
+    def name(self) -> str:
+        return "relevance"
+
+    def get_criteria(self):
+        return {
+            "relevance": "Determine if this AI response is relevant to and directly addresses the user's question. The response should be on-topic, focused, and answer what was specifically asked."
+        }
+
+    def get_prompt(self):
+        return RELEVANCE_PROMPT
+
+
+@register_evaluator
+class IdkAppropriateEvaluator(LabeledCriteriaEvaluator):
+    """Evaluates whether 'I don't know' responses are appropriate given the retrieved context."""
+
+    @property
+    def name(self) -> str:
+        return "idk_appropriate"
+
+    def get_criteria(self):
+        return {
+            "idk_appropriate": "Determine if the AI's level of confidence (knowing vs not knowing) is appropriate given the retrieved context. The AI should say 'I don't know' when context lacks information, and provide answers when context contains relevant information."
+        }
+
+    def get_prompt(self):
+        return IDK_APPROPRIATE_PROMPT

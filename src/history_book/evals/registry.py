@@ -2,7 +2,7 @@
 Registry system for discovering and managing evaluators.
 """
 
-from .base import BaseEvaluator
+from history_book.evals.base import BaseEvaluator
 
 # Global registry of evaluators
 _EVALUATOR_REGISTRY: dict[str, type[BaseEvaluator]] = {}
