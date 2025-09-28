@@ -3,14 +3,14 @@
 import asyncio
 
 from langchain.evaluation import Criteria, EvaluatorType
+from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
-from langsmith import Client, traceable
+from langsmith import Client
 from langsmith.evaluation import LangChainStringEvaluator
 
 from history_book.services import ChatService
 
 
-@traceable(name="Eval Script: Main")
 async def main():
     ls_client = Client()
 
@@ -30,7 +30,13 @@ async def main():
             "retrieved_context": [para.text for para in result.retrieved_paragraphs],
         }
 
-    def prepare_data(run, example):
+    def prepare_data_criteria(run, example):
+        return {
+            "prediction": run.outputs.get("content"),
+            "input": example.inputs.get("question"),
+        }
+
+    def prepare_data_labeled_criteria(run, example):
         return {
             "prediction": run.outputs.get("content"),
             "input": example.inputs.get("question"),
@@ -39,35 +45,83 @@ async def main():
 
     dataset_name = "History Book Eval Queries"
 
-    eval_names = [
-        # Criteria.CONCISENESS,
-        # Criteria.CORRECTNESS, # should be labeled criteria
-        # Criteria.RELEVANCE,
-        Criteria.HELPFULNESS,
-        # Criteria.HARMFULNESS,
-    ]
+    # Custom hallucination detection prompt
+    _hallucination_prompt = PromptTemplate.from_template("""
+You are evaluating an AI response for hallucinations against retrieved context.
 
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
+Retrieved Context: {reference}
+User Question: {input}
+AI Response: {output}
+
+Evaluation Criteria: {criteria}
+
+Instructions: Check if the AI response contains any factual claims that are not supported by the retrieved context. Look for:
+- Made-up facts, dates, names, or events not mentioned in the context
+- Information that contradicts the retrieved context
+- Specific details or claims not present in the reference material
+
+Provide your reasoning step by step, then respond with:
+- Y if the response contains hallucinated information
+- N if the response is factually consistent with the context
+
+Reasoning:""")
+
+    # Evaluation configurations
+    llm = ChatOpenAI(
+        model="gpt-5-mini-2025-08-07", temperature=1.0
+    )  # gpt-5 models don't support temp != 1.0
+
+    eval_configs = [
+        {
+            "name": "helpfulness",
+            "type": EvaluatorType.CRITERIA,
+            "criteria": Criteria.HELPFULNESS,
+            "prompt": None,
+        },
+        {
+            "name": "hallucination",
+            "type": EvaluatorType.LABELED_CRITERIA,
+            "criteria": {
+                "hallucination": "Determine if this AI response contains hallucinated information - factual claims, specific details, dates, names, or events that are not supported by or present in the retrieved context. The response should only make claims that can be verified against the provided reference material."
+            },
+            "prompt": None,
+            # "prompt": hallucination_prompt
+        },
+    ]
 
     # get subset of dataset with metadata source = user
     data_subset = ls_client.list_examples(
         dataset_name=dataset_name, metadata={"source": "user"}
     )
+    # even shorter for testing
+    data_subset = list(data_subset)[:3]
 
     evals = []
-    for eval_name in eval_names:
-        config = {
-            "criteria": eval_name,
+    for config in eval_configs:
+        evaluator_config = {
+            "criteria": config["criteria"],
             "llm": llm,
         }
-        # evaluator_chain = load_evaluator(evaluator=Criteria, llm=eval_name, Criteria)
+        if config["prompt"]:
+            evaluator_config["prompt"] = config["prompt"]
+
+        prepare_data = (
+            prepare_data_labeled_criteria
+            if config["type"] == EvaluatorType.LABELED_CRITERIA
+            else prepare_data_criteria
+        )
+
         evaluator = LangChainStringEvaluator(
-            evaluator=EvaluatorType.CRITERIA, config=config, prepare_data=prepare_data
+            evaluator=config["type"], config=evaluator_config, prepare_data=prepare_data
         )
         evals.append(evaluator)
 
     _eval = await ls_client.aevaluate(
-        target_wrapper, data=data_subset, evaluators=evals, description="setup testing"
+        target_wrapper,
+        data=data_subset,
+        evaluators=evals,
+        description="setup testing",
+        max_concurrency=4,
     )
 
 
