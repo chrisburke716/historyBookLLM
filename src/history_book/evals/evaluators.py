@@ -6,7 +6,11 @@ from typing import Any
 
 from langchain.evaluation import Criteria
 
-from history_book.evals.base import CriteriaEvaluator, LabeledCriteriaEvaluator
+from history_book.evals.base import (
+    CriteriaEvaluator,
+    FunctionEvaluator,
+    LabeledCriteriaEvaluator,
+)
 from history_book.evals.criteria_prompts import (
     COHERENCE_PROMPT,
     FACTUAL_ACCURACY_PROMPT,
@@ -120,7 +124,9 @@ class RelevanceEvaluator(CriteriaEvaluator):
         """Custom data preparation for context relevance evaluation."""
         return {
             "input": example.inputs.get("question"),
-            "prediction": run.outputs.get("retrieved_context"),  # Context as thing being evaluated
+            "prediction": run.outputs.get(
+                "retrieved_context"
+            ),  # Context as thing being evaluated
         }
 
 
@@ -139,3 +145,38 @@ class IdkAppropriateEvaluator(LabeledCriteriaEvaluator):
 
     def get_prompt(self):
         return IDK_APPROPRIATE_PROMPT
+
+
+@register_evaluator
+class DocumentCountEvaluator(FunctionEvaluator):
+    """Evaluates the number of documents retrieved for each query."""
+
+    @property
+    def name(self) -> str:
+        return "document_count"
+
+    def evaluate(self, run, example) -> dict[str, Any]:
+        """
+        Count the number of retrieved documents.
+
+        Args:
+            run: LangSmith run object containing outputs
+            example: LangSmith example object containing inputs
+
+        Returns:
+            Dictionary with document count and metadata
+        """
+        retrieved_context = run.outputs.get("retrieved_context", [])
+
+        # Handle both list of strings and list of objects
+        if isinstance(retrieved_context, list):
+            count = len(retrieved_context)
+        else:
+            count = 0
+
+        return {
+            "key": "document_count",
+            "score": count,
+            "value": count,
+            "comment": f"Retrieved {count} documents for query",
+        }

@@ -2,7 +2,7 @@
 Registry system for discovering and managing evaluators.
 """
 
-from history_book.evals.base import BaseEvaluator
+from history_book.evals.base import BaseEvaluator, FunctionEvaluator
 
 # Global registry of evaluators
 _EVALUATOR_REGISTRY: dict[str, type[BaseEvaluator]] = {}
@@ -84,3 +84,39 @@ def get_all_evaluators(**kwargs) -> list[BaseEvaluator]:
         List of evaluator instances
     """
     return [create_evaluator(name, **kwargs) for name in list_evaluators()]
+
+
+def get_prompt_evaluators(**kwargs) -> list[BaseEvaluator]:
+    """
+    Create instances of all prompt-based evaluators (Criteria and LabeledCriteria).
+
+    Args:
+        **kwargs: Arguments to pass to evaluator constructors
+
+    Returns:
+        List of prompt-based evaluator instances
+    """
+    prompt_evaluators = []
+    for name in list_evaluators():
+        evaluator = create_evaluator(name, **kwargs)
+        if not isinstance(evaluator, FunctionEvaluator):
+            prompt_evaluators.append(evaluator)
+    return prompt_evaluators
+
+
+def get_function_evaluators(**kwargs) -> list[BaseEvaluator]:
+    """
+    Create instances of all function-based evaluators.
+
+    Args:
+        **kwargs: Arguments to pass to evaluator constructors
+
+    Returns:
+        List of function-based evaluator instances
+    """
+    function_evaluators = []
+    for name in list_evaluators():
+        evaluator = create_evaluator(name, **kwargs)
+        if isinstance(evaluator, FunctionEvaluator):
+            function_evaluators.append(evaluator)
+    return function_evaluators

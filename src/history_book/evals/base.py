@@ -153,3 +153,65 @@ class LabeledCriteriaEvaluator(BaseEvaluator):
             "input": example.inputs.get("question"),
             "reference": run.outputs.get("retrieved_context"),
         }
+
+
+class FunctionEvaluator(BaseEvaluator):
+    """
+    Base class for evaluators that use direct functions instead of LLM prompts.
+
+    These evaluators compute metrics directly from the data without requiring
+    an LLM for evaluation.
+    """
+
+    def __init__(self, llm: ChatOpenAI | None = None):
+        """Initialize function evaluator. LLM parameter is ignored."""
+        # Function evaluators don't need LLMs
+        pass
+
+    @property
+    def evaluator_type(self) -> str:
+        """Function evaluators use a custom type."""
+        return "function"
+
+    @abstractmethod
+    def evaluate(self, run, example) -> dict[str, Any]:
+        """
+        Evaluate directly without LLM.
+
+        Args:
+            run: LangSmith run object containing outputs
+            example: LangSmith example object containing inputs
+
+        Returns:
+            Dictionary containing evaluation results
+        """
+        pass
+
+    def get_criteria(self) -> Any:
+        """Function evaluators don't use criteria."""
+        return None
+
+    def prepare_data(self, run, example) -> dict[str, Any]:
+        """Function evaluators don't use prepare_data."""
+        return {}
+
+    def get_prompt(self) -> PromptTemplate | None:
+        """Function evaluators don't use prompts."""
+        return None
+
+    def create_langsmith_evaluator(self):
+        """
+        Create a custom function-based evaluator for LangSmith.
+
+        Returns:
+            Custom evaluator function
+        """
+
+        def custom_evaluator(run, example):
+            """Custom evaluator function for LangSmith."""
+            return self.evaluate(run, example)
+
+        # Return the function with metadata
+        custom_evaluator.name = self.name
+        custom_evaluator.type = "function"
+        return custom_evaluator

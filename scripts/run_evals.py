@@ -5,7 +5,7 @@ import asyncio
 from langchain_openai import ChatOpenAI
 from langsmith import Client
 
-from history_book.evals import get_all_evaluators
+from history_book.evals import get_prompt_evaluators, get_function_evaluators
 from history_book.services import ChatService
 
 
@@ -45,11 +45,19 @@ async def main():
     # even shorter for testing
     data_subset = list(data_subset)[:3]
 
-    # Create all evaluators using the registry
-    evaluators = get_all_evaluators(llm=llm)
-    evals = [evaluator.create_langchain_evaluator() for evaluator in evaluators]
+    # Create evaluators using the registry
+    prompt_evaluators = get_prompt_evaluators(llm=llm)
+    function_evaluators = get_function_evaluators()
 
-    print(f"Running evaluations with: {[eval.name for eval in evaluators]}")
+    # Create LangSmith evaluators
+    prompt_evals = [evaluator.create_langchain_evaluator() for evaluator in prompt_evaluators]
+    function_evals = [evaluator.create_langsmith_evaluator() for evaluator in function_evaluators]
+
+    # Combine all evaluators
+    all_evals = prompt_evals + function_evals
+
+    all_evaluator_names = [e.name for e in prompt_evaluators] + [e.name for e in function_evaluators]
+    print(f"Running evaluations with: {all_evaluator_names}")
 
     # Extract metadata for evaluation tracking
     metadata = chat_service.get_eval_metadata()
@@ -64,7 +72,7 @@ async def main():
         target_wrapper,
         data=dataset_name, # full dataset
         # data=data_subset, # smaller subset for testing
-        evaluators=evals,
+        evaluators=all_evals,
         description=eval_run_description,
         metadata=metadata,
         max_concurrency=10,
