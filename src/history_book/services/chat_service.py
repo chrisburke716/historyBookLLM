@@ -387,6 +387,35 @@ class ChatService:
             logger.error(f"Failed to search messages: {e}")
             return []
 
+    def get_eval_metadata(self) -> dict[str, any]:
+        """
+        Extract metadata about the chat service configuration for evaluation tracking.
+
+        Returns:
+            Dictionary containing LLM and RAG configuration settings
+        """
+        metadata = {}
+
+        # LLM Configuration
+        metadata["llm_provider"] = self.llm_config.provider
+        metadata["llm_model"] = self.llm_config.model_name
+        metadata["llm_temperature"] = self.llm_config.temperature
+        metadata["llm_max_tokens"] = self.llm_config.max_tokens
+
+        # Truncate system message for readability
+        system_msg = self.llm_config.system_message
+        metadata["llm_system_message"] = (
+            system_msg[:100] + "..." if len(system_msg) > 100 else system_msg
+        )
+
+        # RAG Configuration
+        metadata["min_context_results"] = self.min_context_results
+        metadata["max_context_results"] = self.max_context_results
+        metadata["context_similarity_cutoff"] = self.context_similarity_cutoff
+        metadata["retrieval_strategy"] = self.retrieval_strategy
+
+        return metadata
+
     def close(self) -> None:
         """Close all repository connections."""
         try:

@@ -10,6 +10,9 @@ from history_book.services import ChatService
 
 
 async def main():
+
+    eval_run_description = "RAG with min 5 retrieved docs, max 40, 0.4 similarity cutoff, gpt-4o-mini"
+
     ls_client = Client()
 
     chat_service = ChatService()
@@ -48,12 +51,23 @@ async def main():
 
     print(f"Running evaluations with: {[eval.name for eval in evaluators]}")
 
+    # Extract metadata for evaluation tracking
+    metadata = chat_service.get_eval_metadata()
+
+    # Add evaluator metadata
+    metadata["evaluator_llm_model"] = llm.model_name
+    metadata["evaluator_llm_temperature"] = llm.temperature
+
+    print(f"Evaluation metadata: {metadata}")
+
     _eval = await ls_client.aevaluate(
         target_wrapper,
-        data=data_subset,
+        data=dataset_name, # full dataset
+        # data=data_subset, # smaller subset for testing
         evaluators=evals,
-        description="setup testing",
-        max_concurrency=5,
+        description=eval_run_description,
+        metadata=metadata,
+        max_concurrency=10,
     )
 
 
