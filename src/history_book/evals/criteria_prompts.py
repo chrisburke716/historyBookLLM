@@ -69,21 +69,23 @@ Your evaluation:""")
 
 
 RELEVANCE_PROMPT = PromptTemplate.from_template("""
-You are evaluating whether an AI response is relevant to the user's question.
+You are evaluating whether the retrieved context is relevant to the user's question.
 
 User Question: {input}
-AI Response: {output}
+Retrieved Context: {output}
 
 Evaluation Criteria: {criteria}
 
-Instructions: Determine if the AI response directly addresses the user's question. Look for:
-- Does the response answer what was specifically asked?
-- Is the response on-topic and focused on the question?
-- Does it avoid going off on tangents or providing unrelated information?
-- If the question has multiple parts, does it address the main components?
+Instructions: Determine if the retrieved context contains information relevant to answering the user's question. Look for:
+- Does the context contain information that could help answer the question?
+- Is the context on-topic and related to what was asked?
+- Does the context avoid being completely unrelated or off-topic?
+- If the question has multiple parts, does the context address any of the main components?
+
+Note: The context doesn't need to contain the complete answer, just relevant information that could contribute to answering the question.
 
 Provide your reasoning step by step, then respond with:
-- Y if the response is relevant and directly addresses the question
-- N if the response is off-topic, tangential, or doesn't answer what was asked
+- Y if the context is relevant and contains information related to the question
+- N if the context is off-topic, unrelated, or doesn't contain relevant information
 
 Your evaluation:""")

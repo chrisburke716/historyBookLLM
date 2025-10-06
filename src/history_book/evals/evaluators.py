@@ -2,6 +2,8 @@
 Built-in evaluator implementations.
 """
 
+from typing import Any
+
 from langchain.evaluation import Criteria
 
 from history_book.evals.base import CriteriaEvaluator, LabeledCriteriaEvaluator
@@ -100,7 +102,7 @@ class IdkEvaluator(CriteriaEvaluator):
 
 @register_evaluator
 class RelevanceEvaluator(CriteriaEvaluator):
-    """Evaluates whether the response is relevant to and directly addresses the user's question."""
+    """Evaluates whether the retrieved context is relevant to the user's question."""
 
     @property
     def name(self) -> str:
@@ -108,11 +110,18 @@ class RelevanceEvaluator(CriteriaEvaluator):
 
     def get_criteria(self):
         return {
-            "relevance": "Determine if this AI response is relevant to and directly addresses the user's question. The response should be on-topic, focused, and answer what was specifically asked."
+            "relevance": "Determine if the retrieved context contains information relevant to answering the user's question. The context should be on-topic and related to what was asked, even if it doesn't contain the complete answer."
         }
 
     def get_prompt(self):
         return RELEVANCE_PROMPT
+
+    def prepare_data(self, run, example) -> dict[str, Any]:
+        """Custom data preparation for context relevance evaluation."""
+        return {
+            "input": example.inputs.get("question"),
+            "prediction": run.outputs.get("retrieved_context"),  # Context as thing being evaluated
+        }
 
 
 @register_evaluator
