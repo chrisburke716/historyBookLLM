@@ -26,9 +26,13 @@ async def main():
         )
 
         # Return both the message content and retrieved context for evaluation
+        # Include metadata that the AI had access to during generation
         return {
             "content": result.message.content,
-            "retrieved_context": [para.text for para in result.retrieved_paragraphs],
+            "retrieved_context": [
+                f"[Book {para.book_index}, Chapter {para.chapter_index}, Page {para.page}]\n{para.text}"
+                for para in result.retrieved_paragraphs
+            ],
         }
 
     dataset_name = "History Book Eval Queries"
