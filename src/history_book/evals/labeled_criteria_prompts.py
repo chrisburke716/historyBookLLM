@@ -20,9 +20,11 @@ Instructions: Check if the AI response contains any factual claims that are not 
 - Information that contradicts the retrieved context
 - Specific details or claims not present in the reference material
 
-Provide your reasoning step by step, then respond with:
+First, provide your step-by-step reasoning. Then, on the final line, provide your answer:
 - Y if the response contains hallucinated information
 - N if the response is factually consistent with the context
+
+On the final line, write only Y or N.
 
 Reasoning:""")
 
@@ -46,8 +48,10 @@ INAPPROPRIATE (respond N):
 - AI says "I don't know" BUT the retrieved context contains relevant information to answer the question
 - AI provides a confident answer BUT the retrieved context lacks sufficient information to support that answer
 
-Provide your reasoning step by step, then respond with:
+First, provide your step-by-step reasoning. Then, on the final line, provide your answer:
 - Y if the response is appropriate given the available context
 - N if there is a mismatch (inappropriate idk or inappropriate confidence)
+
+On the final line, write only Y or N.
 
 Reasoning:""")

@@ -19,11 +19,13 @@ Instructions: Assess whether the AI response contains factually correct informat
 - Contradictory or impossible claims
 - Misinformation or commonly confused facts
 
-Provide your reasoning step by step, then respond with:
+First, provide your step-by-step reasoning. Then, on the final line, provide your answer:
 - Y if the response is factually accurate
 - N if the response contains factual inaccuracies
 
-Your evaluation:""")
+On the final line, write only Y or N.
+
+Reasoning:""")
 
 
 COHERENCE_PROMPT = PromptTemplate.from_template("""
@@ -40,11 +42,13 @@ Instructions: Assess whether the response is logically structured, coherent, and
 - Well-organized structure
 - Absence of contradictory statements within the response
 
-Provide your reasoning step by step, then respond with:
+First, provide your step-by-step reasoning. Then, on the final line, provide your answer:
 - Y if the response is coherent and well-structured
 - N if the response lacks coherence or logical flow
 
-Your evaluation:""")
+On the final line, write only Y or N.
+
+Reasoning:""")
 
 
 IDK_PROMPT = PromptTemplate.from_template("""
@@ -61,11 +65,13 @@ Instructions: Determine if the AI response indicates that it doesn't know the an
 - Admissions of insufficient information or inability to answer
 - Phrases like "I don't have enough information", "This is unclear", "I cannot determine"
 
-Provide your reasoning step by step, then respond with:
+First, provide your step-by-step reasoning. Then, on the final line, provide your answer:
 - Y if the response expresses uncertainty or lack of knowledge
 - N if the response provides a confident answer without expressing uncertainty
 
-Your evaluation:""")
+On the final line, write only Y or N.
+
+Reasoning:""")
 
 
 RELEVANCE_PROMPT = PromptTemplate.from_template("""
@@ -84,8 +90,10 @@ Instructions: Determine if the retrieved context contains information relevant t
 
 Note: The context doesn't need to contain the complete answer, just relevant information that could contribute to answering the question.
 
-Provide your reasoning step by step, then respond with:
+First, provide your step-by-step reasoning. Then, on the final line, provide your answer:
 - Y if the context is relevant and contains information related to the question
 - N if the context is off-topic, unrelated, or doesn't contain relevant information
 
-Your evaluation:""")
+On the final line, write only Y or N.
+
+Reasoning:""")
