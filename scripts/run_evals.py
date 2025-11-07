@@ -5,13 +5,14 @@ import asyncio
 from langchain_openai import ChatOpenAI
 from langsmith import Client
 
-from history_book.evals import get_prompt_evaluators, get_function_evaluators
+from history_book.evals import get_function_evaluators, get_prompt_evaluators
 from history_book.services import ChatService
 
 
 async def main():
-
-    eval_run_description = "RAG with min 5 retrieved docs, max 40, 0.4 similarity cutoff, gpt-4o-mini"
+    eval_run_description = (
+        "RAG with min 5 retrieved docs, max 40, 0.4 similarity cutoff, gpt-4o-mini"
+    )
 
     ls_client = Client()
 
@@ -54,13 +55,19 @@ async def main():
     function_evaluators = get_function_evaluators()
 
     # Create LangSmith evaluators
-    prompt_evals = [evaluator.create_langchain_evaluator() for evaluator in prompt_evaluators]
-    function_evals = [evaluator.create_langsmith_evaluator() for evaluator in function_evaluators]
+    prompt_evals = [
+        evaluator.create_langchain_evaluator() for evaluator in prompt_evaluators
+    ]
+    function_evals = [
+        evaluator.create_langsmith_evaluator() for evaluator in function_evaluators
+    ]
 
     # Combine all evaluators
     all_evals = prompt_evals + function_evals
 
-    all_evaluator_names = [e.name for e in prompt_evaluators] + [e.name for e in function_evaluators]
+    all_evaluator_names = [e.name for e in prompt_evaluators] + [
+        e.name for e in function_evaluators
+    ]
     print(f"Running evaluations with: {all_evaluator_names}")
 
     # Extract metadata for evaluation tracking
@@ -74,7 +81,7 @@ async def main():
 
     _eval = await ls_client.aevaluate(
         target_wrapper,
-        data=dataset_name, # full dataset
+        data=dataset_name,  # full dataset
         # data=data_subset, # smaller subset for testing
         evaluators=all_evals,
         description=eval_run_description,
