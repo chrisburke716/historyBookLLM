@@ -13,7 +13,7 @@ from history_book.api.models.api_models import (
     SessionListResponse,
     SessionResponse,
 )
-from history_book.data_models.entities import ChatMessage, ChatSession
+from history_book.data_models.entities import ChatMessage, ChatSession, Paragraph
 from history_book.services.chat_service import ChatService
 
 logger = logging.getLogger(__name__)
@@ -39,27 +39,15 @@ def convert_session_to_response(session: ChatSession) -> SessionResponse:
 
 
 def convert_message_to_response(
-    message: ChatMessage, chat_service: ChatService = None
+    message: ChatMessage, retrieved_paragraphs: list[Paragraph] = None
 ) -> MessageResponse:
     """Convert ChatMessage entity to MessageResponse."""
     citations = None
-    if message.retrieved_paragraphs and chat_service:
-        # Get actual page numbers from retrieved paragraphs
-        citations = []
-        for para_id in message.retrieved_paragraphs:
-            try:
-                # Get paragraph from database to extract page number
-                # TODO: don't love the idea of accessing repository_manager from chat_service here. might make that a singleton?
-                paragraph = chat_service.repository_manager.paragraphs.get_by_id(
-                    para_id
-                )
-                if paragraph:
-                    citations.append(f"Page {paragraph.page}")
-            except Exception:
-                # Fallback to generic citation if paragraph fetch fails
-                citations.append("Source document")
+    if retrieved_paragraphs:
+        # Use provided retrieved paragraphs directly (no database calls)
+        citations = [f"Page {para.page}" for para in retrieved_paragraphs]
     elif message.retrieved_paragraphs:
-        # Fallback when chat_service not available
+        # Fallback when retrieved_paragraphs not provided
         citations = [
             f"Source {i}" for i in range(1, len(message.retrieved_paragraphs) + 1)
         ]
@@ -110,9 +98,7 @@ async def get_session_messages(
     """Get all messages for a session."""
     try:
         messages = await chat_service.get_session_messages(session_id)
-        message_responses = [
-            convert_message_to_response(m, chat_service) for m in messages
-        ]
+        message_responses = [convert_message_to_response(m) for m in messages]
         return MessageListResponse(messages=message_responses)
     except Exception as e:
         logger.error(f"Failed to get messages for session {session_id}: {e}")
@@ -134,14 +120,17 @@ async def send_message(
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # Send message and get response
-        ai_message = await chat_service.send_message(
+        # Send message and get response with context
+        result = await chat_service.send_message(
             session_id=session_id,
             user_message=request.content,
             enable_retrieval=request.enable_retrieval,
         )
 
-        response_message = convert_message_to_response(ai_message, chat_service)
+        # Use retrieved paragraphs directly instead of making database calls
+        response_message = convert_message_to_response(
+            result.message, retrieved_paragraphs=result.retrieved_paragraphs
+        )
         return ChatResponse(message=response_message)
 
     except HTTPException:
