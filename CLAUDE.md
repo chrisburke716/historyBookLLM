@@ -76,6 +76,26 @@ User Message → ChatService → RagService → [Retrieval → LCEL Chain → LL
 - API client with Axios for backend communication
 - State management through React hooks
 
+### Evaluation Framework
+
+**Evaluation Layer** (`src/history_book/evals/`):
+- **LLM-based evaluators**: Helpfulness, Hallucination, Factual Accuracy, Coherence, IDK handling, Relevance
+- **Function evaluators**: Document count tracking
+- **LangSmith integration**: Experiment tracking and comparison
+- **Dataset**: 100 evaluation queries (user + synthetic)
+- See `/src/history_book/evals/CLAUDE.md` for details
+
+## Detailed Documentation
+
+For in-depth information about specific subsystems, see:
+
+- **[Services](/src/history_book/services/CLAUDE.md)** - Business logic layer (ChatService, RagService, IngestionService, ParagraphService)
+- **[Database](/src/history_book/database/CLAUDE.md)** - Repository pattern and Weaviate integration
+- **[API](/src/history_book/api/CLAUDE.md)** - FastAPI REST endpoints
+- **[LLM Configuration](/src/history_book/llm/CLAUDE.md)** - LLM provider setup (OpenAI, Anthropic)
+- **[Evaluations](/src/history_book/evals/CLAUDE.md)** - RAG evaluation framework
+- **[Frontend](/frontend/CLAUDE.md)** - React TypeScript UI
+
 ## Environment Configuration
 
 The application supports multiple environments through configuration files:
@@ -124,6 +144,10 @@ OPENAI_API_KEY=your-api-key  # Required for chat functionality
 - React 19 with TypeScript
 - Material-UI for component library
 - Axios for HTTP client
+
+## Project Documentation
+
+**Planning Files**: The `/docs/plans/` directory contains Claude-generated planning documents for major features and documentation efforts. These serve as reference for understanding design decisions and project evolution.
 
 ## Important Notes
 
