@@ -41,13 +41,13 @@ class RagService:
         self.repository_manager = repository_manager
 
         # Create the LangChain model
-        self.chat_model = self._create_chat_model()
+        self.chat_model = self.create_chat_model()
 
         # Build LCEL chains
         self.rag_chain = self._build_rag_chain()
         self.simple_chain = self._build_simple_chain()
 
-    def _create_chat_model(self):
+    def create_chat_model(self):
         """Create the appropriate LangChain chat model based on configuration."""
         try:
             if self.config.provider == "openai":
@@ -146,7 +146,7 @@ class RagService:
             # Retrieve context if enabled
             source_paragraphs = []
             if enable_retrieval:
-                source_paragraphs = await self._retrieve_context(
+                source_paragraphs = await self.retrieve_context(
                     query,
                     min_results,
                     max_results,
@@ -155,12 +155,12 @@ class RagService:
                 )
 
             # Convert chat messages to LangChain format
-            formatted_messages = self._convert_to_langchain_messages(messages)
+            formatted_messages = self.convert_to_langchain_messages(messages)
 
             # Choose the appropriate chain and prepare input
             if enable_retrieval and source_paragraphs:
                 # Use RAG chain with context
-                context = self._format_context(source_paragraphs)
+                context = self.format_context(source_paragraphs)
                 formatted_context = format_context_for_llm(
                     context, self.config.max_context_length
                 )
@@ -215,7 +215,7 @@ class RagService:
             # Retrieve context if enabled
             source_paragraphs = []
             if enable_retrieval:
-                source_paragraphs = await self._retrieve_context(
+                source_paragraphs = await self.retrieve_context(
                     query,
                     min_results,
                     max_results,
@@ -224,12 +224,12 @@ class RagService:
                 )
 
             # Convert chat messages to LangChain format
-            formatted_messages = self._convert_to_langchain_messages(messages)
+            formatted_messages = self.convert_to_langchain_messages(messages)
 
             # Choose the appropriate chain and prepare input
             if enable_retrieval and source_paragraphs:
                 # Use RAG chain with context
-                context = self._format_context(source_paragraphs)
+                context = self.format_context(source_paragraphs)
                 formatted_context = format_context_for_llm(
                     context, self.config.max_context_length
                 )
@@ -253,7 +253,7 @@ class RagService:
             logger.error(f"Failed to generate streaming response: {e}")
             raise LLMError(f"Streaming response generation failed: {e}") from e
 
-    def _convert_to_langchain_messages(self, messages: list[ChatMessage]) -> list:
+    def convert_to_langchain_messages(self, messages: list[ChatMessage]) -> list:
         """Convert ChatMessage objects to LangChain message format."""
         # Format messages using existing utility
         formatted_messages = format_messages_for_llm(
@@ -274,7 +274,7 @@ class RagService:
 
         return lc_messages
 
-    async def _retrieve_context(
+    async def retrieve_context(
         self,
         query: str,
         min_results: int,
@@ -339,7 +339,7 @@ class RagService:
             logger.warning(f"Failed to retrieve context: {e}")
             return []
 
-    def _format_context(self, paragraphs: list[Paragraph]) -> str:
+    def format_context(self, paragraphs: list[Paragraph]) -> str:
         """
         Format retrieved paragraphs as context for the LLM.
 
