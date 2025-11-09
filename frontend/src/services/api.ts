@@ -1,5 +1,12 @@
 /**
- * Centralized API service for communicating with the History Book Chat API.
+ * Centralized API service for communicating with the History Book Chat/Agent API.
+ *
+ * This file provides a unified abstraction over two backend implementations:
+ * - ChatAPI: Legacy LCEL-based RAG (/api/chat/*)
+ * - AgentAPI: LangGraph-based RAG (/api/agent/*)
+ *
+ * The active backend is controlled by the REACT_APP_USE_AGENT_API environment variable.
+ * Default: Agent API (LangGraph)
  */
 
 import axios, { AxiosInstance } from 'axios';
@@ -11,6 +18,7 @@ import {
   MessageListResponse,
   ChatResponse,
 } from '../types';
+import { agentAPI } from './agentAPI';
 
 class ChatAPI {
   private api: AxiosInstance;
@@ -68,6 +76,17 @@ class ChatAPI {
   }
 }
 
-// Export singleton instance
+// Export ChatAPI instance
 export const chatAPI = new ChatAPI();
-export default chatAPI;
+
+// Export AgentAPI
+export { agentAPI };
+
+// Unified API instance - switches based on environment variable
+// Default to Agent API (LangGraph)
+const USE_AGENT_API = process.env.REACT_APP_USE_AGENT_API !== 'false';
+
+export const api = USE_AGENT_API ? agentAPI : chatAPI;
+
+// Default export is the unified API
+export default api;

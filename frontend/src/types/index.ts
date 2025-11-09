@@ -1,7 +1,11 @@
 /**
  * TypeScript interfaces matching the API models.
  * These should stay in sync with the FastAPI Pydantic models.
+ *
+ * These types are compatible with both Chat API (/api/chat/*) and Agent API (/api/agent/*).
  */
+
+import { AgentMetadata } from './agent';
 
 export interface SessionCreateRequest {
   title?: string;
@@ -27,6 +31,7 @@ export interface MessageResponse {
   timestamp: string;
   session_id: string;
   citations?: string[]; // e.g., ["Page 123", "Page 456"]
+  metadata?: AgentMetadata; // Agent API only - includes graph execution details
 }
 
 export interface SessionListResponse {

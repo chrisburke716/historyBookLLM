@@ -2452,6 +2452,153 @@ async def get_reasoning_trace(session_id: str, message_id: str):
 
 ---
 
+## Phase 6: Frontend Integration (Complete)
+
+**Goal**: Connect React frontend to Agent API with environment-based backend selection
+
+**Status**: ✅ Complete (2025-11-09)
+
+### Implementation Summary
+
+#### 6.1 Agent API Client
+
+**File**: `frontend/src/services/agentAPI.ts` (new, ~80 lines)
+
+Created `AgentAPI` class that mirrors `ChatAPI` interface:
+- Implements same methods: `createSession()`, `getSessions()`, `getSessionMessages()`, `sendMessage()`
+- Calls `/api/agent/*` endpoints instead of `/api/chat/*`
+- Compatible with existing `useChat` hook
+
+#### 6.2 Agent Type Definitions
+
+**File**: `frontend/src/types/agent.ts` (new, ~60 lines)
+
+Defined TypeScript interfaces for agent-specific features:
+- `AgentMetadata` - Graph execution details (num_retrieved_paragraphs, graph_execution)
+- Documented future fields for Phase 7+ (tools, reasoning, graph visualization)
+
+#### 6.3 Unified API Abstraction
+
+**File**: `frontend/src/services/api.ts` (modified)
+
+Updated to export unified `api` instance:
+```typescript
+const USE_AGENT_API = process.env.REACT_APP_USE_AGENT_API !== 'false';
+export const api = USE_AGENT_API ? agentAPI : chatAPI;
+```
+
+- Default: Agent API (LangGraph)
+- Switchable via environment variable
+- No code changes needed in components/hooks
+
+#### 6.4 Hook Update
+
+**File**: `frontend/src/hooks/useChat.ts` (modified, 5 changes)
+
+Changed all imports from `chatAPI` to `api`:
+- `import { api } from '../services/api';`
+- All `chatAPI.method()` calls replaced with `api.method()`
+- No other changes needed
+
+#### 6.5 Type Compatibility
+
+**File**: `frontend/src/types/index.ts` (modified)
+
+Added optional `metadata` field to `MessageResponse`:
+```typescript
+metadata?: AgentMetadata;  // Agent API only
+```
+
+Compatible with both Chat and Agent API responses.
+
+#### 6.6 Environment Configuration
+
+**File**: `frontend/.env` (new)
+
+Created single environment file (personal project, no dev/prod split):
+```bash
+REACT_APP_USE_AGENT_API=true
+REACT_APP_API_URL=http://localhost:8000
+```
+
+#### 6.7 Documentation
+
+**Updated files**:
+- `frontend/CLAUDE.md` - Added dual backend section, switching instructions, future Phase 7 notes
+- `docs/plans/langgraph_rag_implementation_plan.md` - This section
+- `docs/plans/langgraph_rag_progress.md` - Marked Phase 6 complete
+
+### Design Decisions
+
+**Build-time flag** (not runtime toggle):
+- Simpler implementation
+- No UI changes needed
+- Clean separation for personal project
+
+**Unified abstraction** (not separate clients):
+- Single `api` export
+- Hook code unchanged
+- Easy to switch backends
+
+**UI stays identical**:
+- No agent-specific features exposed yet
+- Reserved for Phase 7 when agent has tools/planning
+- Documented in frontend/CLAUDE.md
+
+### Files Summary
+
+**New Files (3)**:
+1. `frontend/src/services/agentAPI.ts` - Agent API client
+2. `frontend/src/types/agent.ts` - Agent type definitions
+3. `frontend/.env` - Environment configuration
+
+**Modified Files (4)**:
+1. `frontend/src/services/api.ts` - Unified abstraction
+2. `frontend/src/hooks/useChat.ts` - Use `api` instead of `chatAPI`
+3. `frontend/src/types/index.ts` - Add optional metadata field
+4. `frontend/CLAUDE.md` - Document dual backend support
+
+**Total New Code**: ~140 lines
+**Total Modified Code**: ~20 lines
+
+### Testing
+
+**Success Criteria**:
+- ✅ Frontend connects to agent API by default
+- ✅ All existing functionality works (sessions, messages, citations)
+- ✅ No UI changes visible to user
+- ✅ Can toggle backend via environment variable
+- ✅ Type checking passes (`npx tsc --noEmit`)
+
+**Manual Testing Steps**:
+1. Start backend: `PYTHONPATH=src poetry run uvicorn src.history_book.api.main:app --reload`
+2. Install deps: `cd frontend && npm install`
+3. Start frontend: `npm start`
+4. Verify Network tab shows `/api/agent/*` requests
+5. Test session creation, messaging, multi-turn conversations
+6. Test with `REACT_APP_USE_AGENT_API=false`, verify `/api/chat/*` used
+7. Reset to `true` (default)
+
+### Phase 7 - Future UI Enhancements (Not Implemented)
+
+When agent capabilities expand (tools, planning, reflection), the UI will expose:
+
+**Advanced Features Panel**:
+- Graph visualization (Mermaid diagrams from `/api/agent/sessions/{id}/graph`)
+- Execution metadata (nodes executed, timing)
+- Reasoning steps viewer (planning, tool calls, reflection)
+- Advanced settings (toggle tools, configure retrieval parameters)
+
+**Implementation Approach**:
+- Add collapsible "Advanced" section in chat UI
+- Render `MessageResponse.metadata` when present
+- Fetch and display graph visualization
+- Add settings panel for agent configuration
+
+**Documentation**: Detailed in `frontend/CLAUDE.md` under "Future Agent Features (Phase 7+)"
+
+---
+
 ## Next Steps
 
 After this plan is approved:

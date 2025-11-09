@@ -29,6 +29,44 @@ cd frontend && npx tsc --noEmit
 - **React Hooks** - State management
 - **Jest + React Testing Library** - Testing
 
+## Dual Backend Support
+
+The frontend supports **two backend implementations** via a unified API abstraction:
+
+1. **Agent API** (default) - LangGraph-based RAG (`/api/agent/*`)
+   - Built on LangGraph for future extensibility (tools, planning, reflection)
+   - Graph-based execution with checkpointing
+
+2. **Chat API** (legacy) - LCEL-based RAG (`/api/chat/*`)
+   - Original implementation using LangChain Expression Language
+   - Simpler chain-based execution
+
+### Switching Backends
+
+Controlled by **`.env`** file in `frontend/` directory:
+
+```bash
+# Use Agent API (LangGraph) - default
+REACT_APP_USE_AGENT_API=true
+
+# Use Chat API (LCEL) - legacy
+REACT_APP_USE_AGENT_API=false
+```
+
+The frontend code uses a **unified abstraction** (`api` from `services/api.ts`), so switching backends requires no code changes - just update the environment variable and restart `npm start`.
+
+### Future Agent Features (Phase 7+)
+
+When agent capabilities expand (tools, multi-step reasoning), the UI may expose:
+- Graph visualization panels (Mermaid diagrams)
+- Execution metadata displays (nodes executed, timing)
+- Reasoning step viewers (planning, tool calls, reflection)
+- Advanced settings (configure retrieval, enable tools)
+
+These will be **optional/collapsible** features for power users. For now, the UI remains identical regardless of backend.
+
+---
+
 ## Structure
 
 ```
@@ -40,11 +78,14 @@ frontend/src/
 ├── pages/
 │   └── ChatPage.tsx          # Main chat page
 ├── services/
-│   └── api.ts               # Axios API client
+│   ├── api.ts               # Unified API abstraction (switches backends)
+│   ├── agentAPI.ts          # Agent API client (LangGraph)
+│   └── (ChatAPI in api.ts)  # Chat API client (LCEL)
 ├── hooks/
 │   └── useChat.ts           # Chat state management hook
 ├── types/
-│   └── index.ts             # TypeScript interfaces
+│   ├── index.ts             # Shared TypeScript interfaces
+│   └── agent.ts             # Agent-specific types (metadata, future features)
 ├── App.tsx                  # Root component
 └── index.tsx                # Entry point
 ```
@@ -53,37 +94,42 @@ frontend/src/
 
 ### API Client (`services/api.ts`)
 
-**ChatAPI Class**: Singleton Axios wrapper for backend communication.
+The API client provides a **unified interface** that works with both backends (Chat and Agent).
 
+**Unified API Export** (recommended):
 ```typescript
-class ChatAPI {
-  private api: AxiosInstance;
+import { api } from '../services/api';
 
-  constructor(baseURL: string = 'http://localhost:8000') {
-    this.api = axios.create({
-      baseURL,
-      timeout: 30000,  // 30s for RAG responses
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-
-  // Methods
-  async createSession(request: SessionCreateRequest): Promise<SessionResponse>
-  async getSessions(limit: number = 10): Promise<SessionListResponse>
-  async getSessionMessages(sessionId: string): Promise<MessageListResponse>
-  async sendMessage(sessionId: string, request: MessageRequest): Promise<ChatResponse>
-  async healthCheck(): Promise<{ message: string }>
-}
-
-export const chatAPI = new ChatAPI();  // Singleton
+const session = await api.createSession({ title: 'New Chat' });
+const response = await api.sendMessage(session.id, { content: 'Hello' });
 ```
 
-**Usage**:
-```typescript
-import { chatAPI } from '../services/api';
+The `api` export automatically switches between `ChatAPI` and `AgentAPI` based on `REACT_APP_USE_AGENT_API`.
 
-const session = await chatAPI.createSession({ title: 'New Chat' });
-const response = await chatAPI.sendMessage(session.id, { content: 'Hello' });
+**Individual API Classes**:
+
+Both `ChatAPI` and `AgentAPI` implement the same interface:
+
+```typescript
+interface APIClient {
+  createSession(request: SessionCreateRequest): Promise<SessionResponse>
+  getSessions(limit: number): Promise<SessionListResponse>
+  getSessionMessages(sessionId: string): Promise<MessageListResponse>
+  sendMessage(sessionId: string, request: MessageRequest): Promise<ChatResponse>
+  healthCheck(): Promise<{ message: string }>
+}
+```
+
+- **ChatAPI**: Calls `/api/chat/*` endpoints (LCEL-based)
+- **AgentAPI**: Calls `/api/agent/*` endpoints (LangGraph-based)
+
+**Legacy access**:
+```typescript
+import { chatAPI, agentAPI } from '../services/api';
+
+// Directly use specific backend (not recommended)
+const response = await chatAPI.sendMessage(...);
+const response = await agentAPI.sendMessage(...);
 ```
 
 ### Type Definitions (`types/index.ts`)
@@ -117,6 +163,7 @@ interface MessageResponse {
   timestamp: string;
   session_id: string;
   citations?: string[];  // ["Page 42", ...]
+  metadata?: AgentMetadata;  // Agent API only - graph execution details
 }
 
 // UI state
@@ -277,19 +324,22 @@ const { state, loadSessions, sendMessage } = useChat();
 
 ## Environment Configuration
 
-**Default**: Points to local backend.
+Frontend configuration is controlled by `.env` file in `frontend/` directory.
 
-**Override**: Create `.env` in `frontend/`:
+**Example `.env`**:
 ```bash
+# Backend selection (default: Agent API)
+REACT_APP_USE_AGENT_API=true
+
+# Backend URL
 REACT_APP_API_URL=http://localhost:8000
-# or
-REACT_APP_API_URL=https://api.production.com
 ```
 
-Update `api.ts` to use:
-```typescript
-const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-```
+**Environment Variables**:
+- `REACT_APP_USE_AGENT_API` - Set to `true` for Agent API (LangGraph), `false` for Chat API (LCEL)
+- `REACT_APP_API_URL` - Backend base URL (default: `http://localhost:8000`)
+
+**Note**: Changes to `.env` require restarting `npm start`.
 
 ## Development Workflow
 
@@ -417,13 +467,19 @@ npx serve -s build -p 3000
 
 **Flow**:
 ```
-User → React UI → Axios → FastAPI → ChatService → Database
+User → React UI → Axios → FastAPI → [ChatService | GraphChatService] → Database
+                                      (LCEL)      (LangGraph)
 ```
 
 **CORS**: Backend allows `http://localhost:3000` in development.
 
 ## Related Files
 
-- Backend API: `/src/history_book/api/` - REST endpoints consumed by frontend
-- Integration Tests: `test_full_integration.py` - End-to-end tests with frontend + backend
-- Root CLAUDE.md: `/CLAUDE.md` - High-level architecture overview
+- **Backend APIs**:
+  - `/src/history_book/api/routes/chat.py` - Chat API endpoints (LCEL)
+  - `/src/history_book/api/routes/agent.py` - Agent API endpoints (LangGraph)
+- **Agent Documentation**: `/src/history_book/services/agents/CLAUDE.md` - LangGraph implementation details
+- **Root Documentation**: `/CLAUDE.md` - High-level architecture overview
+- **Verification Scripts**:
+  - `scripts/verify/verify_api.py` - API endpoint testing
+  - `scripts/verify/verify_integration.py` - End-to-end tests with frontend + backend

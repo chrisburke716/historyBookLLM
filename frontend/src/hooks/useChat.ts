@@ -1,9 +1,12 @@
 /**
  * Custom hook for managing chat state and API interactions.
+ *
+ * Uses the unified API abstraction which switches between Chat and Agent backends
+ * based on the REACT_APP_USE_AGENT_API environment variable.
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { chatAPI } from '../services/api';
+import { api } from '../services/api';
 import {
   SessionResponse,
   MessageResponse,
@@ -42,7 +45,7 @@ export const useChat = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await chatAPI.getSessions();
+      const response = await api.getSessions();
       setState(prev => ({ ...prev, sessions: response.sessions }));
     } catch (error) {
       setError(`Failed to load sessions: ${error}`);
@@ -59,8 +62,8 @@ export const useChat = () => {
       setLoading(true);
       setError(null);
       const request: SessionCreateRequest = title ? { title } : {};
-      const session = await chatAPI.createSession(request);
-      
+      const session = await api.createSession(request);
+
       // Add to sessions list
       setState(prev => ({
         ...prev,
@@ -68,7 +71,7 @@ export const useChat = () => {
         currentSession: session,
         messages: [], // Clear messages for new session
       }));
-      
+
       return session;
     } catch (error) {
       setError(`Failed to create session: ${error}`);
@@ -85,10 +88,10 @@ export const useChat = () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       // Load messages for the session
-      const response = await chatAPI.getSessionMessages(session.id);
-      
+      const response = await api.getSessionMessages(session.id);
+
       setState(prev => ({
         ...prev,
         currentSession: session,
@@ -134,8 +137,8 @@ export const useChat = () => {
       }));
 
       // Send to API and get response
-      const response = await chatAPI.sendMessage(state.currentSession.id, request);
-      
+      const response = await api.sendMessage(state.currentSession.id, request);
+
       // Replace temp message with real user message and add AI response
       setState(prev => {
         const messages = prev.messages.slice(0, -1); // Remove temp message
