@@ -191,6 +191,151 @@ poetry run python scripts/run_ingestion.py
 
 ---
 
+## Agent Services (LangGraph-based)
+
+### GraphRagService (`graph_rag_service.py` - 308 lines)
+
+**Purpose**: Executes RAG using a LangGraph state machine with retrieve → generate nodes.
+
+**Key Features**:
+- **Graph Structure**: Simple RAG graph: `START → retrieve → generate → END`
+- **Checkpointing**: Uses MemorySaver to maintain state across executions
+- **Streaming**: Token-by-token output via `stream_mode="messages"`
+- **Tracing**: Automatic LangSmith tracing with tags `["agent", "langgraph", "simple_rag"]`
+- **Composition**: Reuses RagService methods (DRY principle)
+
+**Graph State** (`AgentState` TypedDict):
+```python
+class AgentState(TypedDict):
+    messages: Annotated[Sequence[BaseMessage], add_messages]  # Chat history
+    question: str  # Current user query
+    retrieved_paragraphs: list[Paragraph]  # Retrieved context
+    generation: str  # Generated response
+    session_id: str  # Maps to thread_id for checkpointing
+    metadata: dict  # Execution metadata
+```
+
+**Graph Nodes**:
+1. **retrieve_node**: Fetches relevant paragraphs using ParagraphRepository
+2. **generate_node**: Creates response using LLM + context
+
+**Key Methods**:
+```python
+# Execute graph (non-streaming)
+result = await service.invoke(
+    question="What is history?",
+    messages=[],  # LangChain message history
+    session_id="session-123"
+)
+
+# Stream graph execution (token-by-token)
+async for chunk in service.stream(
+    question="What is history?",
+    messages=[],
+    session_id="session-123"
+):
+    print(chunk)  # Token chunks
+```
+
+**Comparison with RagService**:
+| Feature | RagService (LCEL) | GraphRagService (LangGraph) |
+|---------|-------------------|----------------------------|
+| Execution | LCEL chains | LangGraph state machine |
+| Checkpointing | None | MemorySaver (in-memory) |
+| Visualization | None | Mermaid diagrams |
+| Tracing | LangSmith (@traceable) | Automatic (built-in) |
+| Extensibility | Limited | Easy (add nodes/edges) |
+| Performance | 9.50s avg | 8.97s avg (5.6% faster) |
+
+**When to Use**:
+- Multi-step reasoning (future)
+- Tool calling (future)
+- Need checkpointing or graph visualization
+- Want better performance
+
+---
+
+### GraphChatService (`graph_chat_service.py` - 381 lines)
+
+**Purpose**: Orchestrates chat sessions using GraphRagService, with hybrid memory strategy.
+
+**Hybrid Memory Strategy**:
+- **LangGraph MemorySaver**: In-memory state during graph execution (keyed by session_id)
+- **Weaviate**: Long-term persistence of sessions and messages
+
+**Key Methods**:
+```python
+# Send message
+result = await service.send_message(
+    session_id="session-123",
+    user_message="Tell me about Julius Caesar"
+)
+# Returns: GraphChatResult(message, retrieved_paragraphs)
+
+# Session management
+session = await service.create_session(title="My Chat")
+sessions = await service.list_recent_sessions(limit=10)
+await service.delete_session(session_id)
+```
+
+**GraphChatResult**:
+```python
+@dataclass
+class GraphChatResult:
+    message: ChatMessage
+    retrieved_paragraphs: list[Paragraph]
+```
+
+**Data Flow**:
+1. Save user message to Weaviate
+2. Load chat history from Weaviate
+3. Execute graph with history (MemorySaver maintains state)
+4. Save AI response to Weaviate
+5. Return result
+
+**Integration**: Called by Agent API layer → calls GraphRagService → uses ChatMessage/ChatSession repositories.
+
+**Checkpointing Benefits**:
+- Maintains conversation context automatically
+- Supports multi-turn dialogues (e.g., "Who was he?" after asking about Julius Caesar)
+- State isolated per session_id (maps to thread_id)
+
+**Future Extensibility**:
+The graph architecture supports easy addition of:
+- **Tool calling**: Add tools_node for search, calculations, APIs
+- **Planning**: Add plan_node for complex query decomposition
+- **Reflection**: Add reflect_node for self-critique
+- **Adaptive RAG**: Add routing nodes for dynamic strategy selection
+
+Example - Adding a tool node:
+```python
+def tools_node(state: AgentState) -> dict:
+    """Execute requested tools"""
+    # Tool execution logic
+    return {"tool_results": results}
+
+# Add to graph
+workflow.add_node("tools", tools_node)
+workflow.add_edge("retrieve", "tools")
+workflow.add_edge("tools", "generate")
+```
+
+**When to Use Agent vs Chat Services**:
+
+**Use ChatService (LCEL) when**:
+- Simple RAG queries without conversation context
+- Existing integrations depend on it
+- Don't need checkpointing or graph visualization
+
+**Use GraphChatService (LangGraph) when**:
+- Multi-turn conversations requiring context
+- Need to visualize execution flow
+- Want LangSmith tracing with graph structure
+- Planning to add tools or multi-step reasoning
+- Better performance is desired (5.6% faster)
+
+---
+
 ## Architecture Notes
 
 **Clean Architecture Pattern**:

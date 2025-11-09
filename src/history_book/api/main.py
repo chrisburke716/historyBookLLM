@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routes import chat
+from .routes import agent, chat
 
 
 def create_app() -> FastAPI:
@@ -25,6 +25,7 @@ def create_app() -> FastAPI:
 
     # Include routers
     app.include_router(chat.router, prefix="/api")
+    app.include_router(agent.router, prefix="/api")
 
     return app
 

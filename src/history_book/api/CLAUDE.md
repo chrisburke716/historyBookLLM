@@ -120,6 +120,164 @@ Response: {
 }
 ```
 
+---
+
+### Agent API Endpoints (`/api/agent/*`)
+
+LangGraph-based chat API with checkpointing and graph visualization.
+
+**Base URL**: `http://localhost:8000/api/agent`
+
+#### Session Management
+
+**Create Session**
+```http
+POST /api/agent/sessions
+Content-Type: application/json
+
+{
+  "title": "My Agent Chat"  // optional
+}
+
+Response: {
+  "id": "uuid",
+  "title": "My Agent Chat",
+  "created_at": "2025-11-09T...",
+  "updated_at": "2025-11-09T..."
+}
+```
+
+**List Sessions**
+```http
+GET /api/agent/sessions?limit=10
+
+Response: {
+  "sessions": [
+    {
+      "id": "uuid",
+      "title": "My Agent Chat",
+      "created_at": "...",
+      "updated_at": "..."
+    },
+    ...
+  ]
+}
+```
+
+**Delete Session**
+```http
+DELETE /api/agent/sessions/{session_id}
+
+Response: {
+  "status": "deleted",
+  "session_id": "uuid"
+}
+```
+
+#### Messaging
+
+**Send Message (Non-streaming)**
+```http
+POST /api/agent/sessions/{session_id}/messages
+Content-Type: application/json
+
+{
+  "content": "What is the French Revolution?"
+}
+
+Response: {
+  "message": {
+    "id": "msg-uuid",
+    "content": "The French Revolution was...",
+    "role": "assistant",
+    "timestamp": "2025-11-09T...",
+    "session_id": "uuid",
+    "citations": ["Page 42", "Page 67", ...],
+    "metadata": {
+      "num_retrieved_paragraphs": 40,
+      "graph_execution": "simple_rag"
+    }
+  }
+}
+```
+
+**Get Messages**
+```http
+GET /api/agent/sessions/{session_id}/messages
+
+Response: {
+  "messages": [
+    {
+      "id": "msg-uuid-1",
+      "content": "What is the French Revolution?",
+      "role": "user",
+      "timestamp": "...",
+      "session_id": "uuid",
+      "citations": null,
+      "metadata": {"graph_execution": "simple_rag"}
+    },
+    {
+      "id": "msg-uuid-2",
+      "content": "The French Revolution was...",
+      "role": "assistant",
+      "timestamp": "...",
+      "session_id": "uuid",
+      "citations": ["Page 42", ...],
+      "metadata": {
+        "num_retrieved_paragraphs": 40,
+        "graph_execution": "simple_rag"
+      }
+    }
+  ]
+}
+```
+
+#### Graph Introspection
+
+**Get Graph Visualization**
+```http
+GET /api/agent/sessions/{session_id}/graph
+
+Response: {
+  "mermaid": "graph TD\n    __start__ --> retrieve\n    ...",
+  "nodes": ["retrieve", "generate"],
+  "edges": [
+    ["START", "retrieve"],
+    ["retrieve", "generate"],
+    ["generate", "END"]
+  ]
+}
+```
+
+The Mermaid diagram can be visualized at https://mermaid.live
+
+#### Comparison with Chat API
+
+| Feature | /api/chat/* (LCEL) | /api/agent/* (LangGraph) |
+|---------|-------------------|--------------------------|
+| Checkpointing | No | Yes (MemorySaver) |
+| Multi-turn Context | Manual | Automatic |
+| Graph Visualization | No | Yes (Mermaid) |
+| Metadata | Basic | Enhanced (execution details) |
+| Performance | 9.50s avg | 8.97s avg (faster) |
+| Future Tools | No | Yes (extensible) |
+| LangSmith Tracing | @traceable | Built-in graph structure |
+
+#### When to Use
+
+**Use `/api/agent/*` when**:
+- Multi-turn conversations requiring context
+- Need graph visualization for debugging
+- Want better performance (5.6% faster)
+- Planning to add tools or multi-step reasoning
+
+**Use `/api/chat/*` when**:
+- Simple one-off queries
+- Existing integrations
+- Don't need checkpointing
+
+---
+
 ## Request/Response Models
 
 **File**: `models/api_models.py`
