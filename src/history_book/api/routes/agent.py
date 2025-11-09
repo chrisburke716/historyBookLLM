@@ -251,7 +251,11 @@ async def get_graph_visualization(
         return GraphVisualization(
             mermaid=mermaid,
             nodes=["retrieve", "generate"],
-            edges=[("START", "retrieve"), ("retrieve", "generate"), ("generate", "END")],
+            edges=[
+                ("START", "retrieve"),
+                ("retrieve", "generate"),
+                ("generate", "END"),
+            ],
         )
 
     except HTTPException:

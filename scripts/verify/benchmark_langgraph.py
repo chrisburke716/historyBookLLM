@@ -14,7 +14,6 @@ from datetime import datetime
 
 import httpx
 
-
 BASE_URL = "http://localhost:8000"
 
 # Test queries for comparison
@@ -96,13 +95,13 @@ def print_comparison(chat_result: dict, agent_result: dict):
     print(f"QUERY: {chat_result['query']}")
     print("=" * 80)
 
-    print(f"\n📊 RETRIEVAL COMPARISON:")
+    print("\n📊 RETRIEVAL COMPARISON:")
     print(f"  Chat API (LCEL):     {chat_result['num_citations']} citations")
     print(
         f"  Agent API (LangGraph): {agent_result['num_citations']} citations, {agent_result['num_paragraphs']} paragraphs"
     )
 
-    print(f"\n⚡ PERFORMANCE COMPARISON:")
+    print("\n⚡ PERFORMANCE COMPARISON:")
     print(f"  Chat API (LCEL):     {chat_result['latency_seconds']}s")
     print(f"  Agent API (LangGraph): {agent_result['latency_seconds']}s")
     diff = agent_result["latency_seconds"] - chat_result["latency_seconds"]
@@ -111,10 +110,10 @@ def print_comparison(chat_result: dict, agent_result: dict):
     else:
         print(f"  Difference:            {diff:.2f}s (LangGraph faster)")
 
-    print(f"\n💬 CHAT API RESPONSE (first 200 chars):")
+    print("\n💬 CHAT API RESPONSE (first 200 chars):")
     print(f"  {chat_result['response'][:200]}...")
 
-    print(f"\n🤖 AGENT API RESPONSE (first 200 chars):")
+    print("\n🤖 AGENT API RESPONSE (first 200 chars):")
     print(f"  {agent_result['response'][:200]}...")
 
     print(f"\n✅ Graph Execution: {agent_result['graph_execution']}")
@@ -160,12 +159,12 @@ async def run_comparison_tests():
         all_results
     )
 
-    print(f"\nAverage Latency:")
+    print("\nAverage Latency:")
     print(f"  Chat API (LCEL):     {avg_chat_latency:.2f}s")
     print(f"  Agent API (LangGraph): {avg_agent_latency:.2f}s")
     print(f"  Difference:            {avg_agent_latency - avg_chat_latency:.2f}s")
 
-    print(f"\nAverage Citations:")
+    print("\nAverage Citations:")
     print(f"  Chat API (LCEL):     {avg_chat_citations:.1f}")
     print(f"  Agent API (LangGraph): {avg_agent_citations:.1f}")
 
