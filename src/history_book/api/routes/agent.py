@@ -3,6 +3,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from history_book.api.models.agent_models import (
     AgentChatResponse,
@@ -170,6 +171,55 @@ async def send_message(
     except Exception as e:
         logger.error(f"Failed to send message: {e}")
         raise HTTPException(status_code=500, detail="Failed to send message") from e
+
+
+@router.post("/sessions/{session_id}/stream")
+async def stream_message(
+    session_id: str,
+    request: AgentMessageRequest,
+    service: GraphChatService = Depends(get_graph_chat_service),
+):
+    """
+    Send a message with streaming response (Server-Sent Events).
+
+    Returns token-by-token chunks as they are generated.
+    """
+    try:
+        # Verify session exists
+        session = await service.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        async def event_generator():
+            """Generate SSE events for streaming response."""
+            try:
+                # Unpack generator and paragraphs from send_message_stream
+                stream_gen, _ = await service.send_message_stream(
+                    session_id=session_id,
+                    user_message=request.content,
+                )
+
+                async for chunk in stream_gen:
+                    # Send chunk as SSE data
+                    yield f"data: {chunk}\n\n"
+            except Exception as e:
+                logger.error(f"Error during streaming: {e}")
+                yield f"data: [ERROR] {str(e)}\n\n"
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to start streaming: {e}")
+        raise HTTPException(status_code=500, detail="Failed to start streaming") from e
 
 
 @router.get("/sessions/{session_id}/graph", response_model=GraphVisualization)
