@@ -10,9 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 poetry run ruff check
 poetry run ruff format
 
-# Run tests
-poetry run python test_api.py
-poetry run python test_full_integration.py
+# Verify functionality
+poetry run python scripts/verify/verify_api.py
+poetry run python scripts/verify/verify_integration.py
 
 # Start backend server
 PYTHONPATH=src poetry run uvicorn src.history_book.api.main:app --reload --port 8000
@@ -178,8 +178,9 @@ OPENAI_API_KEY=your-api-key  # Required for chat functionality
 
 ## Testing
 
-- **Backend API Tests**: `test_api.py` - API endpoint testing
-- **Integration Tests**: `test_full_integration.py` - End-to-end testing (requires both servers)
+- **Backend API Verification**: `scripts/verify/verify_api.py` - API endpoint testing
+- **Integration Verification**: `scripts/verify/verify_integration.py` - End-to-end testing (requires both servers)
+- **Performance Benchmarks**: `scripts/verify/benchmark_langgraph.py` - LangGraph vs LCEL comparison
 - **Frontend Tests**: React Testing Library setup in frontend
 
 ## Key Libraries and Dependencies
