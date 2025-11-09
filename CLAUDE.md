@@ -44,9 +44,11 @@ This is a full-stack RAG-powered chat application with a Python FastAPI backend 
 
 **Service Layer** (`src/history_book/services/`):
 - `IngestionService`: Orchestrates PDF processing and data storage
-- `ChatService`: Manages chat sessions and coordinates RAG responses
+- `ChatService`: Manages chat sessions and coordinates RAG responses (LCEL-based)
 - `RagService`: Direct LangChain integration with LCEL chains (PromptTemplate | ChatModel | OutputParser)
 - `ParagraphService`: High-level paragraph query operations
+- `GraphRagService`: LangGraph-based RAG with graph execution and checkpointing
+- `GraphChatService`: Session orchestration for graph-based chat with MemorySaver
 
 **Repository Layer** (`src/history_book/database/repositories/`):
 - `WeaviateRepository<T>`: Generic base repository with type-safe CRUD operations
@@ -64,10 +66,57 @@ This is a full-stack RAG-powered chat application with a Python FastAPI backend 
 PDF Input → Text Processing → Entity Creation → Repository Storage → Vector Indexing
 ```
 
-**Chat Pipeline**:
+**Chat Pipeline** (LCEL):
 ```
 User Message → ChatService → RagService → [Retrieval → LCEL Chain → LLM] → AI Response
 ```
+
+**Agent Pipeline** (LangGraph):
+```
+User Message → GraphChatService → GraphRagService → [Graph: retrieve_node → generate_node] → AI Response
+                                                     ↓ (MemorySaver checkpointing)
+```
+
+### Agent API (LangGraph-based)
+
+The `/api/agent/*` endpoints provide LangGraph-based chat with enhanced capabilities:
+
+**Key Features**:
+- **Checkpointing**: Maintains conversation context across messages using LangGraph MemorySaver
+- **Graph Visualization**: View execution flow via Mermaid diagrams
+- **LangSmith Tracing**: Full observability of graph execution, timing, and state transitions
+- **Better Performance**: 5.6% faster than LCEL implementation (8.97s vs 9.50s average)
+- **Extensibility**: Easy to add tools, planning, reflection, and multi-step reasoning
+
+**Endpoints**:
+- `POST /api/agent/sessions` - Create new agent session
+- `GET /api/agent/sessions` - List recent sessions
+- `POST /api/agent/sessions/{id}/messages` - Send message (non-streaming)
+- `GET /api/agent/sessions/{id}/messages` - Get conversation history
+- `GET /api/agent/sessions/{id}/graph` - Get graph visualization (Mermaid)
+- `DELETE /api/agent/sessions/{id}` - Delete session
+
+**Quick Start**:
+```bash
+# Create session
+SESSION_ID=$(curl -s -X POST http://localhost:8000/api/agent/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"title": "History Chat"}' | jq -r '.id')
+
+# Send message
+curl -X POST http://localhost:8000/api/agent/sessions/$SESSION_ID/messages \
+  -H "Content-Type: application/json" \
+  -d '{"content": "What is the history of Ancient Rome?"}'
+
+# Get graph visualization
+curl http://localhost:8000/api/agent/sessions/$SESSION_ID/graph
+```
+
+**When to Use Agent vs Chat API**:
+- Use **Agent API** for multi-turn conversations, graph visualization, or when planning to add tools
+- Use **Chat API** for simple one-off queries or existing integrations
+
+See `/src/history_book/services/agents/CLAUDE.md` for implementation details.
 
 ### Frontend Architecture
 
@@ -90,6 +139,7 @@ User Message → ChatService → RagService → [Retrieval → LCEL Chain → LL
 For in-depth information about specific subsystems, see:
 
 - **[Services](/src/history_book/services/CLAUDE.md)** - Business logic layer (ChatService, RagService, IngestionService, ParagraphService)
+- **[Agent System](/src/history_book/services/agents/CLAUDE.md)** - LangGraph-based agent implementation (GraphRagService, GraphChatService)
 - **[Database](/src/history_book/database/CLAUDE.md)** - Repository pattern and Weaviate integration
 - **[API](/src/history_book/api/CLAUDE.md)** - FastAPI REST endpoints
 - **[LLM Configuration](/src/history_book/llm/CLAUDE.md)** - LLM provider setup (OpenAI, Anthropic)
@@ -138,6 +188,7 @@ OPENAI_API_KEY=your-api-key  # Required for chat functionality
 - FastAPI for REST API with automatic OpenAPI docs
 - Weaviate for vector database operations
 - LangChain for RAG implementation with direct LCEL chains
+- LangGraph for stateful agent execution with checkpointing
 - PyMuPDF for PDF text extraction
 
 **Frontend**:
