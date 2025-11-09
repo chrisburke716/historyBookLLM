@@ -18,6 +18,7 @@ import {
   MessageListResponse,
   ChatResponse,
 } from '../types';
+import { agentAPI } from './agentAPI';
 
 class ChatAPI {
   private api: AxiosInstance;
@@ -75,17 +76,17 @@ class ChatAPI {
   }
 }
 
-// Legacy export for backward compatibility
+// Export ChatAPI instance
 export const chatAPI = new ChatAPI();
 
-// Import AgentAPI
-export { agentAPI } from './agentAPI';
+// Export AgentAPI
+export { agentAPI };
 
 // Unified API instance - switches based on environment variable
-// Default to Agent API (LangGraph) for better performance
+// Default to Agent API (LangGraph)
 const USE_AGENT_API = process.env.REACT_APP_USE_AGENT_API !== 'false';
 
-export const api = USE_AGENT_API ? require('./agentAPI').agentAPI : chatAPI;
+export const api = USE_AGENT_API ? agentAPI : chatAPI;
 
 // Default export is the unified API
 export default api;
