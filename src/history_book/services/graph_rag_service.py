@@ -6,12 +6,14 @@ from langchain.schema import AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.prebuilt import ToolNode
 
 from history_book.data_models.graph_state import AgentState
 from history_book.database.repositories import BookRepositoryManager
 from history_book.llm.config import LLMConfig
 from history_book.llm.exceptions import LLMError
 from history_book.llm.utils import format_context_for_llm
+from history_book.services.agents.tools import search_book
 from history_book.services.rag_service import RagService
 
 logger = logging.getLogger(__name__)
@@ -57,6 +59,10 @@ class GraphRagService:
 
         # Enable streaming on the LLM
         self.llm = self._create_streaming_model()
+
+        # Initialize tools
+        self.tools = [search_book]  # TODO: Make configurable via GraphConfig
+        self.tools_node = ToolNode(self.tools)
 
         # Build and compile graph
         self.graph = self._create_graph()
