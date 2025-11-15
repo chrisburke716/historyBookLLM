@@ -8,4 +8,6 @@ Tools are designed to be self-contained and produce complete outputs that the
 agent can use directly or synthesize with other tool results.
 """
 
-__all__ = []  # Will be populated as tools are implemented
+from history_book.services.agents.tools.book_search import search_book
+
+__all__ = ["search_book"]
