@@ -95,6 +95,44 @@ class GraphRagService:
             # Fallback to RagService's method
             return self.rag_service.create_chat_model()
 
+    def _should_continue(self, state: AgentState) -> str:
+        """
+        Determine if agent should call tools or end execution.
+
+        Routing logic:
+        - If last message has tool_calls AND iterations < max: route to "tools"
+        - Otherwise: route to "end"
+
+        Args:
+            state: Current agent state
+
+        Returns:
+            "tools" if agent should execute tools, "end" if execution should finish
+        """
+        messages = state.get("messages", [])
+        tool_iterations = state.get("tool_iterations", 0)
+
+        # Check if max iterations reached
+        if tool_iterations >= 3:  # TODO: Make configurable via GraphConfig
+            logger.info(
+                f"Max tool iterations ({3}) reached, ending execution"
+            )
+            return "end"
+
+        # Check if last message has tool calls
+        if messages:
+            last_message = messages[-1]
+            if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+                logger.info(
+                    f"Tool calls detected in last message, routing to tools node "
+                    f"(iteration {tool_iterations + 1})"
+                )
+                return "tools"
+
+        # No tool calls or empty messages, end execution
+        logger.info("No tool calls detected, ending execution")
+        return "end"
+
     def _create_graph(self):
         """
         Build and compile the RAG graph.
