@@ -155,13 +155,25 @@ class GraphRagService:
 
         # Add nodes
         workflow.add_node("generate", self._generate_node)
+        workflow.add_node("tools", self.tools_node)
         # Removed: workflow.add_node("retrieve", self._retrieve_node)
         # All retrieval now happens via search_book tool
 
-        # Define edges (start directly at generate)
+        # Define edges
         workflow.add_edge(START, "generate")
-        # Removed: workflow.add_edge("retrieve", "generate")
-        # Removed: workflow.add_edge("generate", END)
+
+        # Conditional routing after generate: tools or end
+        workflow.add_conditional_edges(
+            "generate",
+            self._should_continue,
+            {
+                "tools": "tools",
+                "end": END
+            }
+        )
+
+        # Tools loop back to generate for synthesis
+        workflow.add_edge("tools", "generate")
 
         # Compile with checkpointer for state persistence
         checkpointer = MemorySaver()
