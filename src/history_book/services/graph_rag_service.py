@@ -141,57 +141,64 @@ class GraphRagService:
 
     def _create_graph(self):
         """
-        Build and compile the RAG graph.
+        Build and compile the RAG graph with tool support.
 
-        Graph structure: START → retrieve → generate → END
+        Graph structure:
+        START → generate → [tools OR END]
+                             ↓
+                           tools → generate (loop back)
+
+        Note: Automatic retrieve_node removed - all retrieval now via tools
         """
         # Initialize workflow with state schema
         workflow = StateGraph(AgentState)
 
         # Add nodes
-        workflow.add_node("retrieve", self._retrieve_node)
         workflow.add_node("generate", self._generate_node)
+        # Removed: workflow.add_node("retrieve", self._retrieve_node)
+        # All retrieval now happens via search_book tool
 
-        # Define edges (simple linear flow)
-        workflow.add_edge(START, "retrieve")
-        workflow.add_edge("retrieve", "generate")
-        workflow.add_edge("generate", END)
+        # Define edges (start directly at generate)
+        workflow.add_edge(START, "generate")
+        # Removed: workflow.add_edge("retrieve", "generate")
+        # Removed: workflow.add_edge("generate", END)
 
         # Compile with checkpointer for state persistence
         checkpointer = MemorySaver()
         return workflow.compile(checkpointer=checkpointer)
 
-    async def _retrieve_node(self, state: AgentState) -> dict:
-        """
-        Retrieval node: Fetch relevant paragraphs from vector database.
-
-        Delegates to RagService.retrieve_context() for reuse.
-
-        Args:
-            state: Current agent state
-
-        Returns:
-            Dict with updated retrieved_paragraphs field
-        """
-        question = state["question"]
-
-        try:
-            # Delegate to RagService
-            paragraphs = await self.rag_service.retrieve_context(
-                query=question,
-                min_results=self.min_results,
-                max_results=self.max_results,
-                similarity_cutoff=self.similarity_cutoff,
-                retrieval_strategy="similarity_search",
-            )
-
-            logger.info(f"Retrieved {len(paragraphs)} context paragraphs for query")
-            return {"retrieved_paragraphs": paragraphs}
-
-        except Exception as e:
-            logger.error(f"Retrieval failed: {e}")
-            # Graceful degradation - continue without context
-            return {"retrieved_paragraphs": []}
+    # REMOVED: Automatic retrieve_node - all retrieval now via search_book tool
+    # async def _retrieve_node(self, state: AgentState) -> dict:
+    #     """
+    #     Retrieval node: Fetch relevant paragraphs from vector database.
+    #
+    #     Delegates to RagService.retrieve_context() for reuse.
+    #
+    #     Args:
+    #         state: Current agent state
+    #
+    #     Returns:
+    #         Dict with updated retrieved_paragraphs field
+    #     """
+    #     question = state["question"]
+    #
+    #     try:
+    #         # Delegate to RagService
+    #         paragraphs = await self.rag_service.retrieve_context(
+    #             query=question,
+    #             min_results=self.min_results,
+    #             max_results=self.max_results,
+    #             similarity_cutoff=self.similarity_cutoff,
+    #             retrieval_strategy="similarity_search",
+    #         )
+    #
+    #         logger.info(f"Retrieved {len(paragraphs)} context paragraphs for query")
+    #         return {"retrieved_paragraphs": paragraphs}
+    #
+    #     except Exception as e:
+    #         logger.error(f"Retrieval failed: {e}")
+    #         # Graceful degradation - continue without context
+    #         return {"retrieved_paragraphs": []}
 
     async def _generate_node(self, state: AgentState) -> dict:
         """
