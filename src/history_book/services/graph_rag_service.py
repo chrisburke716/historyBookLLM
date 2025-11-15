@@ -214,21 +214,26 @@ class GraphRagService:
 
     async def _generate_node(self, state: AgentState) -> dict:
         """
-        Generation node: Create response using LLM + context.
+        Generation node: Create response using LLM with tool calling support.
 
-        Uses RagService for formatting but LangGraph for execution.
+        The LLM can decide to call tools (like search_book) or answer directly.
+        Tool results from previous iterations are in the message history.
 
         Args:
             state: Current agent state
 
         Returns:
-            Dict with updated generation and messages fields
+            Dict with updated generation, messages, and tool_iterations fields
         """
         question = state["question"]
-        messages = state["messages"]
-        paragraphs = state["retrieved_paragraphs"]
+        messages = state.get("messages", [])
+        paragraphs = state.get("retrieved_paragraphs", [])
+        tool_iterations = state.get("tool_iterations", 0)
 
         try:
+            # Bind tools to LLM to enable tool calling
+            llm_with_tools = self.llm.bind_tools(self.tools)
+
             # Build prompt based on whether we have context
             if paragraphs:
                 # Use RagService to format context
@@ -250,7 +255,7 @@ class GraphRagService:
                 message_history = list(messages) if messages else []
 
                 # Invoke LLM with context
-                chain = rag_prompt | self.llm
+                chain = rag_prompt | llm_with_tools
                 response = await chain.ainvoke(
                     {
                         "chat_history": message_history,
@@ -259,7 +264,7 @@ class GraphRagService:
                     }
                 )
             else:
-                # No context available - answer without retrieval
+                # No context available - use tools or answer directly
                 simple_prompt = ChatPromptTemplate.from_messages(
                     [
                         ("system", self.config.system_message),
@@ -270,15 +275,25 @@ class GraphRagService:
 
                 message_history = list(messages) if messages else []
 
-                # Invoke LLM without context
-                chain = simple_prompt | self.llm
+                # Invoke LLM without context (but with tools available)
+                chain = simple_prompt | llm_with_tools
                 response = await chain.ainvoke(
                     {"chat_history": message_history, "query": question}
                 )
 
+            # Increment tool iteration counter if tool calls were made
+            new_tool_iterations = tool_iterations
+            if hasattr(response, "tool_calls") and response.tool_calls:
+                new_tool_iterations = tool_iterations + 1
+                logger.info(
+                    f"LLM made {len(response.tool_calls)} tool call(s), "
+                    f"iteration {new_tool_iterations}"
+                )
+
             return {
-                "generation": response.content,
-                "messages": [AIMessage(content=response.content)],
+                "generation": response.content or "",
+                "messages": [response],
+                "tool_iterations": new_tool_iterations,
             }
 
         except Exception as e:
