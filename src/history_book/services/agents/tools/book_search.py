@@ -11,6 +11,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.tools import tool
 
 from history_book.config.graph_config import GraphConfig
+from history_book.database.config.database_config import WeaviateConfig
 from history_book.database.repositories import BookRepositoryManager
 from history_book.llm import create_chat_model
 
@@ -47,7 +48,8 @@ def search_book(
 
         # 2. Initialize configuration and services
         graph_config = GraphConfig()
-        repository_manager = BookRepositoryManager()
+        weaviate_config = WeaviateConfig.from_environment()
+        repository_manager = BookRepositoryManager(weaviate_config)
 
         # 3. Determine retrieval parameters (use book-specific overrides if set)
         max_results = (
@@ -61,10 +63,13 @@ def search_book(
             f"Retrieving with max_results={max_results}, min_similarity={min_similarity}"
         )
 
-        # 4. Retrieve relevant paragraphs
-        paragraphs = repository_manager.paragraphs.similarity_search_by_text(
+        # 4. Retrieve relevant paragraphs (returns list of tuples: (Paragraph, score))
+        search_results = repository_manager.paragraphs.similarity_search_by_text(
             query_text=query, limit=max_results, threshold=min_similarity
         )
+
+        # Extract paragraphs from tuples
+        paragraphs = [paragraph for paragraph, _score in search_results]
 
         logger.info(f"Retrieved {len(paragraphs)} paragraphs")
 
@@ -81,7 +86,7 @@ def search_book(
         # 7. Format context for prompt
         context_str = "\n\n".join(
             [
-                f"[Chapter {p.chapter_number}, Page {p.page_number}]\n{p.content}"
+                f"[Chapter {p.chapter_index}, Page {p.page}]\n{p.text}"
                 for p in paragraphs
             ]
         )
