@@ -162,6 +162,7 @@ async def send_message(
         message_response = convert_message_to_response(
             result.message,
             retrieved_paragraphs=result.retrieved_paragraphs,
+            metadata=result.metadata,
         )
 
         return AgentChatResponse(message=message_response)

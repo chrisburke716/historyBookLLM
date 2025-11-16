@@ -1,6 +1,6 @@
 """State schema for LangGraph-based RAG agent."""
 
-from typing import Annotated, TypedDict
+from typing import Annotated, Any, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
@@ -25,10 +25,12 @@ class AgentState(TypedDict):
         session_id: Session identifier (maps to Weaviate session_id and LangGraph thread_id).
         metadata: Execution metadata for debugging/tracing (e.g., execution time,
             nodes executed, etc.).
+        tool_calls: Tool call requests from the LLM (populated when LLM decides to use tools).
+        tool_results: Results returned from tool executions.
+        tool_iterations: Counter tracking how many times tools have been called in this execution
+            (used to prevent infinite loops).
 
-    Future fields (not used initially, uncomment when needed):
-        tool_calls: LLM's tool call requests for future tool calling feature.
-        tool_results: Results from tool executions.
+    Future fields (uncomment when needed):
         reasoning_steps: For multi-step reasoning tracking (planning, reflection, etc.).
     """
 
@@ -48,9 +50,12 @@ class AgentState(TypedDict):
     session_id: str
 
     # Execution metadata for debugging/tracing
-    metadata: dict
+    metadata: dict[str, Any]
+
+    # Tool calling support
+    tool_calls: list[dict[str, Any]]  # Tool calls from LLM
+    tool_results: list[dict[str, Any]]  # Results from tool executions
+    tool_iterations: int  # Iteration counter to prevent infinite loops
 
     # Future fields for extensibility (not used initially):
-    # tool_calls: list[dict]  # For tool calling feature
-    # tool_results: list[dict]  # Results from tool executions
     # reasoning_steps: list[dict]  # For multi-step reasoning tracking

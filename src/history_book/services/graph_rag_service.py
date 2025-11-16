@@ -2,16 +2,17 @@
 
 import logging
 
-from langchain.schema import AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.prebuilt import ToolNode
 
 from history_book.data_models.graph_state import AgentState
 from history_book.database.repositories import BookRepositoryManager
 from history_book.llm.config import LLMConfig
 from history_book.llm.exceptions import LLMError
 from history_book.llm.utils import format_context_for_llm
+from history_book.services.agents.tools import search_book
 from history_book.services.rag_service import RagService
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,10 @@ class GraphRagService:
         # Enable streaming on the LLM
         self.llm = self._create_streaming_model()
 
+        # Initialize tools
+        self.tools = [search_book]  # TODO: Make configurable via GraphConfig
+        self.tools_node = ToolNode(self.tools)
+
         # Build and compile graph
         self.graph = self._create_graph()
 
@@ -95,77 +100,132 @@ class GraphRagService:
             # Fallback to RagService's method
             return self.rag_service.create_chat_model()
 
+    def _should_continue(self, state: AgentState) -> str:
+        """
+        Determine if agent should call tools or end execution.
+
+        Routing logic:
+        - If last message has tool_calls AND iterations < max: route to "tools"
+        - Otherwise: route to "end"
+
+        Args:
+            state: Current agent state
+
+        Returns:
+            "tools" if agent should execute tools, "end" if execution should finish
+        """
+        messages = state.get("messages", [])
+        tool_iterations = state.get("tool_iterations", 0)
+
+        # Check if max iterations reached
+        if tool_iterations >= 3:  # TODO: Make configurable via GraphConfig
+            logger.info(f"Max tool iterations ({3}) reached, ending execution")
+            return "end"
+
+        # Check if last message has tool calls
+        if messages:
+            last_message = messages[-1]
+            if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+                logger.info(
+                    f"Tool calls detected in last message, routing to tools node "
+                    f"(iteration {tool_iterations + 1})"
+                )
+                return "tools"
+
+        # No tool calls or empty messages, end execution
+        logger.info("No tool calls detected, ending execution")
+        return "end"
+
     def _create_graph(self):
         """
-        Build and compile the RAG graph.
+        Build and compile the RAG graph with tool support.
 
-        Graph structure: START → retrieve → generate → END
+        Graph structure:
+        START → generate → [tools OR END]
+                             ↓
+                           tools → generate (loop back)
+
+        Note: Automatic retrieve_node removed - all retrieval now via tools
         """
         # Initialize workflow with state schema
         workflow = StateGraph(AgentState)
 
         # Add nodes
-        workflow.add_node("retrieve", self._retrieve_node)
         workflow.add_node("generate", self._generate_node)
+        workflow.add_node("tools", self.tools_node)
+        # Removed: workflow.add_node("retrieve", self._retrieve_node)
+        # All retrieval now happens via search_book tool
 
-        # Define edges (simple linear flow)
-        workflow.add_edge(START, "retrieve")
-        workflow.add_edge("retrieve", "generate")
-        workflow.add_edge("generate", END)
+        # Define edges
+        workflow.add_edge(START, "generate")
+
+        # Conditional routing after generate: tools or end
+        workflow.add_conditional_edges(
+            "generate", self._should_continue, {"tools": "tools", "end": END}
+        )
+
+        # Tools loop back to generate for synthesis
+        workflow.add_edge("tools", "generate")
 
         # Compile with checkpointer for state persistence
         checkpointer = MemorySaver()
         return workflow.compile(checkpointer=checkpointer)
 
-    async def _retrieve_node(self, state: AgentState) -> dict:
-        """
-        Retrieval node: Fetch relevant paragraphs from vector database.
-
-        Delegates to RagService.retrieve_context() for reuse.
-
-        Args:
-            state: Current agent state
-
-        Returns:
-            Dict with updated retrieved_paragraphs field
-        """
-        question = state["question"]
-
-        try:
-            # Delegate to RagService
-            paragraphs = await self.rag_service.retrieve_context(
-                query=question,
-                min_results=self.min_results,
-                max_results=self.max_results,
-                similarity_cutoff=self.similarity_cutoff,
-                retrieval_strategy="similarity_search",
-            )
-
-            logger.info(f"Retrieved {len(paragraphs)} context paragraphs for query")
-            return {"retrieved_paragraphs": paragraphs}
-
-        except Exception as e:
-            logger.error(f"Retrieval failed: {e}")
-            # Graceful degradation - continue without context
-            return {"retrieved_paragraphs": []}
+    # REMOVED: Automatic retrieve_node - all retrieval now via search_book tool
+    # async def _retrieve_node(self, state: AgentState) -> dict:
+    #     """
+    #     Retrieval node: Fetch relevant paragraphs from vector database.
+    #
+    #     Delegates to RagService.retrieve_context() for reuse.
+    #
+    #     Args:
+    #         state: Current agent state
+    #
+    #     Returns:
+    #         Dict with updated retrieved_paragraphs field
+    #     """
+    #     question = state["question"]
+    #
+    #     try:
+    #         # Delegate to RagService
+    #         paragraphs = await self.rag_service.retrieve_context(
+    #             query=question,
+    #             min_results=self.min_results,
+    #             max_results=self.max_results,
+    #             similarity_cutoff=self.similarity_cutoff,
+    #             retrieval_strategy="similarity_search",
+    #         )
+    #
+    #         logger.info(f"Retrieved {len(paragraphs)} context paragraphs for query")
+    #         return {"retrieved_paragraphs": paragraphs}
+    #
+    #     except Exception as e:
+    #         logger.error(f"Retrieval failed: {e}")
+    #         # Graceful degradation - continue without context
+    #         return {"retrieved_paragraphs": []}
 
     async def _generate_node(self, state: AgentState) -> dict:
         """
-        Generation node: Create response using LLM + context.
+        Generation node: Create response using LLM with tool calling support.
 
-        Uses RagService for formatting but LangGraph for execution.
+        The LLM can decide to call tools (like search_book) or answer directly.
+        Tool results from previous iterations are in the message history.
 
         Args:
             state: Current agent state
 
         Returns:
-            Dict with updated generation and messages fields
+            Dict with updated generation, messages, and tool_iterations fields
         """
         question = state["question"]
-        messages = state["messages"]
-        paragraphs = state["retrieved_paragraphs"]
+        messages = state.get("messages", [])
+        paragraphs = state.get("retrieved_paragraphs", [])
+        tool_iterations = state.get("tool_iterations", 0)
 
         try:
+            # Bind tools to LLM to enable tool calling
+            llm_with_tools = self.llm.bind_tools(self.tools)
+
             # Build prompt based on whether we have context
             if paragraphs:
                 # Use RagService to format context
@@ -187,7 +247,7 @@ class GraphRagService:
                 message_history = list(messages) if messages else []
 
                 # Invoke LLM with context
-                chain = rag_prompt | self.llm
+                chain = rag_prompt | llm_with_tools
                 response = await chain.ainvoke(
                     {
                         "chat_history": message_history,
@@ -196,7 +256,7 @@ class GraphRagService:
                     }
                 )
             else:
-                # No context available - answer without retrieval
+                # No context available - use tools or answer directly
                 simple_prompt = ChatPromptTemplate.from_messages(
                     [
                         ("system", self.config.system_message),
@@ -207,15 +267,25 @@ class GraphRagService:
 
                 message_history = list(messages) if messages else []
 
-                # Invoke LLM without context
-                chain = simple_prompt | self.llm
+                # Invoke LLM without context (but with tools available)
+                chain = simple_prompt | llm_with_tools
                 response = await chain.ainvoke(
                     {"chat_history": message_history, "query": question}
                 )
 
+            # Increment tool iteration counter if tool calls were made
+            new_tool_iterations = tool_iterations
+            if hasattr(response, "tool_calls") and response.tool_calls:
+                new_tool_iterations = tool_iterations + 1
+                logger.info(
+                    f"LLM made {len(response.tool_calls)} tool call(s), "
+                    f"iteration {new_tool_iterations}"
+                )
+
             return {
-                "generation": response.content,
-                "messages": [AIMessage(content=response.content)],
+                "generation": response.content or "",
+                "messages": [response],
+                "tool_iterations": new_tool_iterations,
             }
 
         except Exception as e:

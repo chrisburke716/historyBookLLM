@@ -24,8 +24,12 @@ class GraphConfig(BaseSettings):
     min_retrieval_results: int = 5
     similarity_threshold: float = 0.4
 
-    # Future: tool calling configuration
-    # enabled_tools: list[str] = []
+    # Tool calling configuration
+    enable_tools: bool = True
+    enabled_tools: list[str] = ["book_search"]  # List of tool names to enable
+    max_tool_iterations: int = (
+        3  # Maximum tool call loops to prevent infinite iterations
+    )
 
     # Future: reasoning configuration
     # enable_planning: bool = False

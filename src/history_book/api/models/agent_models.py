@@ -36,8 +36,12 @@ class AgentMessageResponse(BaseModel):
     # Example metadata:
     # {
     #     "num_retrieved_paragraphs": 5,
-    #     "graph_execution": "simple_rag",
-    #     "nodes_executed": ["retrieve", "generate"],
+    #     "graph_execution": "tool_enabled_rag",
+    #     "nodes_executed": ["generate", "tools", "generate"],
+    #     "tool_calls": [
+    #         {"tool": "search_book", "query": "Ancient Rome"}
+    #     ],
+    #     "tool_iterations": 1
     # }
 
 
