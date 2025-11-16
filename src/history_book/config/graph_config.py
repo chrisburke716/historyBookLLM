@@ -31,6 +31,14 @@ class GraphConfig(BaseSettings):
         3  # Maximum tool call loops to prevent infinite iterations
     )
 
+    # Tool-specific parameters (used by all tools unless overridden)
+    tool_max_results: int = 40  # Max paragraphs to retrieve per tool call
+    tool_min_similarity: float = 0.4  # Min similarity score for retrieval
+
+    # Book search tool specific overrides (if None, uses tool_* defaults above)
+    book_tool_max_results: int | None = None
+    book_tool_min_similarity: float | None = None
+
     # Future: reasoning configuration
     # enable_planning: bool = False
     # enable_reflection: bool = False
