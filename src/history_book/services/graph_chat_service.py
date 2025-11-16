@@ -32,7 +32,9 @@ class GraphChatResult:
 
     message: ChatMessage
     retrieved_paragraphs: list[Paragraph]
-    metadata: dict | None = None  # Graph execution metadata (tool calls, iterations, etc.)
+    metadata: dict | None = (
+        None  # Graph execution metadata (tool calls, iterations, etc.)
+    )
 
 
 class GraphChatService:
@@ -233,7 +235,9 @@ class GraphChatService:
 
             # Build metadata from graph state
             execution_metadata = {
-                "num_retrieved_paragraphs": len(result_state.get("retrieved_paragraphs", [])),
+                "num_retrieved_paragraphs": len(
+                    result_state.get("retrieved_paragraphs", [])
+                ),
                 "graph_execution": "tool_enabled_rag",
                 "tool_iterations": result_state.get("tool_iterations", 0),
             }

@@ -2,7 +2,6 @@
 
 import logging
 
-from langchain.schema import AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -120,9 +119,7 @@ class GraphRagService:
 
         # Check if max iterations reached
         if tool_iterations >= 3:  # TODO: Make configurable via GraphConfig
-            logger.info(
-                f"Max tool iterations ({3}) reached, ending execution"
-            )
+            logger.info(f"Max tool iterations ({3}) reached, ending execution")
             return "end"
 
         # Check if last message has tool calls
@@ -164,12 +161,7 @@ class GraphRagService:
 
         # Conditional routing after generate: tools or end
         workflow.add_conditional_edges(
-            "generate",
-            self._should_continue,
-            {
-                "tools": "tools",
-                "end": END
-            }
+            "generate", self._should_continue, {"tools": "tools", "end": END}
         )
 
         # Tools loop back to generate for synthesis
