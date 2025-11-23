@@ -260,6 +260,44 @@ class GraphRagService:
 
         return paragraphs
 
+    def _extract_tool_queries_from_messages(self, messages: list) -> list[str]:
+        """
+        Extract the search queries that were sent to tools in previous iterations.
+
+        This helps prevent the LLM from repeating the same unsuccessful searches
+        and encourages query refinement.
+
+        Args:
+            messages: List of messages including AI messages with tool calls
+
+        Returns:
+            List of query strings that were used in previous tool calls
+        """
+        queries = []
+
+        for msg in messages:
+            # Check if message has tool_calls attribute (AIMessage with tool calls)
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                for tool_call in msg.tool_calls:
+                    # Extract query from tool call arguments
+                    if isinstance(tool_call, dict):
+                        # Dictionary format
+                        args = tool_call.get("args", {})
+                        if "query" in args:
+                            queries.append(args["query"])
+                    elif hasattr(tool_call, "get"):
+                        # Object with get method
+                        args = tool_call.get("args", {})
+                        if "query" in args:
+                            queries.append(args["query"])
+
+        if queries:
+            logger.info(
+                f"Found {len(queries)} previous tool queries in message history"
+            )
+
+        return queries
+
     async def _generate_node(self, state: AgentState) -> dict:
         """
         Generation node: Create response using LLM with iterative tool calling support.
@@ -315,6 +353,35 @@ class GraphRagService:
                     "Generation node invoked with no context - expecting tool call"
                 )
 
+            # Extract previous tool queries to prevent repeating failed searches
+            previous_queries = self._extract_tool_queries_from_messages(messages)
+            if previous_queries:
+                context_section += (
+                    "\n\n**Previous search queries attempted:**\n"
+                    + "\n".join(f'- "{q}"' for q in previous_queries)
+                    + "\n\nDo not repeat these exact queries. If you need more information, try a different, more specific search query."
+                )
+
+            # On final iteration (3/3), force answer instead of allowing more tool calls
+            if tool_iterations >= 2:  # 0-indexed: 0, 1, 2 = iterations 1, 2, 3
+                # Final iteration - must provide answer
+                llm_to_use = self.llm  # No tools bound
+                context_section += (
+                    "\n\n**FINAL ITERATION: You must provide an answer now. "
+                    "If the excerpts above are sufficient, answer the question with inline citations. "
+                    "If the excerpts are insufficient or irrelevant, clearly state: "
+                    "'I could not find information about this topic in The Penguin History of the World.'**"
+                )
+                logger.info(
+                    "Final iteration (3/3) - forcing answer, no tools available"
+                )
+            else:
+                # Normal iteration - tools available
+                llm_to_use = self.llm.bind_tools(self.tools)
+                logger.info(
+                    f"Iteration {tool_iterations + 1}/3 - tools available for refinement"
+                )
+
             # Build prompt with iterative tool calling support
             prompt = ChatPromptTemplate.from_messages(
                 [
@@ -323,14 +390,11 @@ class GraphRagService:
                 ]
             )
 
-            # Always bind tools - LLM decides whether to call them
-            llm_with_tools = self.llm.bind_tools(self.tools)
-
             # Build message history (exclude system/human, just use chat history)
             message_history = list(messages) if messages else []
 
-            # Invoke LLM
-            chain = prompt | llm_with_tools
+            # Invoke LLM (with or without tools depending on iteration)
+            chain = prompt | llm_to_use
             response = await chain.ainvoke(
                 {"query": question, "chat_history": message_history}
             )
