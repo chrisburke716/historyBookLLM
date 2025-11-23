@@ -400,3 +400,33 @@ class GraphChatService:
                 self.repository_manager.chat_sessions.update(session_id, updates)
         except Exception as e:
             logger.warning(f"Failed to update session timestamp: {e}")
+
+    def get_eval_metadata(self) -> dict[str, any]:
+        """
+        Extract metadata about the graph chat service configuration for evaluation tracking.
+
+        Returns:
+            Dictionary containing LLM, graph, and RAG configuration settings
+        """
+        metadata = {}
+
+        # LLM Configuration from GraphRagService
+        metadata["llm_provider"] = self.graph_rag.config.provider
+        metadata["llm_model"] = self.graph_rag.config.model_name
+        metadata["llm_temperature"] = self.graph_rag.config.temperature
+        metadata["llm_max_tokens"] = self.graph_rag.config.max_tokens
+
+        # Truncate system message for readability
+        system_msg = self.graph_rag.config.system_message
+        metadata["llm_system_message"] = (
+            system_msg[:100] + "..." if len(system_msg) > 100 else system_msg
+        )
+
+        # Graph RAG Configuration
+        metadata["graph_execution"] = "tool_enabled_rag"
+        metadata["min_context_results"] = self.graph_rag.min_results
+        metadata["max_context_results"] = self.graph_rag.max_results
+        metadata["context_similarity_cutoff"] = self.graph_rag.similarity_cutoff
+        metadata["max_tool_iterations"] = 3  # Hardcoded in _should_continue
+
+        return metadata
