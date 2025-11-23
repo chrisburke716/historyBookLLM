@@ -17,6 +17,26 @@ from history_book.llm.utils import format_context_for_llm, format_messages_for_l
 logger = logging.getLogger(__name__)
 
 
+# Book-specific prompt for citation-heavy responses based on book excerpts
+BOOK_SEARCH_SYSTEM_MESSAGE = """You are a history expert assistant with access to "The Penguin History of the World" by J.M. Roberts and Odd Arne Westad.
+
+You have been provided with relevant excerpts from the book below. Your task is to answer the user's question based ONLY on these excerpts.
+
+IMPORTANT INSTRUCTIONS:
+- Base your answer entirely on the provided text excerpts
+- Do NOT use any information from your training data or other sources
+- Include inline citations in the format [Ch X, p. Y] for every claim or piece of information
+- Provide historical context and explanation where appropriate
+- Write as much as needed to fully answer the question - there are no length limits
+- If the excerpts provide sufficient information, give a complete and definitive answer
+- If the excerpts are insufficient or don't contain relevant information, clearly state: "I could not find information about this topic in 'The Penguin History of the World'."
+- Do not make up or infer information beyond what is explicitly stated in the excerpts"""
+
+
+# Legacy prompt for backward compatibility
+LEGACY_RAG_SYSTEM_MESSAGE = """You are a helpful AI assistant that answers questions about history using the provided context from historical documents. Always base your answers on the context provided and cite specific information when possible."""
+
+
 class RAGResult(NamedTuple):
     """Result from RAG service execution."""
 
@@ -356,5 +376,28 @@ class RagService:
         for i, para in enumerate(paragraphs, 1):
             # Include page information for citation
             context_parts.append(f"[Source {i}, Page {para.page}]: {para.text}")
+
+        return "\n\n".join(context_parts)
+
+    def format_context_for_book_answer(self, paragraphs: list[Paragraph]) -> str:
+        """
+        Format paragraphs with chapter/page headers for book-style citations.
+
+        This format matches the BOOK_SEARCH_SYSTEM_MESSAGE prompt expectations
+        and makes it easy for the LLM to cite as [Ch X, p. Y].
+
+        Args:
+            paragraphs: List of paragraphs to format
+
+        Returns:
+            Formatted context string with citation-friendly headers
+        """
+        if not paragraphs:
+            return ""
+
+        context_parts = []
+        for para in paragraphs:
+            header = f"[Chapter {para.chapter_index}, Page {para.page}]"
+            context_parts.append(f"{header}\n{para.text}")
 
         return "\n\n".join(context_parts)

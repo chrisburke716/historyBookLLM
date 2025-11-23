@@ -8,6 +8,47 @@ from langgraph.graph.message import add_messages
 from history_book.data_models.entities import Paragraph
 
 
+def add_paragraphs(existing: list[Paragraph], new: list[Paragraph]) -> list[Paragraph]:
+    """
+    Reducer for retrieved_paragraphs that accumulates and deduplicates.
+
+    When tools are called multiple times, we want to keep all retrieved paragraphs
+    but avoid duplicates. Deduplication is based on (book_index, chapter_index, page, text).
+
+    Args:
+        existing: Current list of paragraphs in state
+        new: New paragraphs to add
+
+    Returns:
+        Combined list with duplicates removed
+    """
+    if not existing:
+        return new
+    if not new:
+        return existing
+
+    # Create set of existing paragraph signatures for deduplication
+    seen = {
+        (
+            p.book_index,
+            p.chapter_index,
+            p.page,
+            p.text[:100],
+        )  # Use first 100 chars of text
+        for p in existing
+    }
+
+    # Add new paragraphs if not seen
+    result = list(existing)
+    for para in new:
+        signature = (para.book_index, para.chapter_index, para.page, para.text[:100])
+        if signature not in seen:
+            result.append(para)
+            seen.add(signature)
+
+    return result
+
+
 class AgentState(TypedDict):
     """
     State schema for the RAG agent graph.
@@ -40,8 +81,8 @@ class AgentState(TypedDict):
     # Current user query
     question: str
 
-    # Retrieved context documents
-    retrieved_paragraphs: list[Paragraph]
+    # Retrieved context documents (with deduplicating reducer for multi-tool calls)
+    retrieved_paragraphs: Annotated[list[Paragraph], add_paragraphs]
 
     # Generated response
     generation: str
