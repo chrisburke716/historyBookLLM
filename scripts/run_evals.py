@@ -1,22 +1,63 @@
 # use langsmith 'evaluate' method
 
+import argparse
 import asyncio
 
 from langchain_openai import ChatOpenAI
 from langsmith import Client
 
 from history_book.evals import get_function_evaluators, get_prompt_evaluators
-from history_book.services import ChatService
+from history_book.services import ChatService, GraphChatService
 
 
 async def main():
-    eval_run_description = (
-        "RAG with min 5 retrieved docs, max 40, 0.4 similarity cutoff, gpt-4o-mini"
+    # Parse CLI arguments
+    parser = argparse.ArgumentParser(description="Run evaluations on RAG system")
+    parser.add_argument(
+        "--mode",
+        choices=["agent", "legacy"],
+        default="agent",
+        help="Which system to evaluate: 'agent' (LangGraph) or 'legacy' (LCEL)",
     )
+    parser.add_argument(
+        "--subset",
+        action="store_true",
+        help="Run on 3-query subset for quick testing",
+    )
+    parser.add_argument(
+        "--full", action="store_true", help="Run on full 100-query dataset"
+    )
+    args = parser.parse_args()
+
+    # Validate arguments
+    if args.subset and args.full:
+        parser.error("Cannot specify both --subset and --full")
+
+    # Determine dataset mode
+    if args.subset:
+        dataset_mode = "subset (3 queries)"
+    elif args.full:
+        dataset_mode = "full (100 queries)"
+    else:
+        # Default to subset for safety
+        args.subset = True
+        dataset_mode = "subset (3 queries, default)"
+
+    # Set up description
+    system_type = "LangGraph agent" if args.mode == "agent" else "Legacy RAG (LCEL)"
+    eval_run_description = f"{system_type} with book search prompt - {dataset_mode}"
+
+    print(f"Running evaluation: {eval_run_description}")
+    print(f"Mode: {args.mode}")
+    print(f"Dataset: {dataset_mode}")
 
     ls_client = Client()
 
-    chat_service = ChatService()
+    # Choose service based on mode
+    if args.mode == "agent":
+        chat_service = GraphChatService()
+    else:
+        chat_service = ChatService()
 
     async def target_wrapper(inputs):
         session = await chat_service.create_session()
@@ -43,12 +84,18 @@ async def main():
         model="gpt-5-mini-2025-08-07", temperature=1.0
     )  # gpt-5 models don't support temp != 1.0
 
-    # Get subset of dataset with metadata source = user
-    data_subset = ls_client.list_examples(
-        dataset_name=dataset_name, metadata={"source": "user"}
-    )
-    # even shorter for testing
-    data_subset = list(data_subset)[:3]
+    # Determine dataset to use
+    if args.subset:
+        # Get subset of dataset with metadata source = user (3 queries for quick testing)
+        data_subset = ls_client.list_examples(
+            dataset_name=dataset_name, metadata={"source": "user"}
+        )
+        data = list(data_subset)[:3]
+        print(f"Using {len(data)} queries from subset")
+    else:
+        # Use full dataset
+        data = dataset_name
+        print("Using full dataset")
 
     # Create evaluators using the registry
     prompt_evaluators = get_prompt_evaluators(llm=llm)
@@ -76,18 +123,24 @@ async def main():
     # Add evaluator metadata
     metadata["evaluator_llm_model"] = llm.model_name
     metadata["evaluator_llm_temperature"] = llm.temperature
+    metadata["eval_mode"] = args.mode
+    metadata["eval_dataset_mode"] = "subset" if args.subset else "full"
 
     print(f"Evaluation metadata: {metadata}")
 
     _eval = await ls_client.aevaluate(
         target_wrapper,
-        data=dataset_name,  # full dataset
-        # data=data_subset, # smaller subset for testing
+        data=data,
         evaluators=all_evals,
         description=eval_run_description,
         metadata=metadata,
-        max_concurrency=10,
+        max_concurrency=5,
     )
+
+    print("\n✅ Evaluation complete!")
+    print(f"Mode: {args.mode}")
+    print(f"Dataset: {dataset_mode}")
+    print("View results in LangSmith")
 
 
 if __name__ == "__main__":

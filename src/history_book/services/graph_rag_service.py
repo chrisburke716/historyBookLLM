@@ -1,19 +1,24 @@
 """LangGraph-based RAG service for agentic chat functionality."""
 
+import json
 import logging
 
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import ToolMessage
+from langchain_core.prompts import ChatPromptTemplate
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
+from history_book.data_models.entities import Paragraph
 from history_book.data_models.graph_state import AgentState
 from history_book.database.repositories import BookRepositoryManager
 from history_book.llm.config import LLMConfig
 from history_book.llm.exceptions import LLMError
-from history_book.llm.utils import format_context_for_llm
 from history_book.services.agents.tools import search_book
-from history_book.services.rag_service import RagService
+from history_book.services.rag_service import (
+    ITERATIVE_BOOK_SEARCH_PROMPT,
+    RagService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -116,10 +121,14 @@ class GraphRagService:
         """
         messages = state.get("messages", [])
         tool_iterations = state.get("tool_iterations", 0)
+        max_iterations = 3  # TODO: Make configurable via GraphConfig
 
         # Check if max iterations reached
-        if tool_iterations >= 3:  # TODO: Make configurable via GraphConfig
-            logger.info(f"Max tool iterations ({3}) reached, ending execution")
+        if tool_iterations >= max_iterations:
+            logger.info(
+                f"Max tool iterations ({max_iterations}) reached, ending execution. "
+                f"Retrieved {len(state.get('retrieved_paragraphs', []))} total paragraphs."
+            )
             return "end"
 
         # Check if last message has tool calls
@@ -127,13 +136,17 @@ class GraphRagService:
             last_message = messages[-1]
             if hasattr(last_message, "tool_calls") and last_message.tool_calls:
                 logger.info(
-                    f"Tool calls detected in last message, routing to tools node "
-                    f"(iteration {tool_iterations + 1})"
+                    f"Tool calls detected: routing to tools node "
+                    f"(iteration {tool_iterations + 1}/{max_iterations})"
                 )
                 return "tools"
 
-        # No tool calls or empty messages, end execution
-        logger.info("No tool calls detected, ending execution")
+        # No tool calls - LLM provided final answer
+        logger.info(
+            f"No tool calls detected - LLM provided final answer. "
+            f"Total iterations: {tool_iterations}, "
+            f"Retrieved paragraphs: {len(state.get('retrieved_paragraphs', []))}"
+        )
         return "end"
 
     def _create_graph(self):
@@ -204,87 +217,203 @@ class GraphRagService:
     #         # Graceful degradation - continue without context
     #         return {"retrieved_paragraphs": []}
 
+    def _extract_paragraphs_from_tools(self, messages: list) -> list:
+        """
+        Extract paragraph data from tool result messages.
+
+        Tool results are ToolMessage objects with JSON content from search_book.
+        Parse them and reconstruct Paragraph objects.
+
+        Args:
+            messages: List of messages including ToolMessages
+
+        Returns:
+            List of Paragraph objects extracted from tool results
+        """
+        paragraphs = []
+
+        for msg in messages:
+            if isinstance(msg, ToolMessage):
+                try:
+                    # Parse tool result JSON
+                    result = json.loads(msg.content)
+
+                    # Extract excerpts if this is from search_book
+                    if "excerpts" in result:
+                        for idx, excerpt in enumerate(result["excerpts"]):
+                            # Reconstruct Paragraph object with all available fields
+                            para = Paragraph(
+                                id=excerpt.get("id"),
+                                text=excerpt["text"],
+                                chapter_index=excerpt["chapter"],
+                                page=excerpt["page"],
+                                book_index=excerpt.get("book", 1),
+                                paragraph_index=idx,  # Use index in result list
+                            )
+                            paragraphs.append(para)
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.warning(f"Failed to parse tool result: {e}")
+                    continue
+
+        if paragraphs:
+            logger.info(f"Extracted {len(paragraphs)} paragraphs from tool results")
+
+        return paragraphs
+
+    def _extract_tool_queries_from_messages(self, messages: list) -> list[str]:
+        """
+        Extract the search queries that were sent to tools in previous iterations.
+
+        This helps prevent the LLM from repeating the same unsuccessful searches
+        and encourages query refinement.
+
+        Args:
+            messages: List of messages including AI messages with tool calls
+
+        Returns:
+            List of query strings that were used in previous tool calls
+        """
+        queries = []
+
+        for msg in messages:
+            # Check if message has tool_calls attribute (AIMessage with tool calls)
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                for tool_call in msg.tool_calls:
+                    # Extract query from tool call arguments
+                    if isinstance(tool_call, dict):
+                        # Dictionary format
+                        args = tool_call.get("args", {})
+                        if "query" in args:
+                            queries.append(args["query"])
+                    elif hasattr(tool_call, "get"):
+                        # Object with get method
+                        args = tool_call.get("args", {})
+                        if "query" in args:
+                            queries.append(args["query"])
+
+        if queries:
+            logger.info(
+                f"Found {len(queries)} previous tool queries in message history"
+            )
+
+        return queries
+
     async def _generate_node(self, state: AgentState) -> dict:
         """
-        Generation node: Create response using LLM with tool calling support.
+        Generation node: Create response using LLM with iterative tool calling support.
 
-        The LLM can decide to call tools (like search_book) or answer directly.
-        Tool results from previous iterations are in the message history.
+        Single-path implementation where tools are always available to the LLM.
+        The LLM decides on each iteration whether to:
+        1. Call search_book to retrieve (more) information
+        2. Synthesize a final answer from accumulated context
+
+        This enables iterative refinement: LLM can search multiple times with
+        refined queries if initial context is insufficient.
 
         Args:
             state: Current agent state
 
         Returns:
-            Dict with updated generation, messages, and tool_iterations fields
+            Dict with updated generation, messages, retrieved_paragraphs, and tool_iterations
         """
         question = state["question"]
         messages = state.get("messages", [])
-        paragraphs = state.get("retrieved_paragraphs", [])
         tool_iterations = state.get("tool_iterations", 0)
 
         try:
-            # Bind tools to LLM to enable tool calling
-            llm_with_tools = self.llm.bind_tools(self.tools)
+            # Extract paragraphs from tool results in messages
+            tool_paragraphs = self._extract_paragraphs_from_tools(messages)
 
-            # Build prompt based on whether we have context
-            if paragraphs:
-                # Use RagService to format context
-                context = self.rag_service.format_context(paragraphs)
-                formatted_context = format_context_for_llm(
-                    context, self.config.max_context_length
+            # Get all accumulated paragraphs from state (reducer will deduplicate when updated)
+            existing_paragraphs = state.get("retrieved_paragraphs", [])
+            all_paragraphs = existing_paragraphs + tool_paragraphs
+
+            # Format context section for prompt
+            if all_paragraphs:
+                # We have retrieved context - show it to LLM
+                context = self.rag_service.format_context_for_book_answer(
+                    all_paragraphs
                 )
-
-                # Create prompt template for RAG
-                rag_prompt = ChatPromptTemplate.from_messages(
-                    [
-                        ("system", self.config.system_message),
-                        MessagesPlaceholder("chat_history"),
-                        ("human", "{context}\n\nQuestion: {query}"),
-                    ]
+                context_section = (
+                    f"PREVIOUSLY RETRIEVED EXCERPTS:\n\n{context}\n\n"
+                    "Review the above excerpts. If they are sufficient to answer the question, "
+                    "provide your answer with inline citations. If you need more specific information, "
+                    "call search_book again with a refined query."
                 )
-
-                # Build message list for LLM
-                message_history = list(messages) if messages else []
-
-                # Invoke LLM with context
-                chain = rag_prompt | llm_with_tools
-                response = await chain.ainvoke(
-                    {
-                        "chat_history": message_history,
-                        "context": formatted_context,
-                        "query": question,
-                    }
+                logger.info(
+                    f"Generation node invoked with {len(all_paragraphs)} accumulated paragraphs"
                 )
             else:
-                # No context available - use tools or answer directly
-                simple_prompt = ChatPromptTemplate.from_messages(
-                    [
-                        ("system", self.config.system_message),
-                        MessagesPlaceholder("chat_history"),
-                        ("human", "{query}"),
-                    ]
+                # No context yet - prompt LLM to use search_book tool
+                context_section = (
+                    "(No excerpts retrieved yet. Use the search_book tool to find "
+                    "relevant information from the book.)"
+                )
+                logger.info(
+                    "Generation node invoked with no context - expecting tool call"
                 )
 
-                message_history = list(messages) if messages else []
-
-                # Invoke LLM without context (but with tools available)
-                chain = simple_prompt | llm_with_tools
-                response = await chain.ainvoke(
-                    {"chat_history": message_history, "query": question}
+            # Extract previous tool queries to prevent repeating failed searches
+            previous_queries = self._extract_tool_queries_from_messages(messages)
+            if previous_queries:
+                context_section += (
+                    "\n\n**Previous search queries attempted:**\n"
+                    + "\n".join(f'- "{q}"' for q in previous_queries)
+                    + "\n\nDo not repeat these exact queries. If you need more information, try a different, more specific search query."
                 )
 
-            # Increment tool iteration counter if tool calls were made
+            # On final iteration (3/3), force answer instead of allowing more tool calls
+            if tool_iterations >= 2:  # 0-indexed: 0, 1, 2 = iterations 1, 2, 3
+                # Final iteration - must provide answer
+                llm_to_use = self.llm  # No tools bound
+                context_section += (
+                    "\n\n**FINAL ITERATION: You must provide an answer now. "
+                    "If the excerpts above are sufficient, answer the question with inline citations. "
+                    "If the excerpts are insufficient or irrelevant, clearly state: "
+                    "'I could not find information about this topic in The Penguin History of the World.'**"
+                )
+                logger.info(
+                    "Final iteration (3/3) - forcing answer, no tools available"
+                )
+            else:
+                # Normal iteration - tools available
+                llm_to_use = self.llm.bind_tools(self.tools)
+                logger.info(
+                    f"Iteration {tool_iterations + 1}/3 - tools available for refinement"
+                )
+
+            # Build prompt with iterative tool calling support
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("system", ITERATIVE_BOOK_SEARCH_PROMPT),
+                    ("human", f"{context_section}\n\nUSER QUESTION: {{query}}"),
+                ]
+            )
+
+            # Build message history (exclude system/human, just use chat history)
+            message_history = list(messages) if messages else []
+
+            # Invoke LLM (with or without tools depending on iteration)
+            chain = prompt | llm_to_use
+            response = await chain.ainvoke(
+                {"query": question, "chat_history": message_history}
+            )
+
+            # Update iteration counter if tools were called
             new_tool_iterations = tool_iterations
             if hasattr(response, "tool_calls") and response.tool_calls:
                 new_tool_iterations = tool_iterations + 1
                 logger.info(
-                    f"LLM made {len(response.tool_calls)} tool call(s), "
-                    f"iteration {new_tool_iterations}"
+                    f"LLM called {len(response.tool_calls)} tool(s), "
+                    f"iteration {new_tool_iterations}/3"
                 )
+            else:
+                logger.info("LLM provided final answer without calling tools")
 
             return {
                 "generation": response.content or "",
                 "messages": [response],
+                "retrieved_paragraphs": all_paragraphs,
                 "tool_iterations": new_tool_iterations,
             }
 

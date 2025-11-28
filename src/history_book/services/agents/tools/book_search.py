@@ -1,21 +1,18 @@
 """Book search tool for retrieving information from 'The Penguin History of the World'.
 
-This tool performs retrieval from the book's vector database and generates
-a formatted response with proper citations.
+This tool performs retrieval from the book's vector database and returns
+relevant paragraphs as structured data for the agent to synthesize.
 """
 
+import json
 import logging
 from typing import Annotated
 
-from langchain_core.prompts import PromptTemplate
 from langchain_core.tools import tool
 
 from history_book.config.graph_config import GraphConfig
 from history_book.database.config.database_config import WeaviateConfig
 from history_book.database.repositories import BookRepositoryManager
-from history_book.llm import create_chat_model
-
-from .prompts import BOOK_SEARCH_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +24,8 @@ def search_book(
     """Search 'The Penguin History of the World' for relevant information.
 
     Use this tool when you need to retrieve specific information from the book
-    to answer the user's question. The tool will search the book's content and
-    return relevant passages with proper chapter and page citations.
+    to answer the user's question. The tool searches the book's content and
+    returns relevant passages with chapter and page metadata.
 
     This tool should be your primary source for historical information when
     answering questions about topics covered in the book.
@@ -37,14 +34,22 @@ def search_book(
         query: The search query describing what information to find in the book.
 
     Returns:
-        A formatted response with relevant information and citations from the book.
+        JSON string containing relevant excerpts from the book with metadata.
+        Format: {"excerpts": [{"text": "...", "chapter": X, "page": Y, ...}], ...}
     """
     logger.info(f"Book search tool called with query: {query[:100]}")
 
     try:
         # 1. Validate query
         if not query or len(query.strip()) < 3:
-            return "Please provide a more specific question."
+            return json.dumps(
+                {
+                    "error": "Please provide a more specific question.",
+                    "excerpts": [],
+                    "query": query,
+                    "num_results": 0,
+                }
+            )
 
         # 2. Initialize configuration and services
         graph_config = GraphConfig()
@@ -68,58 +73,65 @@ def search_book(
             query_text=query, limit=max_results, threshold=min_similarity
         )
 
-        # Extract paragraphs from tuples
-        paragraphs = [paragraph for paragraph, _score in search_results]
-
-        logger.info(f"Retrieved {len(paragraphs)} paragraphs")
+        logger.info(f"Retrieved {len(search_results)} paragraphs")
 
         # 5. Handle no results
-        if not paragraphs:
-            return "I could not find relevant information about this topic in 'The Penguin History of the World'."
-
-        # 6. Handle low quality results
-        if len(paragraphs) < 3:
-            logger.warning(
-                f"Only retrieved {len(paragraphs)} paragraphs, results may be incomplete"
+        if not search_results:
+            return json.dumps(
+                {
+                    "message": "No relevant information found in the book for this query.",
+                    "excerpts": [],
+                    "query": query,
+                    "num_results": 0,
+                }
             )
 
-        # 7. Format context for prompt
-        context_str = "\n\n".join(
-            [
-                f"[Chapter {p.chapter_index}, Page {p.page}]\n{p.text}"
-                for p in paragraphs
-            ]
+        # 6. Handle low quality results
+        if len(search_results) < 3:
+            logger.warning(
+                f"Only retrieved {len(search_results)} paragraphs, results may be incomplete"
+            )
+
+        # 7. Format results as structured data
+        excerpts = []
+        for paragraph, score in search_results:
+            excerpt = {
+                "id": paragraph.id,
+                "text": paragraph.text,
+                "chapter": paragraph.chapter_index,
+                "page": paragraph.page,
+                "book": paragraph.book_index,
+                "similarity_score": float(score) if score is not None else None,
+            }
+            excerpts.append(excerpt)
+
+        logger.info(f"Returning {len(excerpts)} excerpts from the book")
+
+        return json.dumps(
+            {
+                "excerpts": excerpts,
+                "query": query,
+                "num_results": len(excerpts),
+            }
         )
-
-        logger.debug(f"Context length: {len(context_str)} characters")
-
-        # 8. Create LLM using factory (provider-agnostic)
-        llm = create_chat_model()
-
-        # 9. Generate answer with citations
-        prompt = PromptTemplate.from_template(BOOK_SEARCH_PROMPT)
-        chain = prompt | llm
-
-        logger.info("Invoking LLM to generate answer with citations")
-
-        response = chain.invoke({"context": context_str, "query": query})
-
-        # 10. Extract text from response
-        answer = response.content if hasattr(response, "content") else str(response)
-
-        # 11. Validate answer is not empty
-        if not answer or answer.strip() == "":
-            logger.warning("LLM returned empty answer")
-            return "I was unable to formulate an answer based on the retrieved content."
-
-        logger.info(f"Generated answer with {len(answer)} characters")
-        logger.debug(f"Answer preview: {answer[:200]}...")
-
-        return answer
 
     except ImportError as e:
         logger.error(f"Missing dependency: {e}", exc_info=True)
-        return "The book search service is currently unavailable due to a missing dependency."
+        return json.dumps(
+            {
+                "error": "The book search service is currently unavailable due to a missing dependency.",
+                "excerpts": [],
+                "query": query,
+                "num_results": 0,
+            }
+        )
     except Exception as e:
         logger.error(f"Book search failed: {e}", exc_info=True)
-        return "I encountered an error searching the book. Please try again."
+        return json.dumps(
+            {
+                "error": "An error occurred while searching the book. Please try again.",
+                "excerpts": [],
+                "query": query,
+                "num_results": 0,
+            }
+        )
