@@ -13,7 +13,9 @@ def add_paragraphs(existing: list[Paragraph], new: list[Paragraph]) -> list[Para
     Reducer for retrieved_paragraphs that accumulates and deduplicates.
 
     When tools are called multiple times, we want to keep all retrieved paragraphs
-    but avoid duplicates. Deduplication is based on (book_index, chapter_index, page, text).
+    but avoid duplicates. Deduplication is based on the paragraph's natural location
+    in the book: (book_index, chapter_index, paragraph_index). This composite key
+    uniquely identifies each paragraph without relying on database IDs.
 
     Args:
         existing: Current list of paragraphs in state
@@ -27,24 +29,16 @@ def add_paragraphs(existing: list[Paragraph], new: list[Paragraph]) -> list[Para
     if not new:
         return existing
 
-    # Create set of existing paragraph signatures for deduplication
-    seen = {
-        (
-            p.book_index,
-            p.chapter_index,
-            p.page,
-            p.text[:100],
-        )  # Use first 100 chars of text
-        for p in existing
-    }
+    # Create set of existing paragraph locations for deduplication
+    seen = {(p.book_index, p.chapter_index, p.paragraph_index) for p in existing}
 
-    # Add new paragraphs if not seen
+    # Add new paragraphs if location not seen
     result = list(existing)
     for para in new:
-        signature = (para.book_index, para.chapter_index, para.page, para.text[:100])
-        if signature not in seen:
+        location = (para.book_index, para.chapter_index, para.paragraph_index)
+        if location not in seen:
             result.append(para)
-            seen.add(signature)
+            seen.add(location)
 
     return result
 
