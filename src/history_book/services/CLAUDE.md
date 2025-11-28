@@ -270,12 +270,16 @@ result = await service.send_message(
     session_id="session-123",
     user_message="Tell me about Julius Caesar"
 )
-# Returns: GraphChatResult(message, retrieved_paragraphs)
+# Returns: GraphChatResult(message, retrieved_paragraphs, metadata)
 
 # Session management
 session = await service.create_session(title="My Chat")
 sessions = await service.list_recent_sessions(limit=10)
 await service.delete_session(session_id)
+
+# Evaluation metadata (for experiment tracking)
+metadata = service.get_eval_metadata()
+# Returns: dict with llm_provider, llm_model, graph_execution, max_tool_iterations, etc.
 ```
 
 **GraphChatResult**:
@@ -284,6 +288,7 @@ await service.delete_session(session_id)
 class GraphChatResult:
     message: ChatMessage
     retrieved_paragraphs: list[Paragraph]
+    metadata: dict | None  # Graph execution metadata (tool calls, iterations, etc.)
 ```
 
 **Data Flow**:
@@ -300,24 +305,29 @@ class GraphChatResult:
 - Supports multi-turn dialogues (e.g., "Who was he?" after asking about Julius Caesar)
 - State isolated per session_id (maps to thread_id)
 
+**Current Features**:
+The agent already implements:
+- ✅ **Iterative Tool Calling**: `search_book` tool with ReAct-style pattern (max 3 iterations)
+- ✅ **Query Tracking**: Prevents duplicate searches by showing previous queries to LLM
+- ✅ **Forced Final Answer**: Ensures response even with no results on iteration 3
+- ✅ **Context Deduplication**: Accumulates paragraphs across tool calls using composite key
+
 **Future Extensibility**:
 The graph architecture supports easy addition of:
-- **Tool calling**: Add tools_node for search, calculations, APIs
+- **Web Search**: Add web_search tool for recent events not in book
 - **Planning**: Add plan_node for complex query decomposition
 - **Reflection**: Add reflect_node for self-critique
 - **Adaptive RAG**: Add routing nodes for dynamic strategy selection
 
-Example - Adding a tool node:
+Example - Adding another tool:
 ```python
-def tools_node(state: AgentState) -> dict:
-    """Execute requested tools"""
-    # Tool execution logic
-    return {"tool_results": results}
+@tool
+def web_search(query: str) -> str:
+    """Search the web for recent information"""
+    return search_api(query)
 
-# Add to graph
-workflow.add_node("tools", tools_node)
-workflow.add_edge("retrieve", "tools")
-workflow.add_edge("tools", "generate")
+# Bind multiple tools
+llm_with_tools = llm.bind_tools([search_book, web_search])
 ```
 
 **When to Use Agent vs Chat Services**:
