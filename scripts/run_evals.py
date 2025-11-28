@@ -134,7 +134,7 @@ async def main():
         evaluators=all_evals,
         description=eval_run_description,
         metadata=metadata,
-        max_concurrency=10,
+        max_concurrency=5,
     )
 
     print("\n✅ Evaluation complete!")
