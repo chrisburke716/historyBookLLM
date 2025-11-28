@@ -35,7 +35,8 @@ class LLMConfig:
     presence_penalty: float = 0.0  # OpenAI only
 
     # Chat settings
-    system_message: str = "You are a helpful AI assistant..."
+    system_message: str = """You are a history expert assistant with access to "The Penguin History of the World"..."""
+    # Default prompt now matches book search style for consistent RAG behavior
     max_context_length: int = 100000  # Max chars for context
     max_conversation_length: int = 20  # Max messages in history
 

@@ -16,20 +16,36 @@ The agent system implements RAG using LangGraph, providing a stateful, graph-bas
 ### Graph Structure
 
 ```
-START → retrieve_node → generate_node → END
+START → generate_node ⟷ tools_node → END
+            ↑______________|
+         (iterative loop, max 3 iterations)
 ```
 
-#### retrieve_node
-- **Input**: `state["question"]`
-- **Action**: Query ParagraphRepository for relevant paragraphs
-- **Output**: Updates `state["retrieved_paragraphs"]`
-- **Error Handling**: Returns empty list (graceful degradation)
+**Note:** The graph uses an iterative tool-calling pattern (ReAct-style) where the generate node can call the `search_book` tool multiple times to refine searches.
 
 #### generate_node
-- **Input**: `state["messages"]`, `state["question"]`, `state["retrieved_paragraphs"]`
-- **Action**: Format context + invoke LLM
-- **Output**: Updates `state["generation"]` and appends to `state["messages"]`
-- **Fallback**: Generates without context if no paragraphs retrieved
+- **Input**: `state["messages"]`, `state["question"]`, `state["retrieved_paragraphs"]`, `state["tool_iterations"]`
+- **Action**:
+  1. Extract paragraphs from previous tool results
+  2. Build dynamic context section with previously retrieved excerpts
+  3. Show previous search queries to prevent duplicates
+  4. On iteration 3 (final), force answer without tool calling
+  5. Otherwise, bind tools to LLM and invoke
+- **Output**: Updates `state["generation"]`, `state["messages"]`, `state["retrieved_paragraphs"]`, `state["tool_iterations"]`
+- **Key Feature**: Iterative refinement - LLM can call tools multiple times if initial results are insufficient
+
+#### tools_node (search_book)
+- **Input**: Tool call from generate_node with search query
+- **Action**: Query ParagraphRepository for relevant paragraphs
+- **Output**: Returns JSON with paragraph data (id, text, chapter, page, book, similarity_score)
+- **Error Handling**: Returns empty results list (graceful degradation)
+
+#### _should_continue (conditional edge)
+- **Decision Logic**:
+  - If `tool_iterations >= 3`: Route to END (max iterations reached)
+  - If last message has `tool_calls`: Route to tools_node
+  - Otherwise: Route to END (LLM provided final answer)
+- **Purpose**: Controls iteration loop and ensures termination
 
 ### State Management
 
@@ -46,8 +62,8 @@ class AgentState(TypedDict):
     question: str
     # Current user query
 
-    retrieved_paragraphs: list[Paragraph]
-    # Retrieved context documents
+    retrieved_paragraphs: Annotated[list[Paragraph], add_paragraphs]
+    # Retrieved context documents with deduplicating reducer
 
     generation: str
     # LLM-generated response
@@ -57,9 +73,20 @@ class AgentState(TypedDict):
 
     metadata: dict
     # Execution metadata for debugging
+
+    tool_calls: list[dict]
+    # Tool call requests from LLM
+
+    tool_results: list[dict]
+    # Results from tool executions
+
+    tool_iterations: int
+    # Counter tracking tool call iterations (max 3)
 ```
 
-The `add_messages` reducer automatically appends new messages to the history rather than replacing them, making it perfect for conversation tracking.
+**Reducers:**
+- `add_messages`: Automatically appends new messages to the history rather than replacing them
+- `add_paragraphs`: Custom reducer that deduplicates paragraphs based on composite key `(book_index, chapter_index, paragraph_index)` - enables accumulation across multiple tool calls without duplicates
 
 ### Memory Strategy
 
@@ -80,6 +107,80 @@ The `add_messages` reducer automatically appends new messages to the history rat
 - MemorySaver provides fast, ephemeral state during graph execution
 - Weaviate provides durable storage for conversation history
 - Best of both worlds: speed during execution + durability for long-term storage
+
+## Iterative Tool Calling
+
+The agent implements a ReAct-style pattern where the LLM can iteratively call tools to refine searches and gather more context.
+
+### How It Works
+
+**Iteration 1:**
+```
+User: "Who were Julius Caesar and Augustus?"
+↓
+LLM: Calls search_book("Julius Caesar")
+↓
+Tool: Returns 40 paragraphs about Julius Caesar
+```
+
+**Iteration 2:**
+```
+Context now includes: 40 paragraphs about Julius Caesar
+Previous queries: ["Julius Caesar"]
+↓
+LLM: Decides more context needed, calls search_book("Augustus Caesar")
+↓
+Tool: Returns 40 paragraphs about Augustus
+↓
+Deduplication: 80 total paragraphs (some overlap removed)
+```
+
+**Iteration 3 (Final):**
+```
+Context now includes: 80 paragraphs total
+Previous queries: ["Julius Caesar", "Augustus Caesar"]
+Tools: NOT bound (forced final answer)
+↓
+LLM: Synthesizes comprehensive answer covering both figures
+```
+
+### Query Tracking
+
+The system tracks previous queries to prevent duplicate searches:
+
+```python
+previous_queries = ["Julius Caesar", "Augustus Caesar"]
+# Shown in context to LLM:
+"""
+**Previous search queries attempted:**
+- "Julius Caesar"
+- "Augustus Caesar"
+
+Do not repeat these exact queries. If you need more information, try a different search.
+"""
+```
+
+### Forced Final Answer
+
+On iteration 3, tools are not bound to the LLM:
+- **Purpose**: Ensures response even if no relevant results found
+- **Benefit**: Prevents infinite loops or empty responses
+- **Example**: Out-of-scope query "quantum computing" returns graceful "I could not find information..." message
+
+### Edge Cases
+
+**Out-of-Scope Query:**
+```
+Iteration 1: search_book("quantum computing") → 0 results
+Iteration 2: search_book("quantum mechanics history") → 0 results
+Iteration 3: Forced answer → "I could not find information about this topic in 'The Penguin History of the World'."
+```
+
+**Single Search Sufficient:**
+```
+Iteration 1: search_book("Julius Caesar") → 40 paragraphs
+LLM decides context is sufficient → Provides answer (no iteration 2)
+```
 
 ## Usage Examples
 

@@ -10,7 +10,26 @@ This directory contains a comprehensive evaluation framework for measuring the q
 # Load environment variables (includes OPENAI_API_KEY and LANGSMITH_API_KEY)
 source source_env.sh
 
-# Run evaluations against the full dataset
+# Run evaluations with CLI flags
+poetry run python scripts/run_evals.py [OPTIONS]
+```
+
+**CLI Flags:**
+- `--mode {agent,legacy}` - Choose which system to evaluate (default: agent)
+  - `agent`: LangGraph-based RAG with iterative tool calling
+  - `legacy`: LCEL-based RAG with direct retrieval
+- `--subset` - Run on 3-query subset for quick testing
+- `--full` - Run on full 100-query dataset (default behavior)
+
+**Examples:**
+```bash
+# Quick test with agent system (3 queries)
+poetry run python scripts/run_evals.py --mode agent --subset
+
+# Full evaluation of legacy system
+poetry run python scripts/run_evals.py --mode legacy --full
+
+# Default: agent mode, full dataset
 poetry run python scripts/run_evals.py
 ```
 
