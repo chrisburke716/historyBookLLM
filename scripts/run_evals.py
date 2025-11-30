@@ -5,8 +5,13 @@ import asyncio
 
 from langchain_openai import ChatOpenAI
 from langsmith import Client
+from langsmith.evaluation import evaluate_comparative
 
-from history_book.evals import get_function_evaluators, get_prompt_evaluators
+from history_book.evals import (
+    get_all_pairwise_evaluators,
+    get_function_evaluators,
+    get_prompt_evaluators,
+)
 from history_book.services import ChatService, GraphChatService
 
 
@@ -27,11 +32,68 @@ async def main():
     parser.add_argument(
         "--full", action="store_true", help="Run on full 100-query dataset"
     )
+    parser.add_argument(
+        "--pairwise",
+        action="store_true",
+        help="Run pairwise comparison between two experiments (requires --experiments)",
+    )
+    parser.add_argument(
+        "--experiments",
+        nargs=2,
+        metavar=("EXP1", "EXP2"),
+        help="Two experiment IDs or names to compare (required with --pairwise)",
+    )
     args = parser.parse_args()
 
     # Validate arguments
     if args.subset and args.full:
         parser.error("Cannot specify both --subset and --full")
+    if args.pairwise and not args.experiments:
+        parser.error("--pairwise requires --experiments with 2 experiment IDs/names")
+    if args.experiments and not args.pairwise:
+        parser.error("--experiments can only be used with --pairwise")
+
+    # Handle pairwise evaluation mode
+    if args.pairwise:
+        exp1, exp2 = args.experiments
+
+        print("Running pairwise evaluation")
+        print(f"Experiment 1: {exp1}")
+        print(f"Experiment 2: {exp2}")
+
+        ls_client = Client()
+
+        # Create LLM for pairwise evaluations
+        llm = ChatOpenAI(model="gpt-5-mini-2025-08-07", temperature=1.0)
+
+        # Get pairwise evaluators with LLM bound via closure
+        pairwise_evaluators = get_all_pairwise_evaluators(llm=llm)
+        evaluator_names = [e.evaluator_name for e in pairwise_evaluators]
+
+        print(f"Pairwise evaluators: {evaluator_names}")
+
+        description = f"Pairwise comparison: {exp1} vs {exp2}"
+        metadata = {
+            "comparison_type": "pairwise",
+            "experiment_1": exp1,
+            "experiment_2": exp2,
+            "evaluator_count": len(pairwise_evaluators),
+        }
+
+        _results = evaluate_comparative(
+            (exp1, exp2),  # positional-only argument
+            evaluators=pairwise_evaluators,
+            description=description,
+            metadata=metadata,
+            max_concurrency=5,
+            client=ls_client,
+        )
+
+        print("\n✅ Pairwise evaluation complete!")
+        print(f"Compared: {exp1} vs {exp2}")
+        print("View results in LangSmith")
+
+        return
 
     # Determine dataset mode
     if args.subset:

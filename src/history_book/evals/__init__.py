@@ -16,6 +16,10 @@ from history_book.evals.evaluators import (
     IdkEvaluator,
     RelevanceEvaluator,
 )
+from history_book.evals.pairwise_evaluators import (
+    get_all_pairwise_evaluators,
+    get_pairwise_evaluator,
+)
 from history_book.evals.registry import (
     get_all_evaluators,
     get_evaluator,
@@ -42,4 +46,6 @@ __all__ = [
     "IdkAppropriateEvaluator",
     "IdkEvaluator",
     "RelevanceEvaluator",
+    "get_all_pairwise_evaluators",
+    "get_pairwise_evaluator",
 ]
