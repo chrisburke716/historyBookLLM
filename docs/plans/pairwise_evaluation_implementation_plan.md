@@ -1,8 +1,20 @@
 # Pairwise Evaluation Implementation Plan
 
 **Date:** November 28, 2025
-**Status:** ✅ Ready for Implementation
+**Status:** ✅ COMPLETED
 **Principles:** DRY, YAGNI, KISS
+
+---
+
+## ⚠️ Implementation Note
+
+**This document reflects the original planning process.** During implementation, we improved the design by using a **factory pattern with closures** instead of module-level globals for LLM management. This change:
+- ✅ Eliminates global variables (cleaner code)
+- ✅ Matches existing codebase patterns better
+- ✅ More testable and maintainable
+- ✅ Still follows DRY/YAGNI/KISS principles
+
+The actual implementation uses `get_all_pairwise_evaluators(llm=None)` as a factory function that creates evaluator functions with the LLM bound via closure. See `src/history_book/evals/pairwise_evaluators.py` for the final implementation.
 
 ---
 
