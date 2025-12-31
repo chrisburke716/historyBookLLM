@@ -54,3 +54,41 @@ export interface ChatState {
   isLoading: boolean;
   error: string | null;
 }
+
+// Book reading API types
+
+export interface BookResponse {
+  id: string;
+  title: string;
+  book_index: number;
+  start_page: number;
+  end_page: number;
+}
+
+export interface ChapterResponse {
+  id: string;
+  title: string;
+  chapter_index: number;
+  book_index: number;
+  start_page: number;
+  end_page: number;
+}
+
+export interface ParagraphResponse {
+  text: string;
+  page: number;
+  paragraph_index: number;
+}
+
+export interface BookListResponse {
+  books: BookResponse[];
+}
+
+export interface ChapterListResponse {
+  chapters: ChapterResponse[];
+}
+
+export interface ChapterContentResponse {
+  chapter: ChapterResponse;
+  paragraphs: ParagraphResponse[];
+}

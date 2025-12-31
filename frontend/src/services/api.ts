@@ -17,6 +17,9 @@ import {
   SessionListResponse,
   MessageListResponse,
   ChatResponse,
+  BookListResponse,
+  ChapterListResponse,
+  ChapterContentResponse,
 } from '../types';
 import { agentAPI } from './agentAPI';
 
@@ -72,6 +75,30 @@ class ChatAPI {
    */
   async sendMessage(sessionId: string, request: MessageRequest): Promise<ChatResponse> {
     const response = await this.api.post(`/api/chat/sessions/${sessionId}/messages`, request);
+    return response.data;
+  }
+
+  /**
+   * Get list of all books
+   */
+  async getBooks(): Promise<BookListResponse> {
+    const response = await this.api.get('/api/books');
+    return response.data;
+  }
+
+  /**
+   * Get list of chapters for a specific book
+   */
+  async getChapters(bookIndex: number): Promise<ChapterListResponse> {
+    const response = await this.api.get(`/api/books/${bookIndex}/chapters`);
+    return response.data;
+  }
+
+  /**
+   * Get full chapter content with all paragraphs
+   */
+  async getChapterContent(bookIndex: number, chapterIndex: number): Promise<ChapterContentResponse> {
+    const response = await this.api.get(`/api/books/${bookIndex}/chapters/${chapterIndex}`);
     return response.data;
   }
 }

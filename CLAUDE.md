@@ -208,3 +208,9 @@ OPENAI_API_KEY=your-api-key  # Required for chat functionality
 - Environment-specific configurations handle different deployment scenarios
 - Chat functionality requires OpenAI or Anthropic API keys
 - Vector embeddings are generated during PDF ingestion and stored in Weaviate
+
+## Guiding Principles
+
+- DRY - avoid duplicated code to keep things simple and maintainable
+- KISS - don't overcomplicate things - avoid premature abstraction
+- YAGNI - focus on building what's needed now, not what might be needed later
