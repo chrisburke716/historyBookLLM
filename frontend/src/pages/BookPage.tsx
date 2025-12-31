@@ -2,13 +2,22 @@
  * BookPage - Main page for browsing and reading book content.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Container, Box, Alert, Snackbar } from '@mui/material';
 import BookSelector from '../components/BookSelector';
 import ChapterView from '../components/ChapterView';
 import { chatAPI } from '../services/api';
 import { ChapterContentResponse } from '../types';
+
+// Debounce utility to avoid excessive localStorage writes
+function debounce<T extends (...args: any[]) => void>(func: T, wait: number): T {
+  let timeout: NodeJS.Timeout;
+  return ((...args: any[]) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  }) as T;
+}
 
 const BookPage: React.FC = () => {
   const { bookIndex: bookIndexParam, chapterIndex: chapterIndexParam } = useParams<{
@@ -22,6 +31,9 @@ const BookPage: React.FC = () => {
   const [chapterContent, setChapterContent] = useState<ChapterContentResponse | null>(null);
   const [isLoadingContent, setIsLoadingContent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Ref for scroll container
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Initialize selection from URL params
   useEffect(() => {
@@ -82,34 +94,94 @@ const BookPage: React.FC = () => {
     setError(null);
   };
 
+  // Save scroll position to localStorage (debounced)
+  const saveScrollPosition = useCallback(
+    debounce(() => {
+      if (selectedBookIndex === null || selectedChapterIndex === null) return;
+      if (!scrollContainerRef.current) return;
+
+      const position = scrollContainerRef.current.scrollTop;
+      const key = `book-scroll-${selectedBookIndex}-${selectedChapterIndex}`;
+      localStorage.setItem(key, position.toString());
+    }, 300),
+    [selectedBookIndex, selectedChapterIndex]
+  );
+
+  // Restore scroll position from localStorage when chapter loads
+  useEffect(() => {
+    if (!chapterContent || !scrollContainerRef.current) return;
+    if (selectedBookIndex === null || selectedChapterIndex === null) return;
+
+    const key = `book-scroll-${selectedBookIndex}-${selectedChapterIndex}`;
+    const savedPosition = localStorage.getItem(key);
+
+    if (savedPosition) {
+      // Delay to ensure content is fully rendered
+      setTimeout(() => {
+        scrollContainerRef.current?.scrollTo({
+          top: parseInt(savedPosition, 10),
+          behavior: 'smooth',
+        });
+      }, 100);
+    } else {
+      // New chapter - scroll to top
+      scrollContainerRef.current.scrollTo({ top: 0 });
+    }
+  }, [chapterContent, selectedBookIndex, selectedChapterIndex]);
+
+  // Attach scroll event listener
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => saveScrollPosition();
+    container.addEventListener('scroll', handleScroll);
+
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [saveScrollPosition]);
+
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '80vh' }}>
-        {/* Book and Chapter Selectors */}
-        <BookSelector
-          selectedBookIndex={selectedBookIndex}
-          selectedChapterIndex={selectedChapterIndex}
-          onSelectionChange={handleSelectionChange}
-          disabled={isLoadingContent}
-        />
+    <Container
+      maxWidth="lg"
+      sx={{
+        py: 4,
+        height: 'calc(100vh - 64px)', // Full height minus AppBar (64px)
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden', // Prevent outer scroll
+      }}
+    >
+      {/* Book and Chapter Selectors - Fixed at top */}
+      <BookSelector
+        selectedBookIndex={selectedBookIndex}
+        selectedChapterIndex={selectedChapterIndex}
+        onSelectionChange={handleSelectionChange}
+        disabled={isLoadingContent}
+      />
 
-        {/* Chapter Content */}
-        <Box sx={{ flex: 1 }}>
-          <ChapterView chapterContent={chapterContent} isLoading={isLoadingContent} />
-        </Box>
-
-        {/* Error Snackbar */}
-        <Snackbar
-          open={!!error}
-          autoHideDuration={6000}
-          onClose={handleCloseError}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        >
-          <Alert onClose={handleCloseError} severity="error" variant="filled" sx={{ width: '100%' }}>
-            {error}
-          </Alert>
-        </Snackbar>
+      {/* Scrollable Chapter Content Container */}
+      <Box
+        ref={scrollContainerRef}
+        sx={{
+          flex: 1,
+          overflow: 'auto', // Enable scrolling within this container
+          mt: 2,
+        }}
+      >
+        <ChapterView chapterContent={chapterContent} isLoading={isLoadingContent} />
       </Box>
+
+      {/* Error Snackbar */}
+      <Snackbar
+        open={!!error}
+        autoHideDuration={6000}
+        onClose={handleCloseError}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={handleCloseError} severity="error" variant="filled" sx={{ width: '100%' }}>
+          {error}
+        </Alert>
+      </Snackbar>
     </Container>
   );
 };
