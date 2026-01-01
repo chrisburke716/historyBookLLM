@@ -30,6 +30,7 @@ const ChatPage: React.FC = () => {
   } = useChat();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const hasCreatedInitialSession = useRef(false);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -39,11 +40,14 @@ const ChatPage: React.FC = () => {
   }, [messages]);
 
   // Create initial session if none exists
+  // Use ref to prevent duplicate creation in React StrictMode (which runs effects twice)
   useEffect(() => {
-    if (!currentSession && sessions.length === 0 && !isLoading) {
+    if (!currentSession && sessions.length === 0 && !isLoading && !hasCreatedInitialSession.current) {
+      hasCreatedInitialSession.current = true;
       createSession();
     }
-  }, [currentSession, sessions.length, isLoading, createSession]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSession, sessions.length, isLoading]);
 
   const handleSendMessage = async (content: string, enableRetrieval: boolean) => {
     if (!currentSession) {
