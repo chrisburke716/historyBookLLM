@@ -121,7 +121,10 @@ See `/src/history_book/services/agents/CLAUDE.md` for implementation details.
 ### Frontend Architecture
 
 - **React 19** with TypeScript and Material-UI
-- Components: `MessageInput`, `MessageList`, `SessionDropdown`, `App`
+- **Dual-page interface**: Chat page (RAG conversations) and Book page (browse/read book content)
+- **Chat Components**: `MessageInput`, `MessageList`, `SessionDropdown`, `ChatPage`
+- **Book Components**: `BookSelector`, `ChapterView`, `BookPage`
+- **Features**: URL-based routing, scroll position persistence, tab navigation
 - API client with Axios for backend communication
 - State management through React hooks
 
@@ -167,7 +170,10 @@ OPENAI_API_KEY=your-api-key  # Required for chat functionality
 2. **Ingest Data**: Run `poetry run python scripts/run_ingestion.py` to process PDFs into vector database
 3. **Backend**: Start API with `PYTHONPATH=src poetry run uvicorn src.history_book.api.main:app --reload --port 8000`
 4. **Frontend**: Start UI with `cd frontend && npm start`
-5. **Access**: Chat interface at http://localhost:3000, API docs at http://localhost:8000/docs
+5. **Access**:
+   - Chat interface: http://localhost:3000/chat
+   - Book browsing: http://localhost:3000/book
+   - API docs: http://localhost:8000/docs
 
 ## Code Style and Quality
 

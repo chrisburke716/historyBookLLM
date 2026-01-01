@@ -1,6 +1,7 @@
 """Book API routes for browsing and reading book content."""
 
 import logging
+from functools import lru_cache
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -21,8 +22,10 @@ router = APIRouter(prefix="/books", tags=["books"])
 
 
 # Dependency to get BookRepositoryManager instance
+# Cached to reuse the same instance and avoid creating new connections per request
+@lru_cache
 def get_repository_manager():
-    """Get a BookRepositoryManager instance."""
+    """Get a BookRepositoryManager instance (cached)."""
     config = WeaviateConfig.from_environment()
     return BookRepositoryManager(config)
 

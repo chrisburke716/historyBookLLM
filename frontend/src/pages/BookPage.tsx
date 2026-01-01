@@ -10,6 +10,9 @@ import ChapterView from '../components/ChapterView';
 import { chatAPI } from '../services/api';
 import { ChapterContentResponse } from '../types';
 
+// Maximum number of scroll positions to keep in localStorage
+const MAX_SAVED_POSITIONS = 10;
+
 // Debounce utility to avoid excessive localStorage writes
 function debounce<T extends (...args: any[]) => void>(func: T, wait: number): T {
   let timeout: NodeJS.Timeout;
@@ -17,6 +20,40 @@ function debounce<T extends (...args: any[]) => void>(func: T, wait: number): T 
     clearTimeout(timeout);
     timeout = setTimeout(() => func(...args), wait);
   }) as T;
+}
+
+// Clean up old scroll positions from localStorage
+function cleanupOldScrollPositions(): void {
+  try {
+    // Get all scroll position keys with their timestamps
+    const scrollKeys: { key: string; timestamp: number }[] = [];
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('book-scroll-')) {
+        const value = localStorage.getItem(key);
+        if (value) {
+          try {
+            const data = JSON.parse(value);
+            scrollKeys.push({ key, timestamp: data.timestamp || 0 });
+          } catch {
+            // Old format (just position number) - assume timestamp 0
+            scrollKeys.push({ key, timestamp: 0 });
+          }
+        }
+      }
+    }
+
+    // Sort by timestamp (oldest first) and remove excess
+    if (scrollKeys.length > MAX_SAVED_POSITIONS) {
+      scrollKeys
+        .sort((a, b) => a.timestamp - b.timestamp)
+        .slice(0, scrollKeys.length - MAX_SAVED_POSITIONS)
+        .forEach(({ key }) => localStorage.removeItem(key));
+    }
+  } catch (error) {
+    console.error('Failed to cleanup scroll positions:', error);
+  }
 }
 
 const BookPage: React.FC = () => {
@@ -102,7 +139,16 @@ const BookPage: React.FC = () => {
 
       const position = scrollContainerRef.current.scrollTop;
       const key = `book-scroll-${selectedBookIndex}-${selectedChapterIndex}`;
-      localStorage.setItem(key, position.toString());
+
+      // Store position with timestamp for cleanup
+      const data = {
+        position,
+        timestamp: Date.now(),
+      };
+      localStorage.setItem(key, JSON.stringify(data));
+
+      // Clean up old positions
+      cleanupOldScrollPositions();
     }, 300),
     [selectedBookIndex, selectedChapterIndex]
   );
@@ -113,15 +159,21 @@ const BookPage: React.FC = () => {
     if (selectedBookIndex === null || selectedChapterIndex === null) return;
 
     const key = `book-scroll-${selectedBookIndex}-${selectedChapterIndex}`;
-    const savedPosition = localStorage.getItem(key);
+    const savedData = localStorage.getItem(key);
 
-    if (savedPosition) {
+    if (savedData) {
       // Delay to ensure content is fully rendered
       setTimeout(() => {
-        scrollContainerRef.current?.scrollTo({
-          top: parseInt(savedPosition, 10),
-          behavior: 'smooth',
-        });
+        try {
+          const { position } = JSON.parse(savedData);
+          scrollContainerRef.current?.scrollTo({
+            top: position,
+            behavior: 'smooth',
+          });
+        } catch {
+          // Invalid format - scroll to top
+          scrollContainerRef.current?.scrollTo({ top: 0 });
+        }
       }, 100);
     } else {
       // New chapter - scroll to top
