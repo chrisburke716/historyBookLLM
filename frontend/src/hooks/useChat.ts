@@ -5,7 +5,7 @@
  * based on the REACT_APP_USE_AGENT_API environment variable.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api';
 import {
   SessionResponse,
@@ -23,6 +23,9 @@ export const useChat = () => {
     isLoading: false,
     error: null,
   });
+
+  // Polling ref for session updates
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   /**
    * Set loading state
@@ -169,10 +172,40 @@ export const useChat = () => {
     setError(null);
   }, [setError]);
 
-  // Load sessions on mount
+  /**
+   * Start polling for session updates (to pick up title changes)
+   */
+  const startPolling = useCallback(() => {
+    if (pollingIntervalRef.current) return; // Already polling
+
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        await loadSessions();
+      } catch (error) {
+        console.error('Polling error:', error);
+      }
+    }, 5000); // Poll every 5 seconds
+  }, [loadSessions]);
+
+  /**
+   * Stop polling for session updates
+   */
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []);
+
+  // Load sessions on mount and start polling
   useEffect(() => {
     loadSessions();
-  }, [loadSessions]);
+    startPolling();
+
+    return () => {
+      stopPolling(); // Cleanup on unmount
+    };
+  }, [loadSessions, startPolling, stopPolling]);
 
   return {
     ...state,

@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import datetime
 
 from langchain_core.messages import ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -9,6 +10,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
+from history_book.chains.title_generation_chain import create_title_generation_chain
 from history_book.data_models.entities import Paragraph
 from history_book.data_models.graph_state import AgentState
 from history_book.database.repositories import BookRepositoryManager
@@ -512,3 +514,85 @@ class GraphRagService:
             stream_mode="messages",  # Token-by-token streaming
         ):
             yield chunk
+
+    def _format_conversation_for_title(
+        self, messages: list, max_messages: int = 20
+    ) -> str:
+        """
+        Format LangChain messages for title generation prompt.
+
+        Takes only the N most recent messages to avoid filling context with very long conversations.
+        Most recent messages appear at the bottom for recency emphasis.
+
+        Args:
+            messages: List of LangChain message objects
+            max_messages: Maximum number of recent messages to include (default: 20)
+
+        Returns:
+            Formatted conversation string
+        """
+        # Take only the N most recent messages
+        recent_messages = (
+            messages[-max_messages:] if len(messages) > max_messages else messages
+        )
+
+        lines = []
+        for msg in recent_messages:
+            role = (
+                "User"
+                if hasattr(msg, "type") and msg.type == "human"
+                else "Assistant"
+            )
+            content = msg.content  # Don't truncate - use full message content
+            lines.append(f"{role}: {content}")
+
+        return "\n\n".join(lines)
+
+    async def generate_title(
+        self,
+        messages: list,
+        session_id: str,
+    ) -> str:
+        """
+        Generate a descriptive title for a chat session based on conversation history.
+
+        Uses the 20 most recent messages with recency weighting emphasized in the prompt
+        to create a concise, topic-focused title (max 100 chars).
+
+        Args:
+            messages: Full chat message history (ChatMessage entities)
+            session_id: Session identifier for tracing
+
+        Returns:
+            Generated title string (max 100 chars)
+        """
+        try:
+            # Convert all messages to LangChain format
+            lc_messages = self.rag_service.convert_to_langchain_messages(messages)
+
+            # Format conversation (takes last 20 messages)
+            conversation_text = self._format_conversation_for_title(
+                lc_messages, max_messages=20
+            )
+
+            # Create and invoke title generation chain
+            chain = create_title_generation_chain(self.rag_service.chat_model)
+
+            title = await chain.ainvoke(
+                {"conversation": conversation_text},
+                config={
+                    "tags": ["agent", "title_generation"],
+                    "metadata": {"session_id": session_id},
+                },
+            )
+
+            # Ensure max length
+            title = title.strip()[:100]
+
+            logger.info(f"Generated title for session {session_id}: '{title}'")
+            return title
+
+        except Exception as e:
+            logger.error(f"Title generation failed for session {session_id}: {e}")
+            # Fallback title
+            return f"Chat {datetime.now().strftime('%Y-%m-%d %H:%M')}"

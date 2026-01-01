@@ -1,5 +1,6 @@
 """Agent API routes for LangGraph-based chat."""
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -125,7 +126,17 @@ async def get_messages(
 ):
     """Get all messages for a session."""
     try:
+        # Get messages
         messages = await service.get_session_messages(session_id)
+
+        # Generate title for old sessions without titles (backwards compatibility)
+        # This is a one-time operation per session
+        session = await service.get_session(session_id)
+        if session and not session.title and len(messages) >= 2:
+            # Fire-and-forget to avoid blocking response
+            asyncio.create_task(service.generate_title_if_needed(session_id))
+
+        # Convert and return
         message_responses = [convert_message_to_response(m) for m in messages]
         return AgentMessageListResponse(messages=message_responses)
     except Exception as e:

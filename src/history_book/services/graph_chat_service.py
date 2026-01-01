@@ -1,5 +1,6 @@
 """Chat service for LangGraph-based agentic interactions."""
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -242,6 +243,13 @@ class GraphChatService:
                 "tool_iterations": result_state.get("tool_iterations", 0),
             }
 
+            # Trigger title generation after every message (non-blocking)
+            # Fire-and-forget: don't await, let it run in background
+            asyncio.create_task(self._generate_and_update_title(session_id))
+            logger.debug(
+                f"Triggered background title generation for session {session_id}"
+            )
+
             # Return GraphChatResult
             return GraphChatResult(
                 message=ai_message,
@@ -400,6 +408,76 @@ class GraphChatService:
                 self.repository_manager.chat_sessions.update(session_id, updates)
         except Exception as e:
             logger.warning(f"Failed to update session timestamp: {e}")
+
+    async def _generate_and_update_title(self, session_id: str) -> None:
+        """
+        Generate and persist title for a session (non-blocking background task).
+
+        Runs asynchronously to avoid latency. Failures are logged but don't affect chat.
+
+        Args:
+            session_id: Session ID to generate title for
+        """
+        try:
+            # Get all session messages
+            messages = await self.get_session_messages(session_id)
+
+            # Need at least 2 messages (user + assistant)
+            if len(messages) < 2:
+                logger.debug(
+                    f"Not enough messages for title generation: {len(messages)}"
+                )
+                return
+
+            # Generate title using GraphRagService
+            title = await self.graph_rag.generate_title(
+                messages=messages,
+                session_id=session_id,
+            )
+
+            # Update session with title
+            updates = {"title": title, "updated_at": datetime.now(UTC)}
+            self.repository_manager.chat_sessions.update(session_id, updates)
+            logger.info(f"Updated session {session_id} with title: '{title}'")
+
+        except Exception as e:
+            # Log but don't fail - title generation is non-critical
+            logger.warning(
+                f"Background title generation failed for session {session_id}: {e}"
+            )
+
+    async def generate_title_if_needed(self, session_id: str) -> bool:
+        """
+        Generate title for session if it doesn't have one (backwards compatibility).
+
+        Called by API endpoint when loading session messages for old sessions.
+
+        Args:
+            session_id: Session ID to check and generate title for
+
+        Returns:
+            True if title was generated, False otherwise
+        """
+        try:
+            # Check if session already has title
+            session = await self.get_session(session_id)
+            if not session or session.title:
+                return False
+
+            # Get messages
+            messages = await self.get_session_messages(session_id)
+
+            # Need at least 2 messages
+            if len(messages) < 2:
+                return False
+
+            # Generate and update (synchronously for backwards compat)
+            await self._generate_and_update_title(session_id)
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to generate title for session {session_id}: {e}")
+            return False
 
     def get_eval_metadata(self) -> dict[str, any]:
         """
