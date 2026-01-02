@@ -253,6 +253,21 @@ async for chunk in service.stream(
 - Need checkpointing or graph visualization
 - Want better performance
 
+**Title Generation**:
+- `generate_title(messages, session_id)` - Generate descriptive title from conversation
+- Uses most recent 20 messages with recency weighting
+- Max 100 characters, LLM-generated based on conversation topics
+- Falls back to timestamp-based title on error
+
+Example:
+```python
+title = await service.generate_title(
+    messages=chat_history,
+    session_id="session-123"
+)
+# Returns: "Ancient Rome and Julius Caesar's Assassination"
+```
+
 ---
 
 ### GraphChatService (`graph_chat_service.py` - 381 lines)
@@ -276,6 +291,9 @@ result = await service.send_message(
 session = await service.create_session(title="My Chat")
 sessions = await service.list_recent_sessions(limit=10)
 await service.delete_session(session_id)
+
+# Title generation (backwards compatibility)
+await service.generate_title_if_needed(session_id)
 ```
 
 **GraphChatResult**:
@@ -291,7 +309,8 @@ class GraphChatResult:
 2. Load chat history from Weaviate
 3. Execute graph with history (MemorySaver maintains state)
 4. Save AI response to Weaviate
-5. Return result
+5. Generate session title if needed (≥2 messages triggers title generation)
+6. Return result
 
 **Integration**: Called by Agent API layer → calls GraphRagService → uses ChatMessage/ChatSession repositories.
 

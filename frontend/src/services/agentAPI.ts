@@ -19,7 +19,7 @@ class AgentAPI {
   constructor(baseURL: string = 'http://localhost:8000') {
     this.api = axios.create({
       baseURL,
-      timeout: 30000, // 30 second timeout for RAG responses
+      timeout: 60000, // 60 second timeout for RAG responses
       headers: {
         'Content-Type': 'application/json',
       },
