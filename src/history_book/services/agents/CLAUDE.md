@@ -436,6 +436,8 @@ LANGCHAIN_PROJECT=history-book
 
 **Overhead**: LangGraph adds ~50-100ms for graph orchestration, but overall faster due to optimizations in state management and LLM calls.
 
+**Note on Title Generation**: The benchmarks above do not include title generation overhead. Title generation adds ~1-2 seconds to the first message in each session but runs synchronously to provide immediate title updates to the UI. This is a one-time cost per session.
+
 ### Optimization Tips
 
 1. **Reduce Retrieval Results**: Lower `max_results` if 40 paragraphs is too many

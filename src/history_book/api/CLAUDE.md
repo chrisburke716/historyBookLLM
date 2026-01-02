@@ -197,8 +197,18 @@ Response: {
       "num_retrieved_paragraphs": 40,
       "graph_execution": "simple_rag"
     }
+  },
+  "session": {
+    "id": "uuid",
+    "title": "French Revolution and Its Causes",
+    "created_at": "2025-11-09T...",
+    "updated_at": "2025-11-09T..."
   }
 }
+```
+
+**Title Generation**: The `session` field in the response includes an auto-generated title after the first AI response. Titles are generated synchronously based on conversation content (max 100 chars). This eliminates the need for frontend polling - the title is immediately available in the response.
+
 ```
 
 **Get Messages**
@@ -319,6 +329,14 @@ class MessageListResponse(BaseModel):
 
 class ChatResponse(BaseModel):
     message: MessageResponse
+
+class AgentChatResponse(BaseModel):
+    message: AgentMessageResponse
+    session: AgentSessionResponse  # Includes updated title
+```
+
+**Note**: Agent API (`/api/agent/*`) returns `AgentChatResponse` which includes both the message and the updated session (with auto-generated title). This allows the frontend to update the session title immediately without polling.
+
 ```
 
 ## App Configuration

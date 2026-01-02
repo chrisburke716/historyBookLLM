@@ -1,5 +1,5 @@
 """LangChain Expression Language (LCEL) chains for the history book application."""
 
-from .response_chain import ResponseChain
+from .title_generation_chain import create_title_generation_chain
 
-__all__ = ["ResponseChain"]
+__all__ = ["create_title_generation_chain"]

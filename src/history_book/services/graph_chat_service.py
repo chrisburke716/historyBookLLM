@@ -242,7 +242,22 @@ class GraphChatService:
                 "tool_iterations": result_state.get("tool_iterations", 0),
             }
 
-            # Return GraphChatResult
+            # Generate title synchronously after every message
+            # Get all messages to check if we should generate a title
+            messages = await self.get_session_messages(session_id)
+            if len(messages) >= 2:
+                try:
+                    title = await self.graph_rag.generate_title(
+                        messages=messages,
+                        session_id=session_id,
+                    )
+                    updates = {"title": title, "updated_at": datetime.now(UTC)}
+                    self.repository_manager.chat_sessions.update(session_id, updates)
+                    logger.info(f"Generated title for session {session_id}: '{title}'")
+                except Exception as e:
+                    logger.warning(f"Title generation failed: {e}")
+
+            # Return proper GraphChatResult
             return GraphChatResult(
                 message=ai_message,
                 retrieved_paragraphs=result_state["retrieved_paragraphs"],

@@ -2,7 +2,7 @@
  * MessageInput component for sending messages.
  */
 
-import React, { useState, KeyboardEvent } from 'react';
+import React, { useState, KeyboardEvent, memo } from 'react';
 import {
   Box,
   TextField,
@@ -143,4 +143,4 @@ const MessageInput: React.FC<MessageInputProps> = ({
   );
 };
 
-export default MessageInput;
+export default memo(MessageInput);

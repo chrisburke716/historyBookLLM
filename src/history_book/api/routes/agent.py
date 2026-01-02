@@ -158,6 +158,14 @@ async def send_message(
             user_message=request.content,
         )
 
+        # Fetch updated session (includes newly generated title)
+        updated_session = await service.get_session(session_id)
+        if not updated_session:
+            # Should not happen - session was verified earlier
+            raise HTTPException(
+                status_code=500, detail="Session disappeared during processing"
+            )
+
         # Convert to response with metadata
         message_response = convert_message_to_response(
             result.message,
@@ -165,7 +173,10 @@ async def send_message(
             metadata=result.metadata,
         )
 
-        return AgentChatResponse(message=message_response)
+        # Convert session to response
+        session_response = convert_session_to_response(updated_session)
+
+        return AgentChatResponse(message=message_response, session=session_response)
 
     except HTTPException:
         raise

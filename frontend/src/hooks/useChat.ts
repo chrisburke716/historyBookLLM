@@ -5,7 +5,7 @@
  * based on the REACT_APP_USE_AGENT_API environment variable.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api';
 import {
   SessionResponse,
@@ -140,10 +140,19 @@ export const useChat = () => {
       const response = await api.sendMessage(state.currentSession.id, request);
 
       // Replace temp message with real user message and add AI response
+      // Also update currentSession and sessions list with new title
       setState(prev => {
         const messages = prev.messages.slice(0, -1); // Remove temp message
+
+        // Update sessions list to reflect new title
+        const updatedSessions = prev.sessions.map(s =>
+          s.id === response.session.id ? response.session : s
+        );
+
         return {
           ...prev,
+          currentSession: response.session,  // Update with new title
+          sessions: updatedSessions,         // Update sessions list
           messages: [...messages, ...prev.messages.slice(-1), response.message],
         };
       });
