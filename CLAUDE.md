@@ -82,6 +82,7 @@ User Message → GraphChatService → GraphRagService → [Graph: retrieve_node 
 The `/api/agent/*` endpoints provide LangGraph-based chat with enhanced capabilities:
 
 **Key Features**:
+- **Auto-generated Titles**: Sessions get descriptive titles based on conversation content
 - **Checkpointing**: Maintains conversation context across messages using LangGraph MemorySaver
 - **Graph Visualization**: View execution flow via Mermaid diagrams
 - **LangSmith Tracing**: Full observability of graph execution, timing, and state transitions

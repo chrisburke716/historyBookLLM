@@ -169,6 +169,11 @@ interface MessageResponse {
   metadata?: AgentMetadata;  // Agent API only - graph execution details
 }
 
+interface ChatResponse {
+  message: MessageResponse;
+  session: SessionResponse;  // Includes updated session with title
+}
+
 // UI state
 interface ChatState {
   currentSession: SessionResponse | null;
@@ -177,6 +182,10 @@ interface ChatState {
   isLoading: boolean;
   error: string | null;
 }
+```
+
+**Title Updates**: The `currentSession` and `sessions` are automatically updated when `sendMessage` receives a response. The backend generates titles synchronously, so the UI reflects the new title immediately without polling.
+
 ```
 
 ### Custom Hook (`hooks/useChat.ts`)
@@ -198,7 +207,7 @@ const [state, setState] = useState<ChatState>({
 - `loadSessions()` - Fetch session list
 - `createSession(title)` - Create new session
 - `selectSession(sessionId)` - Switch to session and load messages
-- `sendMessage(content)` - Send message, get AI response
+- `sendMessage(content)` - Send message, get AI response, update session title automatically
 - `setError(error)` - Set error state
 - `setLoading(loading)` - Set loading state
 
@@ -276,7 +285,8 @@ interface SessionDropdownProps {
 **Features**:
 - Material-UI Select component
 - "New Chat" button
-- Session list with titles
+- Session list with titles (truncated at 100 chars)
+- Auto-generated titles based on conversation content
 
 ### ChatPage
 
@@ -619,6 +629,13 @@ const { state, loadSessions, sendMessage } = useChat();
 - No global state complexity
 - Easy to test
 - Type-safe with TypeScript
+
+**Title Generation Flow**:
+1. User sends first message in session
+2. Backend generates response + title (synchronous)
+3. Response includes both `message` and `session` fields
+4. `useChat.sendMessage()` updates both message list and session title in one operation
+5. UI reflects new title immediately (no polling required)
 
 ## Material-UI Components Used
 
