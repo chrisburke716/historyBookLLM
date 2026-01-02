@@ -257,16 +257,12 @@ class GraphChatService:
                 except Exception as e:
                     logger.warning(f"Title generation failed: {e}")
 
-            # Get updated session before returning
-            session = await self.get_session(session_id)
-
-            # Return dict with message and session
-            return {
-                "message": ai_message,
-                "session": session,
-                "retrieved_paragraphs": result_state["retrieved_paragraphs"],
-                "metadata": execution_metadata,
-            }
+            # Return proper GraphChatResult
+            return GraphChatResult(
+                message=ai_message,
+                retrieved_paragraphs=result_state["retrieved_paragraphs"],
+                metadata=execution_metadata,
+            )
 
         except LLMError:
             # Re-raise LLM errors as-is
