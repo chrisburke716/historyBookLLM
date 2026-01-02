@@ -66,8 +66,8 @@ const SessionDropdown: React.FC<SessionDropdownProps> = ({
 
   const formatSessionTitle = (session: SessionResponse): string => {
     if (session.title) {
-      return session.title.length > 30 
-        ? session.title.substring(0, 30) + '...'
+      return session.title.length > 100
+        ? session.title.substring(0, 100) + '...'
         : session.title;
     }
     
