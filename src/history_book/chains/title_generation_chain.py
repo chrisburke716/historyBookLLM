@@ -42,8 +42,10 @@ def create_title_generation_chain(chat_model: BaseChatModel):
     Returns:
         Runnable chain that takes {"conversation": str} and returns title string
     """
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", TITLE_GENERATION_PROMPT),
-    ])
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", TITLE_GENERATION_PROMPT),
+        ]
+    )
 
     return prompt | chat_model | StrOutputParser()

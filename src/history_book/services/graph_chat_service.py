@@ -416,7 +416,6 @@ class GraphChatService:
         except Exception as e:
             logger.warning(f"Failed to update session timestamp: {e}")
 
-
     def get_eval_metadata(self) -> dict[str, any]:
         """
         Extract metadata about the graph chat service configuration for evaluation tracking.

@@ -539,9 +539,7 @@ class GraphRagService:
         lines = []
         for msg in recent_messages:
             role = (
-                "User"
-                if hasattr(msg, "type") and msg.type == "human"
-                else "Assistant"
+                "User" if hasattr(msg, "type") and msg.type == "human" else "Assistant"
             )
             content = msg.content  # Don't truncate - use full message content
             lines.append(f"{role}: {content}")
