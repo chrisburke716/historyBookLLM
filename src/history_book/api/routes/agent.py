@@ -171,12 +171,15 @@ async def send_message(
 
         # Convert to response with metadata
         message_response = convert_message_to_response(
-            result.message,
-            retrieved_paragraphs=result.retrieved_paragraphs,
-            metadata=result.metadata,
+            result["message"],
+            retrieved_paragraphs=result["retrieved_paragraphs"],
+            metadata=result["metadata"],
         )
 
-        return AgentChatResponse(message=message_response)
+        # Convert session to response
+        session_response = convert_session_to_response(result["session"])
+
+        return AgentChatResponse(message=message_response, session=session_response)
 
     except HTTPException:
         raise

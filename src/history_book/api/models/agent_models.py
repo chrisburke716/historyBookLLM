@@ -67,9 +67,10 @@ class AgentMessageListResponse(BaseModel):
 
 
 class AgentChatResponse(BaseModel):
-    """Response after sending a message - includes the AI's reply."""
+    """Response after sending a message - includes the AI's reply and updated session."""
 
     message: AgentMessageResponse
+    session: AgentSessionResponse
 
 
 class GraphVisualization(BaseModel):

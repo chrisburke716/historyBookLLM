@@ -1,6 +1,5 @@
 """Chat service for LangGraph-based agentic interactions."""
 
-import asyncio
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -243,19 +242,31 @@ class GraphChatService:
                 "tool_iterations": result_state.get("tool_iterations", 0),
             }
 
-            # Trigger title generation after every message (non-blocking)
-            # Fire-and-forget: don't await, let it run in background
-            asyncio.create_task(self._generate_and_update_title(session_id))
-            logger.debug(
-                f"Triggered background title generation for session {session_id}"
-            )
+            # Generate title synchronously after every message
+            # Get all messages to check if we should generate a title
+            messages = await self.get_session_messages(session_id)
+            if len(messages) >= 2:
+                try:
+                    title = await self.graph_rag.generate_title(
+                        messages=messages,
+                        session_id=session_id,
+                    )
+                    updates = {"title": title, "updated_at": datetime.now(UTC)}
+                    self.repository_manager.chat_sessions.update(session_id, updates)
+                    logger.info(f"Generated title for session {session_id}: '{title}'")
+                except Exception as e:
+                    logger.warning(f"Title generation failed: {e}")
 
-            # Return GraphChatResult
-            return GraphChatResult(
-                message=ai_message,
-                retrieved_paragraphs=result_state["retrieved_paragraphs"],
-                metadata=execution_metadata,
-            )
+            # Get updated session before returning
+            session = await self.get_session(session_id)
+
+            # Return dict with message and session
+            return {
+                "message": ai_message,
+                "session": session,
+                "retrieved_paragraphs": result_state["retrieved_paragraphs"],
+                "metadata": execution_metadata,
+            }
 
         except LLMError:
             # Re-raise LLM errors as-is

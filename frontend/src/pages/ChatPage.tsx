@@ -2,7 +2,7 @@
  * ChatPage - Main chat interface component.
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import {
   Container,
   Box,
@@ -49,23 +49,23 @@ const ChatPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSession, sessions.length, isLoading]);
 
-  const handleSendMessage = async (content: string, enableRetrieval: boolean) => {
+  const handleSendMessage = useCallback(async (content: string, enableRetrieval: boolean) => {
     if (!currentSession) {
       // Create a new session if none exists
       const newSession = await createSession();
       if (!newSession) return;
     }
-    
+
     await sendMessage(content, enableRetrieval);
-  };
+  }, [currentSession, createSession, sendMessage]);
 
-  const handleNewSession = async () => {
+  const handleNewSession = useCallback(async () => {
     await createSession();
-  };
+  }, [createSession]);
 
-  const handleSessionChange = async (session: any) => {
+  const handleSessionChange = useCallback(async (session: any) => {
     await switchToSession(session);
-  };
+  }, [switchToSession]);
 
   return (
     <Container maxWidth="lg" sx={{ py: 2, height: '100vh', display: 'flex', flexDirection: 'column' }}>

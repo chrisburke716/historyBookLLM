@@ -24,9 +24,6 @@ export const useChat = () => {
     error: null,
   });
 
-  // Polling ref for session updates
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
   /**
    * Set loading state
    */
@@ -143,10 +140,19 @@ export const useChat = () => {
       const response = await api.sendMessage(state.currentSession.id, request);
 
       // Replace temp message with real user message and add AI response
+      // Also update currentSession and sessions list with new title
       setState(prev => {
         const messages = prev.messages.slice(0, -1); // Remove temp message
+
+        // Update sessions list to reflect new title
+        const updatedSessions = prev.sessions.map(s =>
+          s.id === response.session.id ? response.session : s
+        );
+
         return {
           ...prev,
+          currentSession: response.session,  // Update with new title
+          sessions: updatedSessions,         // Update sessions list
           messages: [...messages, ...prev.messages.slice(-1), response.message],
         };
       });
@@ -172,40 +178,11 @@ export const useChat = () => {
     setError(null);
   }, [setError]);
 
-  /**
-   * Start polling for session updates (to pick up title changes)
-   */
-  const startPolling = useCallback(() => {
-    if (pollingIntervalRef.current) return; // Already polling
-
-    pollingIntervalRef.current = setInterval(async () => {
-      try {
-        await loadSessions();
-      } catch (error) {
-        console.error('Polling error:', error);
-      }
-    }, 5000); // Poll every 5 seconds
-  }, [loadSessions]);
-
-  /**
-   * Stop polling for session updates
-   */
-  const stopPolling = useCallback(() => {
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-    }
-  }, []);
-
-  // Load sessions on mount and start polling
+  // Load sessions on mount
   useEffect(() => {
     loadSessions();
-    startPolling();
-
-    return () => {
-      stopPolling(); // Cleanup on unmount
-    };
-  }, [loadSessions, startPolling, stopPolling]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);  // Only run once on mount
 
   return {
     ...state,

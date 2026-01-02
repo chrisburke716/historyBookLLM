@@ -44,6 +44,7 @@ export interface MessageListResponse {
 
 export interface ChatResponse {
   message: MessageResponse;
+  session: SessionResponse;
 }
 
 // Additional types for UI state management

@@ -2,7 +2,7 @@
  * SessionDropdown component for selecting and managing chat sessions.
  */
 
-import React, { useState } from 'react';
+import React, { useState, memo } from 'react';
 import {
   Select,
   MenuItem,
@@ -162,4 +162,14 @@ const SessionDropdown: React.FC<SessionDropdownProps> = ({
   );
 };
 
-export default SessionDropdown;
+export default memo(SessionDropdown, (prevProps, nextProps) => {
+  // Custom equality: only re-render if sessions IDs/titles changed
+  return (
+    prevProps.currentSession?.id === nextProps.currentSession?.id &&
+    prevProps.sessions.length === nextProps.sessions.length &&
+    prevProps.sessions.every((s, i) =>
+      s.id === nextProps.sessions[i]?.id &&
+      s.title === nextProps.sessions[i]?.title
+    )
+  );
+});
