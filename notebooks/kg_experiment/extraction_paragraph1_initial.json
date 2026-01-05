@@ -1,0 +1,332 @@
+{
+  "paragraph_id": "0cd2eb74-f135-4c54-8d93-7ee75280146a",
+  "paragraph_text": "In the sixth century BC the Etruscans were installed in an important bridgehead on the south bank of the River Tiber. This was the site of Rome, one of a number of small cities of the Latins, an old-established people of the Campania. Through this city something of the Etruscan survived to flow into and eventually be lost in the European tradition. Near the end of the sixth century Rome broke away from Etruscan dominion during a revolt of the Latin cities against their masters. Until then, the city had been ruled by kings, the last of whom, tradition later said, was expelled in 509 BC. Whatever the exact date, this was certainly about the time at which Etruscan power, over-strained by struggle with the western Greeks, was successfully challenged by the Latin peoples, who thereafter went their own ways. Nevertheless, Rome was to retain much from its Etruscan past. It was through Etruria that Rome first had access to the Greek civilization with which it continued to live in contact both by land and sea. Rome was a focus of important land and water routes, high enough up the Tiber to bridge it, but not so high that the city could not be reached by sea-going vessels.",
+  "page": 319,
+  "entities": [
+    {
+      "name": "Etruscans",
+      "type": "collective_entity",
+      "subtype": "people",
+      "aliases": [],
+      "description": "An ancient people installed in a bridgehead on the south bank of the River Tiber in the sixth century BC.",
+      "attributes": null,
+      "time_range": [
+        "sixth century BC"
+      ],
+      "confidence": 1.0
+    },
+    {
+      "name": "River Tiber",
+      "type": "place",
+      "subtype": "river",
+      "aliases": [
+        "Tiber"
+      ],
+      "description": "A river in Italy, on whose south bank the Etruscans were installed.",
+      "attributes": null,
+      "time_range": null,
+      "confidence": 1.0
+    },
+    {
+      "name": "Rome",
+      "type": "place",
+      "subtype": "city",
+      "aliases": [],
+      "description": "A city on the south bank of the River Tiber, site of Etruscan installation and later a Latin city.",
+      "attributes": null,
+      "time_range": null,
+      "confidence": 1.0
+    },
+    {
+      "name": "Rome",
+      "type": "collective_entity",
+      "subtype": "state",
+      "aliases": [],
+      "description": "The political entity of Rome, which broke away from Etruscan dominion and retained Etruscan influences.",
+      "attributes": null,
+      "time_range": null,
+      "confidence": 1.0
+    },
+    {
+      "name": "Latins",
+      "type": "collective_entity",
+      "subtype": "people",
+      "aliases": [],
+      "description": "An old-established people of the Campania, to which Rome belonged.",
+      "attributes": null,
+      "time_range": null,
+      "confidence": 1.0
+    },
+    {
+      "name": "Campania",
+      "type": "place",
+      "subtype": "region",
+      "aliases": [],
+      "description": "A region associated with the Latins.",
+      "attributes": null,
+      "time_range": null,
+      "confidence": 1.0
+    },
+    {
+      "name": "European tradition",
+      "type": "cultural",
+      "subtype": null,
+      "aliases": [],
+      "description": "The broader European cultural tradition into which Etruscan influence flowed.",
+      "attributes": null,
+      "time_range": null,
+      "confidence": 0.8
+    },
+    {
+      "name": "Etruscan dominion",
+      "type": "collective_entity",
+      "subtype": "state",
+      "aliases": [],
+      "description": "The rule of the Etruscans over the Latin cities, including Rome.",
+      "attributes": null,
+      "time_range": [
+        "sixth century BC"
+      ],
+      "confidence": 1.0
+    },
+    {
+      "name": "Latin cities",
+      "type": "collective_entity",
+      "subtype": "organization",
+      "aliases": [],
+      "description": "A group of cities of the Latins that revolted against Etruscan dominion.",
+      "attributes": null,
+      "time_range": null,
+      "confidence": 1.0
+    },
+    {
+      "name": "kings of Rome",
+      "type": "collective_entity",
+      "subtype": "organization",
+      "aliases": [],
+      "description": "The rulers of Rome before the expulsion of the last king.",
+      "attributes": {
+        "role": "kings"
+      },
+      "time_range": null,
+      "confidence": 1.0
+    },
+    {
+      "name": "last king of Rome",
+      "type": "person",
+      "subtype": null,
+      "aliases": [],
+      "description": "The last king of Rome, expelled in 509 BC according to tradition.",
+      "attributes": {
+        "role": "king"
+      },
+      "time_range": [
+        "509 BC"
+      ],
+      "confidence": 1.0
+    },
+    {
+      "name": "509 BC",
+      "type": "temporal",
+      "subtype": "year",
+      "aliases": [],
+      "description": "The year in which the last king of Rome was expelled, according to tradition.",
+      "attributes": null,
+      "time_range": [
+        "509 BC"
+      ],
+      "confidence": 1.0
+    },
+    {
+      "name": "western Greeks",
+      "type": "collective_entity",
+      "subtype": "people",
+      "aliases": [],
+      "description": "The Greeks in the western Mediterranean, who struggled with the Etruscans.",
+      "attributes": null,
+      "time_range": null,
+      "confidence": 1.0
+    },
+    {
+      "name": "Etruria",
+      "type": "place",
+      "subtype": "region",
+      "aliases": [],
+      "description": "The region through which Rome first had access to Greek civilization.",
+      "attributes": null,
+      "time_range": null,
+      "confidence": 1.0
+    },
+    {
+      "name": "Greek civilization",
+      "type": "cultural",
+      "subtype": null,
+      "aliases": [],
+      "description": "The civilization of the Greeks, with which Rome came into contact.",
+      "attributes": null,
+      "time_range": null,
+      "confidence": 1.0
+    },
+    {
+      "name": "land and sea routes",
+      "type": "cultural",
+      "subtype": null,
+      "aliases": [],
+      "description": "Important land and water routes focused on Rome.",
+      "attributes": null,
+      "time_range": null,
+      "confidence": 0.8
+    },
+    {
+      "name": "sea-going vessels",
+      "type": "cultural",
+      "subtype": null,
+      "aliases": [],
+      "description": "Vessels that could reach Rome by sea.",
+      "attributes": null,
+      "time_range": null,
+      "confidence": 0.7
+    },
+    {
+      "name": "sixth century BC",
+      "type": "temporal",
+      "subtype": "century",
+      "aliases": [],
+      "description": "The sixth century before Christ, a time reference for Etruscan installation and events in Rome.",
+      "attributes": null,
+      "time_range": [
+        "600 BC",
+        "501 BC"
+      ],
+      "confidence": 1.0
+    }
+  ],
+  "relationships": [
+    {
+      "source_entity": "Etruscans",
+      "relation_type": "installed-in",
+      "target_entity": "bridgehead on the south bank of the River Tiber",
+      "temporal_context": "sixth century BC",
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "bridgehead on the south bank of the River Tiber",
+      "relation_type": "located-in",
+      "target_entity": "site of Rome",
+      "temporal_context": null,
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "Rome",
+      "relation_type": "located-on",
+      "target_entity": "south bank of the River Tiber",
+      "temporal_context": null,
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "Rome",
+      "relation_type": "member-of",
+      "target_entity": "Latin cities",
+      "temporal_context": null,
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "Latins",
+      "relation_type": "located-in",
+      "target_entity": "Campania",
+      "temporal_context": null,
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "Etruscan",
+      "relation_type": "influenced",
+      "target_entity": "European tradition",
+      "temporal_context": null,
+      "confidence": 0.8
+    },
+    {
+      "source_entity": "Rome",
+      "relation_type": "influenced-by",
+      "target_entity": "Etruscans",
+      "temporal_context": null,
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "Rome",
+      "relation_type": "broke-away-from",
+      "target_entity": "Etruscan dominion",
+      "temporal_context": "end of sixth century BC",
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "Latin cities",
+      "relation_type": "revolted-against",
+      "target_entity": "Etruscan dominion",
+      "temporal_context": "end of sixth century BC",
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "kings of Rome",
+      "relation_type": "ruled",
+      "target_entity": "Rome",
+      "temporal_context": "before 509 BC",
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "last king of Rome",
+      "relation_type": "expelled-from",
+      "target_entity": "Rome",
+      "temporal_context": "509 BC",
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "Etruscan power",
+      "relation_type": "challenged-by",
+      "target_entity": "Latin peoples",
+      "temporal_context": "about 509 BC",
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "Etruscan power",
+      "relation_type": "struggled-with",
+      "target_entity": "western Greeks",
+      "temporal_context": null,
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "Rome",
+      "relation_type": "retained-from",
+      "target_entity": "Etruscan past",
+      "temporal_context": null,
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "Rome",
+      "relation_type": "accessed-through",
+      "target_entity": "Etruria",
+      "temporal_context": null,
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "Rome",
+      "relation_type": "contact-with",
+      "target_entity": "Greek civilization",
+      "temporal_context": null,
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "Rome",
+      "relation_type": "focus-of",
+      "target_entity": "land and sea routes",
+      "temporal_context": null,
+      "confidence": 1.0
+    },
+    {
+      "source_entity": "Rome",
+      "relation_type": "reached-by",
+      "target_entity": "sea-going vessels",
+      "temporal_context": null,
+      "confidence": 0.7
+    }
+  ]
+}
