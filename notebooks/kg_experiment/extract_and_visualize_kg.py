@@ -138,7 +138,7 @@ class NormalizedRelationship(BaseModel):
 
 EXTRACTION_PROMPT = """You are analyzing text from "The Penguin History of the World".
 
-Extract ALL entities and relationships from the provided paragraph.
+Extract noteworthy entities and relationships from the provided paragraph.
 
 **ENTITY TYPES**:
 - person: Individuals (rulers, leaders, historical figures)
@@ -161,16 +161,18 @@ Extract ALL entities and relationships from the provided paragraph.
 
 **IMPORTANT GUIDELINES**:
 1. Extract entities FROM THIS PARAGRAPH ONLY - do not use external knowledge
-2. Extract relationships that are EXPLICITLY STATED in the text
-3. Include aliases if the entity is referred to by multiple names (e.g., "Octavian" also called "Augustus")
-4. For titles/roles, store as attributes (e.g., Caesar's "dictator for life")
-5. DO NOT extract:
+2. Extract *noteworthy* entities (think: proper nouns, significant concepts)
+3. Extract relationships that are EXPLICITLY STATED in the text
+4. Be specific; you may infer details where they are obvious (e.g., "the capital" in the context of Byzantium -> Constantinople)
+5. Include aliases if the entity is referred to by multiple names (e.g., "Octavian" also called "Augustus")
+6. For titles/roles, store as attributes
+7. DO NOT extract:
    - Generic unnamed groups ("his men", "the soldiers")
    - Entities mentioned only as comparisons ("like Athens")
    - Vague references without clear identity
-6. Include temporal_context in relationships when dates/times are mentioned
-7. Note: Some entities may have dual nature (e.g., Rome as both a city and a political state) - extract both if clear from context
-8. The extracted entities and relationships will be used to build a knowledge graph. To this end, relationships must be clearly defined between identified entities.
+8. Include temporal_context in relationships when dates/times are mentioned
+9. Note: Some entities may have dual nature (e.g., Rome as both a city and a political state) - extract both if clear from context
+10. Only extract entities if they appear in a relationship, and only extract relationships between extracted entities.
 
 Extract entities and relationships from this paragraph:
 
@@ -184,7 +186,7 @@ Extract entities and relationships from this paragraph:
     stop=stop_after_attempt(5),
     reraise=True,
 )
-def extract_entities_gpt4o(paragraph_text: str, paragraph_id: str) -> ExtractionResult:
+def extract_entities_gpt(paragraph_text: str, paragraph_id: str, model="gpt-4.1-mini-2025-04-14") -> ExtractionResult:
     """
     Extract entities and relationships using GPT-4o with LangChain structured outputs.
 
@@ -193,7 +195,7 @@ def extract_entities_gpt4o(paragraph_text: str, paragraph_id: str) -> Extraction
     - Waits 4s, 8s, 16s, 32s, 60s between retries
     - Re-raises exception if all retries fail
     """
-    model = ChatOpenAI(model="gpt-4o", temperature=0.0)
+    model = ChatOpenAI(model=model, temperature=0.0)
     model_with_structure = model.with_structured_output(ExtractionResult)
 
     system_message = "You are an expert at extracting structured historical entities and relationships from text."
@@ -771,13 +773,13 @@ def main():
 
     # Extract entities and relationships
     print("=" * 80)
-    print("STEP 2: Extracting entities and relationships (GPT-4o)")
+    print("STEP 2: Extracting entities and relationships (GPT-5-mini)")
     print("=" * 80)
 
     all_results = []
     for i, para in enumerate(paragraphs, 1):
         print(f"Processing paragraph {i}/{len(paragraphs)}...", end=" ")
-        result = extract_entities_gpt4o(para["text"], para["id"])
+        result = extract_entities_gpt(para["text"], para["id"])
         all_results.append(result)
         print(f"({len(result.entities)} entities, {len(result.relationships)} rels)")
 
