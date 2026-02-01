@@ -4,24 +4,30 @@ Extract entities and relationships from historical text and visualize as a knowl
 This script implements the full KG pipeline:
 1. Entity extraction with GPT-4o (LangChain structured outputs)
 2. ID assignment with bidirectional links
-3. Entity normalization (exact, alias-based, optional fuzzy)
+3. Entity normalization (rule-based or LLM-based)
+   - Rule-based: exact + alias matching
+   - LLM-based: semantic similarity + LLM merge decisions
 4. Graph construction with NetworkX
 5. Interactive visualization with PyVis
 
 Usage:
+    # Rule-based normalization (default)
     python extract_and_visualize_kg.py --input selected_5_paragraphs.json --output kg_test.html
-    python extract_and_visualize_kg.py --book 3 --chapter 4 --output rome_chapter_kg.html
+
+    # LLM-based normalization
+    python extract_and_visualize_kg.py --book 3 --chapter 4 --normalization-method llm-based --output rome_chapter_kg_llm.html
+
+    # LLM-based with custom parameters
+    python extract_and_visualize_kg.py --input data.json --normalization-method llm-based --similarity-threshold 0.7 --max-llm-candidates 50 --output kg_llm.html
 """
 
 import argparse
 import json
 import sys
-import time
 import uuid as uuid_module
 from collections import defaultdict
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Optional
 
 import networkx as nx
 from langchain_openai import ChatOpenAI
@@ -41,7 +47,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from history_book.database.config.database_config import WeaviateConfig
 from history_book.database.repositories.book_repository import BookRepositoryManager
 
-
 # ============================================================================
 # Pydantic Models
 # ============================================================================
@@ -52,10 +57,10 @@ class Entity(BaseModel):
 
     name: str
     type: str  # "person", "place", "collective_entity", "event", "temporal", "cultural"
-    subtype: Optional[str] = None
+    subtype: str | None = None
     aliases: list[str] = Field(default_factory=list)
-    description: Optional[str] = None
-    attributes: Optional[dict[str, str]] = None
+    description: str | None = None
+    attributes: dict[str, str] | None = None
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
@@ -65,7 +70,7 @@ class Relationship(BaseModel):
     source_entity: str  # Entity name
     relation_type: str
     target_entity: str  # Entity name
-    temporal_context: Optional[str] = None
+    temporal_context: str | None = None
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
@@ -83,10 +88,10 @@ class EntityWithId(BaseModel):
     id: str  # UUID
     name: str
     type: str
-    subtype: Optional[str] = None
+    subtype: str | None = None
     aliases: list[str] = Field(default_factory=list)
-    description: Optional[str] = None
-    attributes: Optional[dict[str, str]] = None
+    description: str | None = None
+    attributes: dict[str, str] | None = None
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     paragraph_id: str
     relationship_ids: list[str] = Field(default_factory=list)  # Bidirectional link
@@ -99,7 +104,7 @@ class RelationshipWithId(BaseModel):
     source_id: str  # Entity UUID
     target_id: str  # Entity UUID
     relation_type: str
-    temporal_context: Optional[str] = None
+    temporal_context: str | None = None
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     paragraph_id: str
 
@@ -110,10 +115,10 @@ class NormalizedEntity(BaseModel):
     id: str  # Canonical UUID
     name: str
     type: str
-    subtype: Optional[str] = None
+    subtype: str | None = None
     aliases: list[str] = Field(default_factory=list)
     description: str  # Combined descriptions
-    attributes: Optional[dict[str, str]] = None
+    attributes: dict[str, str] | None = None
     source_paragraph_ids: list[str]
     occurrence_count: int
     merged_from_ids: list[str] = Field(default_factory=list)
@@ -127,7 +132,54 @@ class NormalizedRelationship(BaseModel):
     source_id: str  # Normalized entity ID
     target_id: str  # Normalized entity ID
     relation_type: str
-    temporal_context: Optional[str] = None
+    temporal_context: str | None = None
+    confidence: float
+    paragraph_id: str
+
+
+# ============================================================================
+# LLM-Based Normalization Models
+# ============================================================================
+
+
+class EntityMergeDecision(BaseModel):
+    """LLM decision on whether two entities should be merged."""
+
+    should_merge: bool = Field(
+        description="True if entities refer to the same historical entity"
+    )
+    reasoning: str = Field(description="Brief explanation of the decision")
+    confidence: float = Field(ge=0.0, le=1.0, description="Confidence in the decision")
+    merged_entity: EntityWithId | None = Field(
+        default=None,
+        description="The merged entity if should_merge=True, otherwise None",
+    )
+
+
+class RelationshipWithIdExtended(BaseModel):
+    """Relationship with original entity names preserved (for LLM normalization)."""
+
+    id: str  # UUID
+    source_id: str  # Entity UUID
+    target_id: str  # Entity UUID
+    source_entity_name: str  # Original entity name from extraction
+    target_entity_name: str  # Original entity name from extraction
+    relation_type: str
+    temporal_context: str | None = None
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    paragraph_id: str
+
+
+class NormalizedRelationshipExtended(BaseModel):
+    """Normalized relationship with original entity names preserved."""
+
+    id: str  # UUID (preserved from original)
+    source_id: str  # Normalized entity ID
+    target_id: str  # Normalized entity ID
+    source_entity_name: str  # Original entity name (NOT normalized name)
+    target_entity_name: str  # Original entity name (NOT normalized name)
+    relation_type: str
+    temporal_context: str | None = None
     confidence: float
     paragraph_id: str
 
@@ -186,7 +238,9 @@ Extract entities and relationships from this paragraph:
     stop=stop_after_attempt(5),
     reraise=True,
 )
-def extract_entities_gpt(paragraph_text: str, paragraph_id: str, model="gpt-4.1-mini-2025-04-14") -> ExtractionResult:
+def extract_entities_gpt(
+    paragraph_text: str, paragraph_id: str, model="gpt-4.1-mini-2025-04-14"
+) -> ExtractionResult:
     """
     Extract entities and relationships using GPT-4o with LangChain structured outputs.
 
@@ -342,9 +396,7 @@ def _alias_based_merging(exact_groups: dict) -> dict:
                         canonical, merge_from = other_name, name
                     else:
                         # Tie-break: shorter name wins
-                        canonical = (
-                            name if len(name) < len(other_name) else other_name
-                        )
+                        canonical = name if len(name) < len(other_name) else other_name
                         merge_from = other_name if canonical == name else name
 
                     merged_groups[canonical].extend(merged_groups[merge_from])
@@ -403,7 +455,7 @@ def normalize_entities_and_relationships(
     normalized_entities = []
     old_id_to_normalized_id = {}  # old entity ID -> normalized entity ID
 
-    for name, entity_group in merged_groups.items():
+    for _name, entity_group in merged_groups.items():
         # Create normalized entity
         canonical_id = str(uuid_module.uuid4())
         merged_from_ids = [e.id for e in entity_group]
@@ -493,16 +545,474 @@ def normalize_entities_and_relationships(
 
 
 # ============================================================================
+# LLM-Based Normalization
+# ============================================================================
+
+ENTITY_MERGE_PROMPT = """You are an expert historian analyzing entity mentions from "The Penguin History of the World".
+
+Given two entities extracted from different paragraphs, determine if they refer to the SAME historical entity.
+
+**Entity 1:**
+Name: {entity1_name}
+Type: {entity1_type}
+Subtype: {entity1_subtype}
+Aliases: {entity1_aliases}
+Description: {entity1_description}
+Attributes: {entity1_attributes}
+Confidence: {entity1_confidence}
+
+**Entity 2:**
+Name: {entity2_name}
+Type: {entity2_type}
+Subtype: {entity2_subtype}
+Aliases: {entity2_aliases}
+Description: {entity2_description}
+Attributes: {entity2_attributes}
+Confidence: {entity2_confidence}
+
+**Instructions:**
+1. Determine if these refer to the SAME historical entity (person, place, organization, etc.)
+2. Consider:
+   - Are the names referring to the same entity? (e.g., "Octavian" and "Augustus" are the same person)
+   - Do the types/subtypes match or are compatible?
+   - Do descriptions align or contradict?
+   - Are attributes consistent?
+3. If they should be merged:
+   - Choose the most canonical/common name
+   - Write a consolidated description (combine key information, ~2-3 sentences)
+   - Merge aliases (include both original names if not already aliases)
+   - Combine attributes (later values override if conflict)
+   - Set confidence as average of both entities
+
+**Decision Guidelines:**
+- Different people with same last name (e.g., "Julius Caesar" vs "Augustus Caesar") → DO NOT merge
+- Same person at different life stages (e.g., "Octavian" vs "Augustus") → MERGE
+- Same place in different contexts (e.g., "Rome" the city vs "Rome" the empire) → DO NOT merge (different subtypes)
+- Obvious typos or variations (e.g., "Byzanthium" vs "Byzantium") → MERGE
+"""
+
+
+def setup_llm_merge_chain():
+    """Create LangChain chain for entity merge decisions."""
+    from langchain_core.prompts import ChatPromptTemplate
+
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
+    llm_with_structure = llm.with_structured_output(EntityMergeDecision)
+
+    prompt = ChatPromptTemplate.from_template(ENTITY_MERGE_PROMPT)
+    merge_chain = prompt | llm_with_structure
+
+    return merge_chain
+
+
+def format_entity_for_prompt(entity: EntityWithId) -> dict:
+    """Extract entity fields for prompt template."""
+    return {
+        "name": entity.name,
+        "type": entity.type,
+        "subtype": entity.subtype or "None",
+        "aliases": ", ".join(entity.aliases) if entity.aliases else "None",
+        "description": entity.description or "None",
+        "attributes": str(entity.attributes) if entity.attributes else "None",
+        "confidence": f"{entity.confidence:.2f}",
+    }
+
+
+def decide_entity_merge(
+    entity1: EntityWithId, entity2: EntityWithId, chain
+) -> EntityMergeDecision:
+    """Run the merge decision chain on two entities."""
+    # Format inputs
+    e1_fields = format_entity_for_prompt(entity1)
+    e2_fields = format_entity_for_prompt(entity2)
+
+    # Prefix keys
+    inputs = {}
+    for key, val in e1_fields.items():
+        inputs[f"entity1_{key}"] = val
+    for key, val in e2_fields.items():
+        inputs[f"entity2_{key}"] = val
+
+    # Invoke chain
+    result = chain.invoke(inputs)
+    return result
+
+
+def find_merge_groups(llm_results: list[dict]) -> list[set]:
+    """
+    Find groups of entities that should be merged together using connected components.
+
+    Args:
+        llm_results: List of dicts with 'entity1', 'entity2', 'llm_decision' keys
+
+    Returns:
+        List of sets, each set contains entity IDs that should be merged
+    """
+    # Build adjacency list of merge decisions
+    merge_pairs = []
+    for result in llm_results:
+        if result["llm_decision"]:
+            merge_pairs.append((result["entity1"].id, result["entity2"].id))
+
+    # Find connected components using simple graph traversal
+    entity_to_group = {}
+    groups = []
+
+    for e1_id, e2_id in merge_pairs:
+        group1 = entity_to_group.get(e1_id)
+        group2 = entity_to_group.get(e2_id)
+
+        if group1 is None and group2 is None:
+            # Create new group
+            new_group = {e1_id, e2_id}
+            groups.append(new_group)
+            entity_to_group[e1_id] = new_group
+            entity_to_group[e2_id] = new_group
+        elif group1 is not None and group2 is None:
+            # Add e2 to e1's group
+            group1.add(e2_id)
+            entity_to_group[e2_id] = group1
+        elif group1 is None and group2 is not None:
+            # Add e1 to e2's group
+            group2.add(e1_id)
+            entity_to_group[e1_id] = group2
+        elif group1 is not group2:
+            # Merge two groups
+            group1.update(group2)
+            for eid in group2:
+                entity_to_group[eid] = group1
+            groups.remove(group2)
+
+    return groups
+
+
+def reevaluate_large_groups(
+    groups: list[set], entities_with_ids: list[EntityWithId], chain
+) -> list[set]:
+    """
+    For groups with >2 entities, use LLM to confirm all pairwise merges.
+
+    Args:
+        groups: List of entity ID sets that should potentially be merged
+        entities_with_ids: All entities with IDs
+        chain: LLM merge chain
+
+    Returns:
+        Refined groups where all pairwise merges are confirmed
+    """
+    entity_id_to_obj = {e.id: e for e in entities_with_ids}
+    refined_groups = []
+
+    for group in groups:
+        if len(group) <= 2:
+            # Small groups are already validated by pairwise comparison
+            refined_groups.append(group)
+            continue
+
+        print(f"  Re-evaluating group of {len(group)} entities for transitivity...")
+
+        # Test all pairwise combinations in this group
+        confirmed_pairs = []
+        entity_ids = list(group)
+
+        for i in range(len(entity_ids)):
+            for j in range(i + 1, len(entity_ids)):
+                e1 = entity_id_to_obj[entity_ids[i]]
+                e2 = entity_id_to_obj[entity_ids[j]]
+
+                decision = decide_entity_merge(e1, e2, chain)
+
+                if decision.should_merge:
+                    confirmed_pairs.append((entity_ids[i], entity_ids[j]))
+
+        # Find connected components from confirmed pairs
+        sub_groups = find_merge_groups(
+            [
+                {
+                    "entity1": entity_id_to_obj[e1],
+                    "entity2": entity_id_to_obj[e2],
+                    "llm_decision": True,
+                }
+                for e1, e2 in confirmed_pairs
+            ]
+        )
+
+        if len(sub_groups) > 1:
+            print(f"    ⚠️  Split into {len(sub_groups)} groups after re-evaluation")
+
+        refined_groups.extend(sub_groups)
+
+    return refined_groups
+
+
+def normalize_entities_llm(
+    entities_with_ids: list[EntityWithId],
+    relationships_with_ids: list[RelationshipWithId],
+    similarity_threshold: float = 0.6,
+    max_candidates: int = 100,
+) -> tuple[list[NormalizedEntity], list[NormalizedRelationshipExtended]]:
+    """
+    LLM-based entity normalization using semantic similarity and LLM merge decisions.
+
+    Args:
+        entities_with_ids: All entities with IDs
+        relationships_with_ids: All relationships with IDs
+        similarity_threshold: Minimum embedding similarity to consider for LLM evaluation
+        max_candidates: Maximum number of entity pairs to evaluate with LLM
+
+    Returns:
+        (normalized_entities, normalized_relationships_extended)
+    """
+    import numpy as np
+    from langchain_openai import OpenAIEmbeddings
+
+    print(f"\nStarting LLM-based normalization with {len(entities_with_ids)} entities")
+
+    # Step 1: Compute embeddings for entity names
+    print("Computing embeddings for entity names...")
+    embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
+    entity_names = [e.name for e in entities_with_ids]
+    embeddings = embeddings_model.embed_documents(entity_names)
+    embeddings_array = np.array(embeddings)
+
+    # Step 2: Find similarity candidates
+    print(f"Finding similarity candidates (threshold: {similarity_threshold})...")
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    similarity_matrix = cosine_similarity(embeddings_array)
+    candidates = []
+
+    for i in range(len(entities_with_ids)):
+        for j in range(i + 1, len(entities_with_ids)):
+            sim = similarity_matrix[i][j]
+            if sim >= similarity_threshold:
+                candidates.append(
+                    {
+                        "entity1": entities_with_ids[i],
+                        "entity2": entities_with_ids[j],
+                        "similarity": sim,
+                    }
+                )
+
+    # Sort by similarity (highest first)
+    candidates.sort(key=lambda x: x["similarity"], reverse=True)
+    candidates = candidates[:max_candidates]
+
+    print(f"Found {len(candidates)} candidate pairs (showing top {max_candidates})")
+
+    # Step 3: Run LLM merge decisions
+    print("Running LLM merge decisions...")
+    chain = setup_llm_merge_chain()
+    llm_results = []
+
+    for i, candidate in enumerate(candidates, 1):
+        entity1 = candidate["entity1"]
+        entity2 = candidate["entity2"]
+        similarity = candidate["similarity"]
+
+        print(
+            f"  [{i}/{len(candidates)}] Evaluating: {entity1.name} <-> {entity2.name}"
+        )
+
+        decision = decide_entity_merge(entity1, entity2, chain)
+
+        llm_results.append(
+            {
+                "entity1": entity1,
+                "entity2": entity2,
+                "embedding_similarity": similarity,
+                "llm_decision": decision.should_merge,
+                "llm_confidence": decision.confidence,
+                "llm_reasoning": decision.reasoning,
+                "merged_entity": decision.merged_entity,
+            }
+        )
+
+        if decision.should_merge:
+            print(f"    → MERGE (confidence: {decision.confidence:.2f})")
+        else:
+            print(f"    → SEPARATE (confidence: {decision.confidence:.2f})")
+
+    # Step 4: Find merge groups (connected components)
+    print("\nFinding merge groups...")
+    merge_groups = find_merge_groups(llm_results)
+    print(f"Found {len(merge_groups)} merge groups")
+
+    # Step 5: Re-evaluate large groups for transitivity
+    print("Re-evaluating large groups for transitivity...")
+    refined_groups = reevaluate_large_groups(merge_groups, entities_with_ids, chain)
+    print(f"Final merge groups: {len(refined_groups)}")
+
+    # Step 6: Create normalized entities
+    print("Creating normalized entities...")
+    normalized_entities = []
+    old_id_to_normalized_id = {}
+
+    # Track which entities are in merge groups
+    entities_in_groups = set()
+    for group in refined_groups:
+        entities_in_groups.update(group)
+
+    # Process merge groups
+    for group in refined_groups:
+        canonical_id = str(uuid_module.uuid4())
+        entity_ids = list(group)
+
+        # Find LLM-generated merged entity (use first pairwise merge result involving these entities)
+        merged_entity_obj = None
+        for result in llm_results:
+            if (
+                result["llm_decision"]
+                and result["merged_entity"]
+                and (
+                    result["entity1"].id in entity_ids
+                    and result["entity2"].id in entity_ids
+                )
+            ):
+                merged_entity_obj = result["merged_entity"]
+                break
+
+        # Get all entities in group
+        entities_in_group = [e for e in entities_with_ids if e.id in entity_ids]
+
+        # Aggregate data
+        all_paragraphs = set()
+        all_relationship_ids = set()
+        avg_confidence = 0.0
+
+        for entity in entities_in_group:
+            all_paragraphs.add(entity.paragraph_id)
+            all_relationship_ids.update(entity.relationship_ids)
+            avg_confidence += entity.confidence
+            old_id_to_normalized_id[entity.id] = canonical_id
+
+        avg_confidence /= len(entities_in_group)
+
+        # Use LLM-generated merged entity if available, otherwise use first entity
+        if merged_entity_obj:
+            normalized_entity = NormalizedEntity(
+                id=canonical_id,
+                name=merged_entity_obj.name,
+                type=merged_entity_obj.type,
+                subtype=merged_entity_obj.subtype,
+                aliases=merged_entity_obj.aliases,
+                description=merged_entity_obj.description or "",
+                attributes=merged_entity_obj.attributes,
+                source_paragraph_ids=list(all_paragraphs),
+                occurrence_count=len(entities_in_group),
+                merged_from_ids=entity_ids,
+                relationship_ids=list(all_relationship_ids),
+            )
+        else:
+            base_entity = entities_in_group[0]
+            normalized_entity = NormalizedEntity(
+                id=canonical_id,
+                name=base_entity.name,
+                type=base_entity.type,
+                subtype=base_entity.subtype,
+                aliases=base_entity.aliases,
+                description=base_entity.description or "",
+                attributes=base_entity.attributes,
+                source_paragraph_ids=list(all_paragraphs),
+                occurrence_count=len(entities_in_group),
+                merged_from_ids=entity_ids,
+                relationship_ids=list(all_relationship_ids),
+            )
+
+        normalized_entities.append(normalized_entity)
+
+    # Add entities that weren't merged
+    for entity in entities_with_ids:
+        if entity.id not in entities_in_groups:
+            canonical_id = str(uuid_module.uuid4())
+            old_id_to_normalized_id[entity.id] = canonical_id
+
+            normalized_entity = NormalizedEntity(
+                id=canonical_id,
+                name=entity.name,
+                type=entity.type,
+                subtype=entity.subtype,
+                aliases=entity.aliases,
+                description=entity.description or "",
+                attributes=entity.attributes,
+                source_paragraph_ids=[entity.paragraph_id],
+                occurrence_count=1,
+                merged_from_ids=[entity.id],
+                relationship_ids=entity.relationship_ids,
+            )
+            normalized_entities.append(normalized_entity)
+
+    print(f"Created {len(normalized_entities)} normalized entities")
+
+    # Step 7: Create extended relationships with original entity names
+    print("Creating normalized relationships with original entity names...")
+
+    # Create entity lookup
+    entity_id_to_obj = {e.id: e for e in entities_with_ids}
+    normalized_entity_id_to_obj = {e.id: e for e in normalized_entities}
+
+    # Reset relationship_ids on normalized entities
+    for entity in normalized_entities:
+        entity.relationship_ids = []
+
+    normalized_relationships_extended = []
+
+    for rel in relationships_with_ids:
+        norm_source_id = old_id_to_normalized_id.get(rel.source_id)
+        norm_target_id = old_id_to_normalized_id.get(rel.target_id)
+
+        if norm_source_id and norm_target_id:
+            # Get original entity names
+            source_entity_name = entity_id_to_obj[rel.source_id].name
+            target_entity_name = entity_id_to_obj[rel.target_id].name
+
+            # Create normalized relationship with original names preserved
+            norm_rel = NormalizedRelationshipExtended(
+                id=rel.id,
+                source_id=norm_source_id,
+                target_id=norm_target_id,
+                source_entity_name=source_entity_name,
+                target_entity_name=target_entity_name,
+                relation_type=rel.relation_type,
+                temporal_context=rel.temporal_context,
+                confidence=rel.confidence,
+                paragraph_id=rel.paragraph_id,
+            )
+            normalized_relationships_extended.append(norm_rel)
+
+            # Rebuild bidirectional links
+            if norm_source_id in normalized_entity_id_to_obj:
+                normalized_entity_id_to_obj[norm_source_id].relationship_ids.append(
+                    rel.id
+                )
+            if norm_target_id in normalized_entity_id_to_obj:
+                normalized_entity_id_to_obj[norm_target_id].relationship_ids.append(
+                    rel.id
+                )
+
+    print(f"Normalized {len(normalized_relationships_extended)} relationships")
+    skipped = len(relationships_with_ids) - len(normalized_relationships_extended)
+    if skipped > 0:
+        print(f"Skipped {skipped} relationships (entities not found)")
+
+    return normalized_entities, normalized_relationships_extended
+
+
+# ============================================================================
 # Graph Construction
 # ============================================================================
 
 
 def build_knowledge_graph(
     normalized_entities: list[NormalizedEntity],
-    normalized_relationships: list[NormalizedRelationship],
+    normalized_relationships: list,  # Can be NormalizedRelationship or NormalizedRelationshipExtended
 ) -> nx.DiGraph:
     """
     Build a directed graph from normalized entities and relationships.
+
+    Args:
+        normalized_entities: List of NormalizedEntity objects
+        normalized_relationships: List of NormalizedRelationship or NormalizedRelationshipExtended objects
 
     Returns:
         NetworkX DiGraph with entity nodes and relationship edges
@@ -561,7 +1071,7 @@ def build_knowledge_graph(
 def visualize_with_pyvis(
     G: nx.DiGraph,
     normalized_entities: list[NormalizedEntity],
-    normalized_relationships: list[NormalizedRelationship],
+    normalized_relationships: list,  # Can be NormalizedRelationship or NormalizedRelationshipExtended
     output_file: str = "knowledge_graph.html",
     height: str = "900px",
     width: str = "100%",
@@ -572,7 +1082,7 @@ def visualize_with_pyvis(
     Args:
         G: NetworkX DiGraph
         normalized_entities: List of NormalizedEntity objects
-        normalized_relationships: List of NormalizedRelationship objects
+        normalized_relationships: List of NormalizedRelationship or NormalizedRelationshipExtended objects
         output_file: HTML file to save
         height: Canvas height
         width: Canvas width
@@ -645,19 +1155,43 @@ def visualize_with_pyvis(
             title += f"<br>Attributes: {entity.attributes}"
 
         net.add_node(
-            entity.id, label=entity.name, title=title, color=color, size=size, font={"size": 14}
+            entity.id,
+            label=entity.name,
+            title=title,
+            color=color,
+            size=size,
+            font={"size": 14},
         )
 
     # Add edges with labels
     for rel in normalized_relationships:
         if rel.source_id in entity_lookup and rel.target_id in entity_lookup:
-            # Create edge label and title
-            label = rel.relation_type.replace("-", " ").replace("_", " ")
-            title = f"{entity_lookup[rel.source_id].name} → {entity_lookup[rel.target_id].name}<br>"
-            title += f"Relationship: {rel.relation_type}"
+            # Check if this is NormalizedRelationshipExtended (has original entity names)
+            has_original_names = hasattr(rel, "source_entity_name") and hasattr(
+                rel, "target_entity_name"
+            )
+
+            if has_original_names:
+                # Use original entity names for display (LLM normalization)
+                source_name = rel.source_entity_name
+                target_name = rel.target_entity_name
+                label = f"{source_name} → {target_name}"
+                label += f"\n{rel.relation_type.replace('-', ' ').replace('_', ' ')}"
+
+                # Title shows both original and normalized names
+                title = f"{source_name} → {target_name}<br>"
+                title += f"Relationship: {rel.relation_type}<br>"
+                title += f"Normalized: {entity_lookup[rel.source_id].name} → {entity_lookup[rel.target_id].name}"
+            else:
+                # Use normalized entity names (rule-based normalization)
+                label = rel.relation_type.replace("-", " ").replace("_", " ")
+                title = f"{entity_lookup[rel.source_id].name} → {entity_lookup[rel.target_id].name}<br>"
+                title += f"Relationship: {rel.relation_type}"
+
             if rel.temporal_context:
                 title += f"<br>When: {rel.temporal_context}"
-                label += f" ({rel.temporal_context})"
+                if not has_original_names:
+                    label += f" ({rel.temporal_context})"
 
             net.add_edge(
                 rel.source_id,
@@ -746,6 +1280,24 @@ def main():
         action="store_true",
         help="Save intermediate results (extraction, normalization) to JSON",
     )
+    parser.add_argument(
+        "--normalization-method",
+        choices=["rule-based", "llm-based"],
+        default="rule-based",
+        help="Entity normalization method: rule-based (exact + alias matching) or llm-based (semantic similarity + LLM decisions)",
+    )
+    parser.add_argument(
+        "--similarity-threshold",
+        type=float,
+        default=0.6,
+        help="Embedding similarity threshold for LLM normalization (default: 0.6)",
+    )
+    parser.add_argument(
+        "--max-llm-candidates",
+        type=int,
+        default=100,
+        help="Maximum number of entity pairs to evaluate with LLM (default: 100)",
+    )
 
     args = parser.parse_args()
 
@@ -785,7 +1337,9 @@ def main():
 
     total_entities = sum(len(r.entities) for r in all_results)
     total_relationships = sum(len(r.relationships) for r in all_results)
-    print(f"\nTotal extracted: {total_entities} entities, {total_relationships} relationships")
+    print(
+        f"\nTotal extracted: {total_entities} entities, {total_relationships} relationships"
+    )
 
     if args.save_intermediate:
         extraction_file = args.output.parent / f"{args.output.stem}_extraction.json"
@@ -815,19 +1369,31 @@ def main():
 
     # Normalize entities and relationships
     print("\n" + "=" * 80)
-    print("STEP 4: Normalizing entities and relationships")
+    print(
+        f"STEP 4: Normalizing entities and relationships ({args.normalization_method})"
+    )
     print("=" * 80)
 
-    normalized_entities, normalized_relationships = (
-        normalize_entities_and_relationships(entities_with_ids, relationships_with_ids)
+    if args.normalization_method == "llm-based":
+        normalized_entities, normalized_relationships = normalize_entities_llm(
+            entities_with_ids,
+            relationships_with_ids,
+            similarity_threshold=args.similarity_threshold,
+            max_candidates=args.max_llm_candidates,
+        )
+    else:
+        normalized_entities, normalized_relationships = (
+            normalize_entities_and_relationships(
+                entities_with_ids, relationships_with_ids
+            )
+        )
+
+    print(
+        f"\nReduction: {len(entities_with_ids)} → {len(normalized_entities)} entities"
     )
 
-    print(f"\nReduction: {len(entities_with_ids)} → {len(normalized_entities)} entities")
-
     if args.save_intermediate:
-        normalization_file = (
-            args.output.parent / f"{args.output.stem}_normalized.json"
-        )
+        normalization_file = args.output.parent / f"{args.output.stem}_normalized.json"
         with open(normalization_file, "w") as f:
             json.dump(
                 {
