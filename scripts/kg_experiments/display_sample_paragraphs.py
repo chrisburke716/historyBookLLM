@@ -12,10 +12,15 @@ SELECTED_IDS = [
     "22caab97-56ab-416f-9b1d-f785d2469418",  # Constitutional arrangements, Latin League, alliances
 ]
 
+
 def main():
     """Display selected paragraphs with clear formatting."""
     # Load paragraphs
-    json_file = Path(__file__).parent.parent.parent / "notebooks" / "book3_chapter4_paragraphs.json"
+    json_file = (
+        Path(__file__).parent.parent.parent
+        / "notebooks"
+        / "book3_chapter4_paragraphs.json"
+    )
     with open(json_file) as f:
         all_paragraphs = json.load(f)
 
@@ -31,7 +36,7 @@ def main():
         print(f"\n[PARAGRAPH {i}]")
         print(f"ID: {para['id']}")
         print(f"Page: {para['page']}")
-        print(f"-" * 100)
+        print("-" * 100)
         print(para["text"])
         print("-" * 100)
         print("\nENTITIES TO EXTRACT:")
@@ -49,7 +54,9 @@ def main():
         print("=" * 100)
 
     # Save selected to separate JSON
-    output_file = Path(__file__).parent.parent.parent / "notebooks" / "selected_5_paragraphs.json"
+    output_file = (
+        Path(__file__).parent.parent.parent / "notebooks" / "selected_5_paragraphs.json"
+    )
     with open(output_file, "w") as f:
         json.dump(selected, f, indent=2)
 

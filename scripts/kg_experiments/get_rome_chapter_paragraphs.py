@@ -1,5 +1,6 @@
 """Fetch paragraphs from Book 3, Chapter 4 (Rome chapter) for KG experimentation."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -36,8 +37,11 @@ def main():
         print(f"\n... and {len(paragraphs) - 10} more paragraphs")
 
     # Save all to JSON for notebook use
-    import json
-    output_file = Path(__file__).parent.parent.parent / "notebooks" / "book3_chapter4_paragraphs.json"
+    output_file = (
+        Path(__file__).parent.parent.parent
+        / "notebooks"
+        / "book3_chapter4_paragraphs.json"
+    )
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Convert to dict
