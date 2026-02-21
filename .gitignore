@@ -23,3 +23,11 @@ data/*
 *.log
 
 *.DS_Store
+
+# KG Experiment / PyVis
+notebooks/kg_experiment/lib/
+notebooks/kg_experiment/*.html
+lib/
+
+# Script outputs
+output/

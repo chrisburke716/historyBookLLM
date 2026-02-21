@@ -1,0 +1,1147 @@
+[
+  {
+    "paragraph_id": "0cd2eb74-f135-4c54-8d93-7ee75280146a",
+    "entities": [
+      {
+        "name": "Etruscans",
+        "type": "collective_entity",
+        "subtype": "people",
+        "aliases": [],
+        "description": "A people who were installed in a bridgehead on the south bank of the River Tiber in the sixth century BC and had dominion over Rome and other Latin cities.",
+        "attributes": null,
+        "time_range": [
+          "sixth century BC"
+        ],
+        "confidence": 1.0
+      },
+      {
+        "name": "River Tiber",
+        "type": "place",
+        "subtype": "river",
+        "aliases": [
+          "Tiber"
+        ],
+        "description": "A river in Italy, on whose south bank the Etruscans were installed.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Rome",
+        "type": "place",
+        "subtype": "city",
+        "aliases": [],
+        "description": "A city on the south bank of the River Tiber, originally one of the Latin cities, later breaking away from Etruscan dominion.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Latins",
+        "type": "collective_entity",
+        "subtype": "people",
+        "aliases": [],
+        "description": "An old-established people of the Campania, whose cities, including Rome, revolted against Etruscan rule.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Campania",
+        "type": "place",
+        "subtype": "region",
+        "aliases": [],
+        "description": "A region associated with the Latins.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "European tradition",
+        "type": "cultural",
+        "subtype": null,
+        "aliases": [],
+        "description": "The broader cultural tradition into which Etruscan influence flowed and was eventually lost.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "revolt of the Latin cities",
+        "type": "event",
+        "subtype": null,
+        "aliases": [],
+        "description": "A revolt near the end of the sixth century BC in which the Latin cities, including Rome, broke away from Etruscan dominion.",
+        "attributes": null,
+        "time_range": [
+          "end of the sixth century BC"
+        ],
+        "confidence": 1.0
+      },
+      {
+        "name": "kings of Rome",
+        "type": "collective_entity",
+        "subtype": "organization",
+        "aliases": [],
+        "description": "The rulers of Rome before the expulsion of the last king.",
+        "attributes": {
+          "role": "kings"
+        },
+        "time_range": [
+          "before 509 BC"
+        ],
+        "confidence": 1.0
+      },
+      {
+        "name": "last king of Rome",
+        "type": "person",
+        "subtype": null,
+        "aliases": [],
+        "description": "The last king of Rome, expelled in 509 BC according to tradition.",
+        "attributes": {
+          "role": "king of Rome"
+        },
+        "time_range": [
+          "509 BC"
+        ],
+        "confidence": 1.0
+      },
+      {
+        "name": "509 BC",
+        "type": "temporal",
+        "subtype": "year",
+        "aliases": [],
+        "description": "The year in which the last king of Rome was expelled, according to tradition.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Etruscan power",
+        "type": "collective_entity",
+        "subtype": "organization",
+        "aliases": [],
+        "description": "The political and military power of the Etruscans, challenged by the Latin peoples.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "western Greeks",
+        "type": "collective_entity",
+        "subtype": "people",
+        "aliases": [],
+        "description": "The Greeks in the western Mediterranean, who struggled with the Etruscans.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Latin peoples",
+        "type": "collective_entity",
+        "subtype": "people",
+        "aliases": [
+          "Latins"
+        ],
+        "description": "The peoples of the Latin cities who challenged Etruscan power and went their own ways after the revolt.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Etruria",
+        "type": "place",
+        "subtype": "region",
+        "aliases": [],
+        "description": "The region from which Etruscan influence came to Rome.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Greek civilization",
+        "type": "cultural",
+        "subtype": null,
+        "aliases": [],
+        "description": "The civilization of the Greeks, with which Rome came into contact through Etruria.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "land and water routes",
+        "type": "cultural",
+        "subtype": null,
+        "aliases": [],
+        "description": "Important routes that converged at Rome, facilitating access by land and sea.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "sea-going vessels",
+        "type": "cultural",
+        "subtype": null,
+        "aliases": [],
+        "description": "Vessels capable of reaching Rome by sea.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "sixth century BC",
+        "type": "temporal",
+        "subtype": "century",
+        "aliases": [],
+        "description": "The time period during which the Etruscans were installed on the south bank of the Tiber and Rome was under their dominion.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      }
+    ],
+    "relationships": [
+      {
+        "source_entity": "Etruscans",
+        "relation_type": "installed-in",
+        "target_entity": "bridgehead on the south bank of the River Tiber",
+        "temporal_context": "sixth century BC",
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "bridgehead on the south bank of the River Tiber",
+        "relation_type": "located-in",
+        "target_entity": "site of Rome",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Rome",
+        "relation_type": "located-on",
+        "target_entity": "south bank of the River Tiber",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Rome",
+        "relation_type": "one-of",
+        "target_entity": "small cities of the Latins",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Latins",
+        "relation_type": "located-in",
+        "target_entity": "Campania",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Etruscan",
+        "relation_type": "survived-in",
+        "target_entity": "Rome",
+        "temporal_context": null,
+        "confidence": 0.8
+      },
+      {
+        "source_entity": "Etruscan",
+        "relation_type": "flowed-into",
+        "target_entity": "European tradition",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Rome",
+        "relation_type": "broke-away-from",
+        "target_entity": "Etruscan dominion",
+        "temporal_context": "end of the sixth century BC",
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "revolt of the Latin cities",
+        "relation_type": "occurred-during",
+        "target_entity": "end of the sixth century BC",
+        "temporal_context": "end of the sixth century BC",
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Latin cities",
+        "relation_type": "revolted-against",
+        "target_entity": "Etruscans",
+        "temporal_context": "end of the sixth century BC",
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "kings of Rome",
+        "relation_type": "ruled",
+        "target_entity": "Rome",
+        "temporal_context": "before 509 BC",
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "last king of Rome",
+        "relation_type": "expelled-from",
+        "target_entity": "Rome",
+        "temporal_context": "509 BC",
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Etruscan power",
+        "relation_type": "challenged-by",
+        "target_entity": "Latin peoples",
+        "temporal_context": "about 509 BC",
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Etruscan power",
+        "relation_type": "struggled-with",
+        "target_entity": "western Greeks",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Rome",
+        "relation_type": "retained-from",
+        "target_entity": "Etruscan past",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Rome",
+        "relation_type": "accessed-through",
+        "target_entity": "Etruria",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Rome",
+        "relation_type": "contact-with",
+        "target_entity": "Greek civilization",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Rome",
+        "relation_type": "focus-of",
+        "target_entity": "land and water routes",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Rome",
+        "relation_type": "reached-by",
+        "target_entity": "sea-going vessels",
+        "temporal_context": null,
+        "confidence": 1.0
+      }
+    ]
+  },
+  {
+    "paragraph_id": "1cfb6550-4c6e-4c63-a181-7dc7a3a15e46",
+    "entities": [
+      {
+        "name": "Augustus",
+        "type": "person",
+        "subtype": null,
+        "aliases": [],
+        "description": "Roman emperor who obtained the return of the Roman standards taken from Crassus.",
+        "attributes": {
+          "role": "emperor"
+        },
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Roman standards",
+        "type": "cultural",
+        "subtype": null,
+        "aliases": [],
+        "description": "Military standards taken from Crassus by Parthia.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Crassus",
+        "type": "person",
+        "subtype": null,
+        "aliases": [],
+        "description": "Roman general from whom the Roman standards were taken by Parthia.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Parthia",
+        "type": "collective_entity",
+        "subtype": "state",
+        "aliases": [],
+        "description": "Ancient state and rival of Rome.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Armenia",
+        "type": "place",
+        "subtype": "region",
+        "aliases": [],
+        "description": "Region regarded sensitively by both Rome and Parthia.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Trajan",
+        "type": "person",
+        "subtype": null,
+        "aliases": [],
+        "description": "Roman emperor who conquered Ctesiphon and fought to the Persian Gulf.",
+        "attributes": {
+          "role": "emperor"
+        },
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Ctesiphon",
+        "type": "place",
+        "subtype": "city",
+        "aliases": [],
+        "description": "Parthian capital conquered by Trajan.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Persian Gulf",
+        "type": "place",
+        "subtype": "sea",
+        "aliases": [],
+        "description": "Body of water reached by Trajan after conquering Ctesiphon.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Hadrian",
+        "type": "person",
+        "subtype": null,
+        "aliases": [],
+        "description": "Roman emperor who succeeded Trajan and conciliated the Parthians.",
+        "attributes": {
+          "role": "emperor"
+        },
+        "time_range": null,
+        "confidence": 1.0
+      }
+    ],
+    "relationships": [
+      {
+        "source_entity": "Augustus",
+        "relation_type": "obtained-return-of",
+        "target_entity": "Roman standards",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Roman standards",
+        "relation_type": "taken-from",
+        "target_entity": "Crassus",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Roman standards",
+        "relation_type": "taken-by",
+        "target_entity": "Parthia",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Parthia",
+        "relation_type": "regarded-sensitively",
+        "target_entity": "Armenia",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Trajan",
+        "relation_type": "conquered",
+        "target_entity": "Ctesiphon",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Trajan",
+        "relation_type": "fought-to",
+        "target_entity": "Persian Gulf",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Hadrian",
+        "relation_type": "succeeded",
+        "target_entity": "Trajan",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Hadrian",
+        "relation_type": "conciliated",
+        "target_entity": "Parthia",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Hadrian",
+        "relation_type": "handed-back",
+        "target_entity": "much of his conquest",
+        "temporal_context": null,
+        "confidence": 1.0
+      }
+    ]
+  },
+  {
+    "paragraph_id": "1ef9dd6f-52bd-4f75-81f9-d3d6b8f53874",
+    "entities": [
+      {
+        "name": "Caesar",
+        "type": "person",
+        "subtype": null,
+        "aliases": [
+          "Julius Caesar"
+        ],
+        "description": "Roman leader who became dictator for life and introduced the Julian calendar.",
+        "attributes": {
+          "title": "dictator for life"
+        },
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Rome",
+        "type": "place",
+        "subtype": "city",
+        "aliases": [],
+        "description": "City of Rome, center of Roman political life.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Senate",
+        "type": "collective_entity",
+        "subtype": "organization",
+        "aliases": [
+          "Roman Senate"
+        ],
+        "description": "The governing council of Rome.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Julian calendar",
+        "type": "cultural",
+        "subtype": null,
+        "aliases": [],
+        "description": "Calendar system introduced by Caesar, based on a year of 365 days with an extra day every fourth year.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Hellenistic Alexandria",
+        "type": "place",
+        "subtype": "city",
+        "aliases": [
+          "Alexandria"
+        ],
+        "description": "City in Egypt, center of Hellenistic culture.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Roman calendar",
+        "type": "cultural",
+        "subtype": null,
+        "aliases": [],
+        "description": "Traditional calendar system used in Rome before the Julian calendar.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Europe",
+        "type": "place",
+        "subtype": "region",
+        "aliases": [],
+        "description": "Continent whose future was influenced by the Julian calendar.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "1 January 45 BC",
+        "type": "temporal",
+        "subtype": "date",
+        "aliases": [],
+        "description": "Date when the Julian calendar began.",
+        "attributes": null,
+        "time_range": [
+          "45 BC-01-01"
+        ],
+        "confidence": 1.0
+      }
+    ],
+    "relationships": [
+      {
+        "source_entity": "Caesar",
+        "relation_type": "ruled",
+        "target_entity": "Rome",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Caesar",
+        "relation_type": "packed",
+        "target_entity": "Senate",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Caesar",
+        "relation_type": "introduced",
+        "target_entity": "Julian calendar",
+        "temporal_context": "1 January 45 BC",
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Julian calendar",
+        "relation_type": "came-from",
+        "target_entity": "Hellenistic Alexandria",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Julian calendar",
+        "relation_type": "replaced",
+        "target_entity": "Roman calendar",
+        "temporal_context": "1 January 45 BC",
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Julian calendar",
+        "relation_type": "influenced",
+        "target_entity": "Europe",
+        "temporal_context": null,
+        "confidence": 1.0
+      }
+    ]
+  },
+  {
+    "paragraph_id": "1fa5555b-bef9-4253-ad61-e2ffca2c5e22",
+    "entities": [
+      {
+        "name": "Octavian",
+        "type": "person",
+        "subtype": null,
+        "aliases": [
+          "Augustus"
+        ],
+        "description": "Roman political leader who became consul and later received the title Augustus.",
+        "attributes": {
+          "titles_or_roles": "consul, imperator, princeps, Augustus"
+        },
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "27 BC",
+        "type": "temporal",
+        "subtype": "year",
+        "aliases": [],
+        "description": "Year in which Octavian carried out the republican restoration and received the title Augustus.",
+        "attributes": null,
+        "time_range": [
+          "27 BC"
+        ],
+        "confidence": 1.0
+      },
+      {
+        "name": "Senate",
+        "type": "collective_entity",
+        "subtype": "organization",
+        "aliases": [
+          "the Senate"
+        ],
+        "description": "The Roman Senate, whose membership was purged and weakened by civil war and proscription.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "civil war",
+        "type": "event",
+        "subtype": null,
+        "aliases": [
+          "the civil war"
+        ],
+        "description": "The civil war that ended with Octavian's return.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "proscription",
+        "type": "event",
+        "subtype": null,
+        "aliases": [],
+        "description": "The proscription that weakened the Senate's membership.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Rome",
+        "type": "place",
+        "subtype": "city",
+        "aliases": [],
+        "description": "The city of Rome, where Octavian was formally called by his family name or as princeps.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "great-uncle",
+        "type": "person",
+        "subtype": null,
+        "aliases": [],
+        "description": "Octavian's great-uncle, whose power Octavian re-established.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 0.8
+      },
+      {
+        "name": "frontier provinces",
+        "type": "place",
+        "subtype": "region",
+        "aliases": [],
+        "description": "Provinces on the frontier where the bulk of the legions were stationed.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "legions",
+        "type": "collective_entity",
+        "subtype": "organization",
+        "aliases": [
+          "the legions"
+        ],
+        "description": "Roman military units stationed in the frontier provinces.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "old soldiers",
+        "type": "collective_entity",
+        "subtype": "people",
+        "aliases": [
+          "old soldiers of his and his great-uncle\u2019s armies"
+        ],
+        "description": "Veterans of Octavian's and his great-uncle's armies who were settled on smallholdings.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "republican restoration",
+        "type": "event",
+        "subtype": null,
+        "aliases": [],
+        "description": "The event in 27 BC when Octavian claimed to restore the republic.",
+        "attributes": null,
+        "time_range": [
+          "27 BC"
+        ],
+        "confidence": 1.0
+      }
+    ],
+    "relationships": [
+      {
+        "source_entity": "Octavian",
+        "relation_type": "returned-to",
+        "target_entity": "consul",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Octavian",
+        "relation_type": "carried-out",
+        "target_entity": "republican restoration",
+        "temporal_context": "27 BC",
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Octavian",
+        "relation_type": "supported-by",
+        "target_entity": "Senate",
+        "temporal_context": "27 BC",
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Senate",
+        "relation_type": "purged-and-weakened-by",
+        "target_entity": "civil war",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Senate",
+        "relation_type": "purged-and-weakened-by",
+        "target_entity": "proscription",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Octavian",
+        "relation_type": "reconciled",
+        "target_entity": "Senate",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Octavian",
+        "relation_type": "re-established-power-of",
+        "target_entity": "great-uncle",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Octavian",
+        "relation_type": "was-imperator-by-virtue-of-command-of",
+        "target_entity": "legions",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "legions",
+        "relation_type": "stationed-in",
+        "target_entity": "frontier provinces",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "old soldiers",
+        "relation_type": "came-from",
+        "target_entity": "legions",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "old soldiers",
+        "relation_type": "settled-on",
+        "target_entity": "smallholdings",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Octavian",
+        "relation_type": "given-title",
+        "target_entity": "Augustus",
+        "temporal_context": "27 BC",
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Octavian",
+        "relation_type": "formally-called",
+        "target_entity": "princeps",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Octavian",
+        "relation_type": "formally-called",
+        "target_entity": "family name",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "Octavian",
+        "relation_type": "formally-called-in",
+        "target_entity": "Rome",
+        "temporal_context": null,
+        "confidence": 1.0
+      }
+    ]
+  },
+  {
+    "paragraph_id": "22caab97-56ab-416f-9b1d-f785d2469418",
+    "entities": [
+      {
+        "name": "early republic",
+        "type": "collective_entity",
+        "subtype": "state",
+        "aliases": [
+          "the republic"
+        ],
+        "description": "The early phase of the Roman Republic, a political state in ancient Rome.",
+        "attributes": {
+          "constitutional_arrangements": "complicated but effective"
+        },
+        "time_range": null,
+        "confidence": 0.95
+      },
+      {
+        "name": "Thebes",
+        "type": "place",
+        "subtype": "city",
+        "aliases": [],
+        "description": "A city in ancient Greece, used here as a comparison.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 0.9
+      },
+      {
+        "name": "Syracuse",
+        "type": "place",
+        "subtype": "city",
+        "aliases": [],
+        "description": "A city in ancient Sicily, used here as a comparison.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 0.9
+      },
+      {
+        "name": "Roman power",
+        "type": "collective_entity",
+        "subtype": "state",
+        "aliases": [
+          "Rome"
+        ],
+        "description": "The political and military power of Rome.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 0.95
+      },
+      {
+        "name": "fifth century BC",
+        "type": "temporal",
+        "subtype": "century",
+        "aliases": [],
+        "description": "The period from 500 BC to 401 BC.",
+        "attributes": null,
+        "time_range": [
+          "-500",
+          "-401"
+        ],
+        "confidence": 1.0
+      },
+      {
+        "name": "Rome",
+        "type": "place",
+        "subtype": "city",
+        "aliases": [],
+        "description": "The city of Rome, capital of the Roman Republic.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Latin League",
+        "type": "collective_entity",
+        "subtype": "league",
+        "aliases": [],
+        "description": "A confederation of Latin cities in ancient Italy.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "middle of the fourth century",
+        "type": "temporal",
+        "subtype": "range",
+        "aliases": [],
+        "description": "The period around the middle of the 4th century BC.",
+        "attributes": null,
+        "time_range": [
+          "-375",
+          "-325"
+        ],
+        "confidence": 0.9
+      },
+      {
+        "name": "Athenian empire",
+        "type": "collective_entity",
+        "subtype": "state",
+        "aliases": [],
+        "description": "The empire led by Athens, used as a comparison.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 0.9
+      },
+      {
+        "name": "Roman army",
+        "type": "collective_entity",
+        "subtype": "organization",
+        "aliases": [],
+        "description": "The military forces of Rome.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "Italian communities",
+        "type": "collective_entity",
+        "subtype": "people",
+        "aliases": [],
+        "description": "Other communities in Italy outside Rome.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 0.95
+      },
+      {
+        "name": "Roman aristocratic families",
+        "type": "collective_entity",
+        "subtype": "people",
+        "aliases": [],
+        "description": "The aristocratic families of Rome.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      },
+      {
+        "name": "citizens of those communities",
+        "type": "collective_entity",
+        "subtype": "people",
+        "aliases": [],
+        "description": "Citizens of the other Italian communities.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 0.95
+      },
+      {
+        "name": "Roman citizenship",
+        "type": "cultural",
+        "subtype": null,
+        "aliases": [
+          "rights of citizenship"
+        ],
+        "description": "The rights and privileges of being a Roman citizen.",
+        "attributes": null,
+        "time_range": null,
+        "confidence": 1.0
+      }
+    ],
+    "relationships": [
+      {
+        "source_entity": "early republic",
+        "relation_type": "presided-over",
+        "target_entity": "first phase of victorious expansion of Roman power",
+        "temporal_context": null,
+        "confidence": 0.9
+      },
+      {
+        "source_entity": "early republic",
+        "relation_type": "permitted",
+        "target_entity": "gradual change",
+        "temporal_context": null,
+        "confidence": 0.8
+      },
+      {
+        "source_entity": "early republic",
+        "relation_type": "prevented",
+        "target_entity": "violent revolution",
+        "temporal_context": null,
+        "confidence": 0.8
+      },
+      {
+        "source_entity": "Rome",
+        "relation_type": "mastered",
+        "target_entity": "Rome\u2019s neighbours",
+        "temporal_context": "fifth century BC",
+        "confidence": 0.95
+      },
+      {
+        "source_entity": "Rome",
+        "relation_type": "doubled",
+        "target_entity": "her territory",
+        "temporal_context": "fifth century BC",
+        "confidence": 0.95
+      },
+      {
+        "source_entity": "Rome",
+        "relation_type": "subordinated",
+        "target_entity": "other cities of the Latin League",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "some of the other cities of the Latin League",
+        "relation_type": "revolted-against",
+        "target_entity": "Rome",
+        "temporal_context": "middle of the fourth century",
+        "confidence": 0.95
+      },
+      {
+        "source_entity": "Rome",
+        "relation_type": "forced-back-into",
+        "target_entity": "Latin League",
+        "temporal_context": "middle of the fourth century",
+        "confidence": 0.95
+      },
+      {
+        "source_entity": "Roman policy",
+        "relation_type": "left-to-govern-themselves",
+        "target_entity": "allies",
+        "temporal_context": null,
+        "confidence": 0.9
+      },
+      {
+        "source_entity": "allies",
+        "relation_type": "had-to-subscribe-to",
+        "target_entity": "Roman foreign policy",
+        "temporal_context": null,
+        "confidence": 0.9
+      },
+      {
+        "source_entity": "allies",
+        "relation_type": "had-to-supply",
+        "target_entity": "contingents to the Roman army",
+        "temporal_context": null,
+        "confidence": 0.9
+      },
+      {
+        "source_entity": "Roman policy",
+        "relation_type": "favoured",
+        "target_entity": "established dominant groups in the other Italian communities",
+        "temporal_context": null,
+        "confidence": 0.9
+      },
+      {
+        "source_entity": "Roman aristocratic families",
+        "relation_type": "multiplied-personal-ties-with",
+        "target_entity": "dominant groups in the other Italian communities",
+        "temporal_context": null,
+        "confidence": 0.9
+      },
+      {
+        "source_entity": "citizens of those communities",
+        "relation_type": "admitted-to",
+        "target_entity": "Roman citizenship",
+        "temporal_context": null,
+        "confidence": 1.0
+      },
+      {
+        "source_entity": "citizens of those communities",
+        "relation_type": "migrated-to",
+        "target_entity": "Rome",
+        "temporal_context": null,
+        "confidence": 1.0
+      }
+    ]
+  }
+]
