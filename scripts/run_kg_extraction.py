@@ -1,13 +1,16 @@
-"""Knowledge Graph extraction pipeline for multi-chapter testing.
+"""Knowledge Graph extraction pipeline for single and multi-chapter processing.
 
 Translates the notebook pipeline (kg_experiment_v2.ipynb) into a standalone script.
 Processes paragraphs from the database, extracts entities and relationships,
 normalizes via rule-based + embedding + LLM merging, and exports results.
 
-Usage:
+Single chapter:
     poetry run python scripts/run_kg_extraction.py --book-index 3 --chapter-index 4
     poetry run python scripts/run_kg_extraction.py --book-index 3 --chapter-index 4 --similarity-threshold 0.7
-    poetry run python scripts/run_kg_extraction.py --book-index 3 --chapter-index 4 --skip-visualization
+
+Multi-chapter (cross-chapter merge):
+    poetry run python scripts/run_kg_extraction.py --book-index 3 --chapters 2 3
+    poetry run python scripts/run_kg_extraction.py --book-index 3 --chapters 2 3 --force --profile
 """
 
 import argparse
@@ -112,6 +115,7 @@ class NormalizedEntity(BaseModel):
     aliases: list[str] = Field(default_factory=list)
     description: str
     source_paragraph_ids: list[str]
+    source_locations: list[dict] = Field(default_factory=list)
     occurrence_count: int
     merged_from_ids: list[str] = Field(default_factory=list)
     relationship_ids: list[str] = Field(default_factory=list)
@@ -126,6 +130,9 @@ class NormalizedRelationship(BaseModel):
     relation_type: str
     temporal_context: str | None = None
     paragraph_id: str
+    book_index: int | None = None
+    chapter_index: int | None = None
+    page: int | None = None
 
 
 # --- LLM merge decision ---
@@ -342,6 +349,7 @@ def merge_into_master_rule_based(
     new_relationships: list[RelationshipWithId],
     master_entities: list[NormalizedEntity],
     master_relationships: list[NormalizedRelationship],
+    paragraph_meta: dict | None = None,
 ) -> tuple[
     list[NormalizedEntity], list[NormalizedRelationship], list[NormalizedEntity]
 ]:
@@ -350,6 +358,141 @@ def merge_into_master_rule_based(
     NOTE: Known limitation — entity names are matched globally without context disambiguation.
     For per-chapter processing this is acceptable, but cross-chapter processing may incorrectly
     merge entities that share names across different historical contexts (e.g., "Senate").
+
+    Args:
+        paragraph_meta: dict with keys book_index, chapter_index, page, paragraph_index, id
+            for building source_locations entries.
+
+    Returns:
+        (updated_master_entities, updated_master_relationships, newly_added_entities)
+    """
+    name_to_master: dict[str, NormalizedEntity] = {}
+    for me in master_entities:
+        name_to_master[me.name.lower().strip()] = me
+        for alias in me.aliases:
+            alias_key = alias.lower().strip()
+            if alias_key:
+                name_to_master[alias_key] = me
+
+    old_id_to_master_id: dict[str, str] = {}
+    newly_added: list[NormalizedEntity] = []
+    rule_merges = 0
+
+    for entity in new_entities:
+        key = entity.name.lower().strip()
+        match = name_to_master.get(key)
+        if not match:
+            for alias in entity.aliases:
+                alias_key = alias.lower().strip()
+                match = name_to_master.get(alias_key)
+                if match:
+                    break
+
+        # Build source location entry from paragraph metadata
+        loc = None
+        if paragraph_meta:
+            loc = {
+                "book_index": paragraph_meta.get("book_index"),
+                "chapter_index": paragraph_meta.get("chapter_index"),
+                "page": paragraph_meta.get("page"),
+                "paragraph_index": paragraph_meta.get("paragraph_index"),
+                "paragraph_id": paragraph_meta.get("id"),
+            }
+
+        if match:
+            rule_merges += 1
+            logger.debug("    Rule merge: '%s' -> '%s'", entity.name, match.name)
+            match.aliases = list(set(match.aliases + entity.aliases + [entity.name]))
+            match.aliases = [
+                a
+                for a in match.aliases
+                if a.lower().strip() != match.name.lower().strip()
+            ]
+            if entity.description:
+                match.description = (
+                    f"{match.description} | {entity.description}"
+                    if match.description
+                    else entity.description
+                )
+            match.source_paragraph_ids = list(
+                set(match.source_paragraph_ids + [entity.paragraph_id])
+            )
+            if loc:
+                match.source_locations.append(loc)
+            match.occurrence_count += 1
+            match.merged_from_ids.append(entity.id)
+            old_id_to_master_id[entity.id] = match.id
+            for alias in entity.aliases:
+                alias_key = alias.lower().strip()
+                if alias_key:
+                    name_to_master[alias_key] = match
+        else:
+            new_master = NormalizedEntity(
+                id=str(uuid_module.uuid4()),
+                name=entity.name,
+                type=entity.type,
+                aliases=entity.aliases,
+                description=entity.description or "",
+                source_paragraph_ids=[entity.paragraph_id],
+                source_locations=[loc] if loc else [],
+                occurrence_count=1,
+                merged_from_ids=[entity.id],
+                relationship_ids=[],
+            )
+            master_entities.append(new_master)
+            newly_added.append(new_master)
+            old_id_to_master_id[entity.id] = new_master.id
+            name_to_master[key] = new_master
+            for alias in entity.aliases:
+                alias_key = alias.lower().strip()
+                if alias_key:
+                    name_to_master[alias_key] = new_master
+
+    master_entity_lookup = {e.id: e for e in master_entities}
+    for rel in new_relationships:
+        new_source = old_id_to_master_id.get(rel.source_id)
+        new_target = old_id_to_master_id.get(rel.target_id)
+        if new_source and new_target:
+            norm_rel = NormalizedRelationship(
+                id=rel.id,
+                source_id=new_source,
+                target_id=new_target,
+                source_entity_name=rel.source_entity_name,
+                target_entity_name=rel.target_entity_name,
+                relation_type=rel.relation_type,
+                temporal_context=rel.temporal_context,
+                paragraph_id=rel.paragraph_id,
+                book_index=paragraph_meta.get("book_index") if paragraph_meta else None,
+                chapter_index=paragraph_meta.get("chapter_index")
+                if paragraph_meta
+                else None,
+                page=paragraph_meta.get("page") if paragraph_meta else None,
+            )
+            master_relationships.append(norm_rel)
+            if new_source in master_entity_lookup:
+                master_entity_lookup[new_source].relationship_ids.append(rel.id)
+            if new_target in master_entity_lookup:
+                master_entity_lookup[new_target].relationship_ids.append(rel.id)
+
+    if rule_merges:
+        logger.debug("    %d rule-based merge(s)", rule_merges)
+
+    return master_entities, master_relationships, newly_added
+
+
+def merge_normalized_entities(
+    new_entities: list[NormalizedEntity],
+    new_relationships: list[NormalizedRelationship],
+    master_entities: list[NormalizedEntity],
+    master_relationships: list[NormalizedRelationship],
+) -> tuple[
+    list[NormalizedEntity], list[NormalizedRelationship], list[NormalizedEntity]
+]:
+    """Merge one set of NormalizedEntities into another using rule-based name/alias matching.
+
+    Generic function that works for chapter→book and could later work for book→volume.
+    Both sides are already NormalizedEntity (unlike merge_into_master_rule_based which
+    takes EntityWithId on the new side).
 
     Returns:
         (updated_master_entities, updated_master_relationships, newly_added_entities)
@@ -378,7 +521,9 @@ def merge_into_master_rule_based(
 
         if match:
             rule_merges += 1
-            logger.debug("    Rule merge: '%s' -> '%s'", entity.name, match.name)
+            logger.debug(
+                "    Cross-chapter rule merge: '%s' -> '%s'", entity.name, match.name
+            )
             match.aliases = list(set(match.aliases + entity.aliases + [entity.name]))
             match.aliases = [
                 a
@@ -392,43 +537,54 @@ def merge_into_master_rule_based(
                     else entity.description
                 )
             match.source_paragraph_ids = list(
-                set(match.source_paragraph_ids + [entity.paragraph_id])
+                set(match.source_paragraph_ids + entity.source_paragraph_ids)
             )
-            match.occurrence_count += 1
-            match.merged_from_ids.append(entity.id)
+            # Deduplicate source_locations by paragraph_id
+            existing_pids = {loc.get("paragraph_id") for loc in match.source_locations}
+            for loc in entity.source_locations:
+                if loc.get("paragraph_id") not in existing_pids:
+                    match.source_locations.append(loc)
+                    existing_pids.add(loc.get("paragraph_id"))
+            match.occurrence_count += entity.occurrence_count
+            match.merged_from_ids = list(
+                set(match.merged_from_ids + entity.merged_from_ids)
+            )
             old_id_to_master_id[entity.id] = match.id
             for alias in entity.aliases:
                 alias_key = alias.lower().strip()
                 if alias_key:
                     name_to_master[alias_key] = match
         else:
+            new_id = str(uuid_module.uuid4())
             new_master = NormalizedEntity(
-                id=str(uuid_module.uuid4()),
+                id=new_id,
                 name=entity.name,
                 type=entity.type,
                 aliases=entity.aliases,
-                description=entity.description or "",
-                source_paragraph_ids=[entity.paragraph_id],
-                occurrence_count=1,
-                merged_from_ids=[entity.id],
+                description=entity.description,
+                source_paragraph_ids=list(entity.source_paragraph_ids),
+                source_locations=list(entity.source_locations),
+                occurrence_count=entity.occurrence_count,
+                merged_from_ids=list(entity.merged_from_ids),
                 relationship_ids=[],
             )
             master_entities.append(new_master)
             newly_added.append(new_master)
-            old_id_to_master_id[entity.id] = new_master.id
+            old_id_to_master_id[entity.id] = new_id
             name_to_master[key] = new_master
             for alias in entity.aliases:
                 alias_key = alias.lower().strip()
                 if alias_key:
                     name_to_master[alias_key] = new_master
 
+    # Remap relationships
     master_entity_lookup = {e.id: e for e in master_entities}
     for rel in new_relationships:
         new_source = old_id_to_master_id.get(rel.source_id)
         new_target = old_id_to_master_id.get(rel.target_id)
         if new_source and new_target:
-            norm_rel = NormalizedRelationship(
-                id=rel.id,
+            new_rel = NormalizedRelationship(
+                id=str(uuid_module.uuid4()),
                 source_id=new_source,
                 target_id=new_target,
                 source_entity_name=rel.source_entity_name,
@@ -436,15 +592,18 @@ def merge_into_master_rule_based(
                 relation_type=rel.relation_type,
                 temporal_context=rel.temporal_context,
                 paragraph_id=rel.paragraph_id,
+                book_index=rel.book_index,
+                chapter_index=rel.chapter_index,
+                page=rel.page,
             )
-            master_relationships.append(norm_rel)
+            master_relationships.append(new_rel)
             if new_source in master_entity_lookup:
-                master_entity_lookup[new_source].relationship_ids.append(rel.id)
+                master_entity_lookup[new_source].relationship_ids.append(new_rel.id)
             if new_target in master_entity_lookup:
-                master_entity_lookup[new_target].relationship_ids.append(rel.id)
+                master_entity_lookup[new_target].relationship_ids.append(new_rel.id)
 
     if rule_merges:
-        logger.debug("    %d rule-based merge(s)", rule_merges)
+        logger.info("    %d cross-chapter rule-based merge(s)", rule_merges)
 
     return master_entities, master_relationships, newly_added
 
@@ -758,6 +917,7 @@ def run_pipeline(
             return
         uf_parent[root2] = root1
         rep, other = uf_representative[root1], uf_representative[root2]
+        combined_locations = rep.source_locations + other.source_locations
         if merged_entity:
             updated = NormalizedEntity(
                 id=rep.id,
@@ -770,6 +930,7 @@ def run_pipeline(
                 source_paragraph_ids=list(
                     set(rep.source_paragraph_ids + other.source_paragraph_ids)
                 ),
+                source_locations=combined_locations,
                 occurrence_count=rep.occurrence_count + other.occurrence_count,
                 merged_from_ids=list(set(rep.merged_from_ids + other.merged_from_ids)),
                 relationship_ids=list(
@@ -788,6 +949,7 @@ def run_pipeline(
                 source_paragraph_ids=list(
                     set(rep.source_paragraph_ids + other.source_paragraph_ids)
                 ),
+                source_locations=combined_locations,
                 occurrence_count=rep.occurrence_count + other.occurrence_count,
                 merged_from_ids=list(set(rep.merged_from_ids + other.merged_from_ids)),
                 relationship_ids=list(
@@ -864,7 +1026,11 @@ def run_pipeline(
         t0 = time.perf_counter()
         master_entities, master_relationships, newly_added = (
             merge_into_master_rule_based(
-                entities, relationships, master_entities, master_relationships
+                entities,
+                relationships,
+                master_entities,
+                master_relationships,
+                paragraph_meta=para,
             )
         )
         timings["rule_merge"].append(time.perf_counter() - t0)
@@ -1003,6 +1169,7 @@ def run_pipeline(
             aliases=rep.aliases,
             description=rep.description,
             source_paragraph_ids=rep.source_paragraph_ids,
+            source_locations=rep.source_locations,
             occurrence_count=rep.occurrence_count,
             merged_from_ids=rep.merged_from_ids,
             relationship_ids=[],
@@ -1081,6 +1248,415 @@ def run_pipeline(
 
 
 # ---------------------------------------------------------------------------
+# Cross-chapter merge
+# ---------------------------------------------------------------------------
+
+
+def run_cross_chapter_merge(
+    chapter_results: dict[
+        int, tuple[list[NormalizedEntity], list[NormalizedRelationship]]
+    ],
+    config: dict,
+    *,
+    profile: bool = False,
+    max_concurrency: int = 5,
+) -> tuple[
+    list[NormalizedEntity], list[NormalizedRelationship], list[dict], list[dict]
+]:
+    """Merge multiple chapters' KG results into a single unified graph.
+
+    For each chapter (sorted by chapter_index):
+    1. Rule-based merge via merge_normalized_entities()
+    2. Embed newly added entities
+    3. Cosine similarity candidate search against master
+    4. Batch LLM merge decisions
+    5. Union-Find finalization
+
+    Returns (final_entities, final_relationships, llm_merge_results).
+    Also logs scaling metrics per chapter-merge step.
+    """
+    embeddings_model = OpenAIEmbeddings(model=config["embedding_model"])
+    merge_chain = setup_merge_chain(config)
+    threshold = config["similarity_threshold"]
+
+    master_entities: list[NormalizedEntity] = []
+    master_relationships: list[NormalizedRelationship] = []
+    master_embeddings: np.ndarray | None = None
+    master_entity_order: list[str] = []
+
+    # Union-Find for LLM merges
+    uf_parent: dict[str, str] = {}
+    uf_representative: dict[str, NormalizedEntity] = {}
+
+    def uf_find(entity_id: str) -> str:
+        while uf_parent[entity_id] != entity_id:
+            uf_parent[entity_id] = uf_parent[uf_parent[entity_id]]
+            entity_id = uf_parent[entity_id]
+        return entity_id
+
+    def uf_union(id1: str, id2: str, merged_entity: EntityWithId | None):
+        root1, root2 = uf_find(id1), uf_find(id2)
+        if root1 == root2:
+            return
+        uf_parent[root2] = root1
+        rep, other = uf_representative[root1], uf_representative[root2]
+        combined_locations = rep.source_locations + other.source_locations
+        if merged_entity:
+            updated = NormalizedEntity(
+                id=rep.id,
+                name=merged_entity.name,
+                type=merged_entity.type,
+                aliases=list(
+                    set(rep.aliases + other.aliases + (merged_entity.aliases or []))
+                ),
+                description=merged_entity.description or rep.description,
+                source_paragraph_ids=list(
+                    set(rep.source_paragraph_ids + other.source_paragraph_ids)
+                ),
+                source_locations=combined_locations,
+                occurrence_count=rep.occurrence_count + other.occurrence_count,
+                merged_from_ids=list(set(rep.merged_from_ids + other.merged_from_ids)),
+                relationship_ids=list(
+                    set(rep.relationship_ids + other.relationship_ids)
+                ),
+            )
+        else:
+            updated = NormalizedEntity(
+                id=rep.id,
+                name=rep.name,
+                type=rep.type,
+                aliases=list(set(rep.aliases + other.aliases)),
+                description=" | ".join(
+                    d for d in [rep.description, other.description] if d
+                ),
+                source_paragraph_ids=list(
+                    set(rep.source_paragraph_ids + other.source_paragraph_ids)
+                ),
+                source_locations=combined_locations,
+                occurrence_count=rep.occurrence_count + other.occurrence_count,
+                merged_from_ids=list(set(rep.merged_from_ids + other.merged_from_ids)),
+                relationship_ids=list(
+                    set(rep.relationship_ids + other.relationship_ids)
+                ),
+            )
+        uf_representative[root1] = updated
+
+    all_llm_results: list[dict] = []
+    scaling_metrics: list[dict] = []
+    timings: dict[str, list[float]] = defaultdict(list)
+
+    sorted_chapters = sorted(chapter_results.keys())
+    logger.info(
+        "Cross-chapter merge: %d chapters %s", len(sorted_chapters), sorted_chapters
+    )
+
+    for step, ch_idx in enumerate(sorted_chapters):
+        ch_entities, ch_relationships = chapter_results[ch_idx]
+        logger.info(
+            "--- Merging chapter %d (%d entities, %d relationships) ---",
+            ch_idx,
+            len(ch_entities),
+            len(ch_relationships),
+        )
+
+        if step == 0:
+            # First chapter: seed the master graph
+            for e in ch_entities:
+                new_id = str(uuid_module.uuid4())
+                new_entity = NormalizedEntity(
+                    id=new_id,
+                    name=e.name,
+                    type=e.type,
+                    aliases=e.aliases,
+                    description=e.description,
+                    source_paragraph_ids=list(e.source_paragraph_ids),
+                    source_locations=list(e.source_locations),
+                    occurrence_count=e.occurrence_count,
+                    merged_from_ids=list(e.merged_from_ids),
+                    relationship_ids=[],
+                )
+                master_entities.append(new_entity)
+                uf_parent[new_id] = new_id
+                uf_representative[new_id] = new_entity
+
+            # Remap relationships for first chapter
+            old_to_new = {}
+            for old_e, new_e in zip(ch_entities, master_entities, strict=True):
+                old_to_new[old_e.id] = new_e.id
+            master_entity_lookup = {e.id: e for e in master_entities}
+            for rel in ch_relationships:
+                new_source = old_to_new.get(rel.source_id)
+                new_target = old_to_new.get(rel.target_id)
+                if new_source and new_target:
+                    new_rel = NormalizedRelationship(
+                        id=str(uuid_module.uuid4()),
+                        source_id=new_source,
+                        target_id=new_target,
+                        source_entity_name=rel.source_entity_name,
+                        target_entity_name=rel.target_entity_name,
+                        relation_type=rel.relation_type,
+                        temporal_context=rel.temporal_context,
+                        paragraph_id=rel.paragraph_id,
+                        book_index=rel.book_index,
+                        chapter_index=rel.chapter_index,
+                        page=rel.page,
+                    )
+                    master_relationships.append(new_rel)
+                    if new_source in master_entity_lookup:
+                        master_entity_lookup[new_source].relationship_ids.append(
+                            new_rel.id
+                        )
+                    if new_target in master_entity_lookup:
+                        master_entity_lookup[new_target].relationship_ids.append(
+                            new_rel.id
+                        )
+
+            # Embed all entities from first chapter
+            t0 = time.perf_counter()
+            texts = [create_entity_text(e) for e in master_entities]
+            master_embeddings = np.array(embeddings_model.embed_documents(texts))
+            master_entity_order = [e.id for e in master_entities]
+            timings["embedding"].append(time.perf_counter() - t0)
+
+            scaling_metrics.append(
+                {
+                    "step": step,
+                    "chapter_index": ch_idx,
+                    "master_size": len(master_entities),
+                    "n_new": len(master_entities),
+                    "n_rule_merged": 0,
+                    "n_candidates": 0,
+                    "n_llm_checked": 0,
+                    "n_llm_merged": 0,
+                }
+            )
+            logger.info("  Seeded master with %d entities", len(master_entities))
+            continue
+
+        # Steps 2+: merge into existing master
+
+        # 1. Rule-based merge
+        t0 = time.perf_counter()
+        master_entities, master_relationships, newly_added = merge_normalized_entities(
+            ch_entities, ch_relationships, master_entities, master_relationships
+        )
+        timings["rule_merge"].append(time.perf_counter() - t0)
+        n_rule_merged = len(ch_entities) - len(newly_added)
+
+        # 2. Embed newly added entities
+        n_candidates = 0
+        n_llm_checked = 0
+        n_llm_merged = 0
+
+        if newly_added:
+            for ne in newly_added:
+                uf_parent[ne.id] = ne.id
+                uf_representative[ne.id] = ne
+
+            t0 = time.perf_counter()
+            new_texts = [create_entity_text(e) for e in newly_added]
+            new_embs = np.array(embeddings_model.embed_documents(new_texts))
+            timings["embedding"].append(time.perf_counter() - t0)
+
+            # 3. Find candidates against existing master
+            t0 = time.perf_counter()
+            candidates = []
+            if master_embeddings is not None and len(master_entity_order) > 0:
+                master_lookup = {e.id: e for e in master_entities}
+                existing_entities = [
+                    master_lookup[eid]
+                    for eid in master_entity_order
+                    if eid in master_lookup
+                ]
+                existing_embs = master_embeddings[: len(existing_entities)]
+                candidates = find_candidates_against_master(
+                    newly_added, new_embs, existing_entities, existing_embs, threshold
+                )
+            timings["similarity"].append(time.perf_counter() - t0)
+            n_candidates = len(candidates)
+
+            # 4. Batch LLM merge
+            t0 = time.perf_counter()
+            trimmed = candidates[: config["max_llm_candidates"]]
+
+            pairs_to_check = []
+            for c in trimmed:
+                ne, me = c["new_entity"], c["master_entity"]
+                root_new = uf_find(ne.id)
+                root_master = uf_find(me.id) if me.id in uf_parent else me.id
+                if me.id not in uf_parent:
+                    uf_parent[me.id] = me.id
+                    uf_representative[me.id] = me
+                    root_master = me.id
+                if root_new != root_master:
+                    rep_new = uf_representative[root_new]
+                    rep_master = uf_representative[root_master]
+                    pairs_to_check.append((c, rep_new, rep_master))
+
+            if pairs_to_check:
+                logger.info("  Batch merging %d candidates...", len(pairs_to_check))
+                inputs_list = [
+                    _build_merge_inputs(rep_new, rep_master)
+                    for _, rep_new, rep_master in pairs_to_check
+                ]
+                decisions = _batch_with_retry(merge_chain, inputs_list, max_concurrency)
+                n_llm_checked = len(decisions)
+
+                for (c, rep_new, rep_master), decision in zip(
+                    pairs_to_check, decisions, strict=False
+                ):
+                    all_llm_results.append(
+                        {
+                            "chapter_index": ch_idx,
+                            "entity1_name": rep_new.name,
+                            "entity2_name": rep_master.name,
+                            "cosine_similarity": c["similarity"],
+                            "should_merge": decision.should_merge,
+                            "confidence": decision.confidence,
+                            "reasoning": decision.reasoning,
+                        }
+                    )
+                    if decision.should_merge:
+                        uf_union(
+                            c["new_entity"].id,
+                            c["master_entity"].id,
+                            decision.merged_entity,
+                        )
+                        n_llm_merged += 1
+                        logger.info(
+                            "  ** LLM MERGE: %s + %s (cos:%.3f)",
+                            rep_new.name,
+                            rep_master.name,
+                            c["similarity"],
+                        )
+
+            timings["llm_merge"].append(time.perf_counter() - t0)
+
+            # 5. Update master embeddings
+            if master_embeddings is None:
+                master_embeddings = new_embs
+            else:
+                master_embeddings = np.vstack([master_embeddings, new_embs])
+            master_entity_order.extend(e.id for e in newly_added)
+
+        scaling_metrics.append(
+            {
+                "step": step,
+                "chapter_index": ch_idx,
+                "master_size": len(master_entities),
+                "n_new": len(newly_added),
+                "n_rule_merged": n_rule_merged,
+                "n_candidates": n_candidates,
+                "n_llm_checked": n_llm_checked,
+                "n_llm_merged": n_llm_merged,
+            }
+        )
+        logger.info(
+            "  Chapter %d: +%d new, %d rule-merged, %d candidates, "
+            "%d LLM-checked, %d LLM-merged | master: %d entities",
+            ch_idx,
+            len(newly_added),
+            n_rule_merged,
+            n_candidates,
+            n_llm_checked,
+            n_llm_merged,
+            len(master_entities),
+        )
+
+    # --- Finalize: apply Union-Find merges ---
+    # Ensure all master entity IDs are in UF
+    for e in master_entities:
+        if e.id not in uf_parent:
+            uf_parent[e.id] = e.id
+            uf_representative[e.id] = e
+
+    groups: dict[str, list[str]] = defaultdict(list)
+    for eid in uf_parent:
+        root = uf_find(eid)
+        groups[root].append(eid)
+
+    final_entities: list[NormalizedEntity] = []
+    master_id_to_final_id: dict[str, str] = {}
+
+    for root_id, member_ids in groups.items():
+        rep = uf_representative[root_id]
+        final_id = str(uuid_module.uuid4())
+        final_entity = NormalizedEntity(
+            id=final_id,
+            name=rep.name,
+            type=rep.type,
+            aliases=rep.aliases,
+            description=rep.description,
+            source_paragraph_ids=rep.source_paragraph_ids,
+            source_locations=rep.source_locations,
+            occurrence_count=rep.occurrence_count,
+            merged_from_ids=rep.merged_from_ids,
+            relationship_ids=[],
+        )
+        final_entities.append(final_entity)
+        for mid in member_ids:
+            master_id_to_final_id[mid] = final_id
+
+    final_relationships: list[NormalizedRelationship] = []
+    final_entity_lookup = {e.id: e for e in final_entities}
+
+    for rel in master_relationships:
+        final_source = master_id_to_final_id.get(rel.source_id)
+        final_target = master_id_to_final_id.get(rel.target_id)
+        if final_source and final_target:
+            final_rel = NormalizedRelationship(
+                id=rel.id,
+                source_id=final_source,
+                target_id=final_target,
+                source_entity_name=rel.source_entity_name,
+                target_entity_name=rel.target_entity_name,
+                relation_type=rel.relation_type,
+                temporal_context=rel.temporal_context,
+                paragraph_id=rel.paragraph_id,
+                book_index=rel.book_index,
+                chapter_index=rel.chapter_index,
+                page=rel.page,
+            )
+            final_relationships.append(final_rel)
+            if final_source in final_entity_lookup:
+                final_entity_lookup[final_source].relationship_ids.append(rel.id)
+            if final_target in final_entity_lookup:
+                final_entity_lookup[final_target].relationship_ids.append(rel.id)
+
+    llm_merge_count = sum(1 for r in all_llm_results if r["should_merge"])
+    logger.info(
+        "Cross-chapter final: %d entities, %d relationships (%d LLM merges)",
+        len(final_entities),
+        len(final_relationships),
+        llm_merge_count,
+    )
+
+    if profile:
+        logger.info("")
+        logger.info("%-16s %10s %8s %8s", "Stage", "Total(s)", "Calls", "Avg(s)")
+        logger.info("-" * 46)
+        total_time = 0.0
+        for stage in ["rule_merge", "embedding", "similarity", "llm_merge"]:
+            vals = timings[stage]
+            stage_total = sum(vals)
+            total_time += stage_total
+            if vals:
+                logger.info(
+                    "%-16s %10.1f %8d %8.2f",
+                    stage,
+                    stage_total,
+                    len(vals),
+                    stage_total / len(vals),
+                )
+            else:
+                logger.info("%-16s %10.1f %8d %8s", stage, 0.0, 0, "-")
+        logger.info("-" * 46)
+        logger.info("%-16s %10.1f", "total", total_time)
+
+    return final_entities, final_relationships, all_llm_results, scaling_metrics
+
+
+# ---------------------------------------------------------------------------
 # Export
 # ---------------------------------------------------------------------------
 
@@ -1098,6 +1674,17 @@ def export_results(
     # Entities CSV
     entity_records = []
     for e in sorted(entities, key=lambda x: x.occurrence_count, reverse=True):
+        # Derive source_chapters and source_pages from source_locations
+        chapters = sorted(
+            {
+                loc["chapter_index"]
+                for loc in e.source_locations
+                if loc.get("chapter_index") is not None
+            }
+        )
+        pages = sorted(
+            {loc["page"] for loc in e.source_locations if loc.get("page") is not None}
+        )
         entity_records.append(
             {
                 "id": e.id,
@@ -1109,6 +1696,8 @@ def export_results(
                 "n_relationships": len(e.relationship_ids),
                 "n_merged_from": len(e.merged_from_ids),
                 "source_paragraph_ids": "; ".join(e.source_paragraph_ids),
+                "source_chapters": "; ".join(str(c) for c in chapters),
+                "source_pages": "; ".join(str(p) for p in pages),
             }
         )
     df_entities = pd.DataFrame(entity_records)
@@ -1134,6 +1723,8 @@ def export_results(
         rel_records.append(
             {
                 "id": r.id,
+                "source_id": r.source_id,
+                "target_id": r.target_id,
                 "source_name": source_name,
                 "target_name": target_name,
                 "source_original": r.source_entity_name,
@@ -1141,6 +1732,9 @@ def export_results(
                 "relation_type": r.relation_type,
                 "temporal_context": r.temporal_context or "",
                 "paragraph_id": r.paragraph_id,
+                "book_index": r.book_index if r.book_index is not None else "",
+                "chapter_index": r.chapter_index if r.chapter_index is not None else "",
+                "page": r.page if r.page is not None else "",
             }
         )
     df_rels = pd.DataFrame(rel_records)
@@ -1198,21 +1792,148 @@ def load_paragraphs(book_index: int, chapter_index: int) -> list[dict]:
     return paragraphs
 
 
+def load_chapter_results(
+    chapter_dir: Path,
+) -> tuple[list[NormalizedEntity], list[NormalizedRelationship]] | None:
+    """Load cached chapter results from CSV files.
+
+    Returns (entities, relationships) or None if files don't exist.
+    """
+    entities_path = chapter_dir / "entities.csv"
+    relationships_path = chapter_dir / "relationships.csv"
+
+    if not entities_path.exists() or not relationships_path.exists():
+        return None
+
+    df_entities = pd.read_csv(entities_path)
+    df_rels = pd.read_csv(relationships_path)
+
+    entities = []
+    for _, row in df_entities.iterrows():
+        aliases_str = row.get("aliases", "")
+        aliases = (
+            [a.strip() for a in str(aliases_str).split(";") if a.strip()]
+            if pd.notna(aliases_str) and aliases_str
+            else []
+        )
+
+        para_ids_str = row.get("source_paragraph_ids", "")
+        para_ids = (
+            [p.strip() for p in str(para_ids_str).split(";") if p.strip()]
+            if pd.notna(para_ids_str) and para_ids_str
+            else []
+        )
+
+        # Reconstruct source_locations from source_chapters
+        chapters_str = row.get("source_chapters", "")
+        source_locations = []
+        if pd.notna(chapters_str) and chapters_str:
+            chapter_indices = [
+                int(c.strip()) for c in str(chapters_str).split(";") if c.strip()
+            ]
+            # Best-effort reconstruction: one location per paragraph_id with chapter info
+            for pid in para_ids:
+                loc = {"paragraph_id": pid}
+                if chapter_indices:
+                    loc["chapter_index"] = chapter_indices[0]
+                source_locations.append(loc)
+        else:
+            # Single-chapter: build locations from paragraph IDs only
+            for pid in para_ids:
+                source_locations.append({"paragraph_id": pid})
+
+        entities.append(
+            NormalizedEntity(
+                id=row["id"],
+                name=row["name"],
+                type=row["type"],
+                aliases=aliases,
+                description=str(row.get("description", ""))
+                if pd.notna(row.get("description"))
+                else "",
+                source_paragraph_ids=para_ids,
+                source_locations=source_locations,
+                occurrence_count=int(row.get("occurrence_count", 1)),
+                merged_from_ids=[],
+                relationship_ids=[],
+            )
+        )
+
+    # Build entity lookup for relationship loading
+    entity_lookup = {e.id: e for e in entities}
+
+    relationships = []
+    for _, row in df_rels.iterrows():
+        rel = NormalizedRelationship(
+            id=row["id"],
+            source_id=row.get("source_id", ""),
+            target_id=row.get("target_id", ""),
+            source_entity_name=row.get("source_original", row.get("source_name", "")),
+            target_entity_name=row.get("target_original", row.get("target_name", "")),
+            relation_type=row["relation_type"],
+            temporal_context=row.get("temporal_context")
+            if pd.notna(row.get("temporal_context"))
+            else None,
+            paragraph_id=str(row.get("paragraph_id", "")),
+            book_index=int(row["book_index"])
+            if pd.notna(row.get("book_index")) and row.get("book_index") != ""
+            else None,
+            chapter_index=int(row["chapter_index"])
+            if pd.notna(row.get("chapter_index")) and row.get("chapter_index") != ""
+            else None,
+            page=int(row["page"])
+            if pd.notna(row.get("page")) and row.get("page") != ""
+            else None,
+        )
+
+        # Relationships CSV doesn't store source_id/target_id — resolve from entity names
+        if not rel.source_id or not rel.target_id:
+            source_name = row.get("source_name", "")
+            target_name = row.get("target_name", "")
+            name_to_entity = {e.name: e for e in entities}
+            source_entity = name_to_entity.get(source_name)
+            target_entity = name_to_entity.get(target_name)
+            if source_entity and target_entity:
+                rel.source_id = source_entity.id
+                rel.target_id = target_entity.id
+            else:
+                continue
+
+        relationships.append(rel)
+        # Populate relationship_ids on entities
+        if rel.source_id in entity_lookup:
+            entity_lookup[rel.source_id].relationship_ids.append(rel.id)
+        if rel.target_id in entity_lookup:
+            entity_lookup[rel.target_id].relationship_ids.append(rel.id)
+
+    return entities, relationships
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Run KG extraction pipeline on a book chapter."
+        description="Run KG extraction pipeline on book chapter(s)."
     )
     parser.add_argument(
         "--book-index", type=int, required=True, help="Book index in the database"
     )
     parser.add_argument(
-        "--chapter-index", type=int, required=True, help="Chapter index in the database"
+        "--chapter-index",
+        type=int,
+        default=None,
+        help="Single chapter index (mutually exclusive with --chapters)",
+    )
+    parser.add_argument(
+        "--chapters",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Multiple chapter indices for cross-chapter merge (mutually exclusive with --chapter-index)",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
         default=None,
-        help="Output directory (default: output/kg/book{B}_chapter{C}/)",
+        help="Output directory (default: auto-generated from book/chapter indices)",
     )
     parser.add_argument(
         "--similarity-threshold",
@@ -1236,7 +1957,18 @@ def main():
         default=5,
         help="Max parallel API calls for batch operations (default: 5)",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Regenerate per-chapter results even if cached output exists",
+    )
     args = parser.parse_args()
+
+    # Validate mutual exclusivity
+    if args.chapter_index is not None and args.chapters is not None:
+        parser.error("--chapter-index and --chapters are mutually exclusive")
+    if args.chapter_index is None and args.chapters is None:
+        parser.error("Either --chapter-index or --chapters is required")
 
     # Setup logging
     logging.basicConfig(
@@ -1250,51 +1982,158 @@ def main():
     if args.similarity_threshold is not None:
         config["similarity_threshold"] = args.similarity_threshold
 
-    # Output directory
+    # --- Single chapter mode (existing behavior) ---
+    if args.chapter_index is not None:
+        if args.output_dir:
+            output_dir = Path(args.output_dir)
+        else:
+            output_dir = Path(
+                f"output/kg/book{args.book_index}_chapter{args.chapter_index}"
+            )
+
+        logger.info(
+            "KG extraction: book=%d chapter=%d -> %s",
+            args.book_index,
+            args.chapter_index,
+            output_dir,
+        )
+
+        paragraphs = load_paragraphs(args.book_index, args.chapter_index)
+        if not paragraphs:
+            logger.error(
+                "No paragraphs found for book=%d chapter=%d",
+                args.book_index,
+                args.chapter_index,
+            )
+            return
+
+        logger.info("Loaded %d paragraphs", len(paragraphs))
+
+        final_entities, final_relationships, llm_results = run_pipeline(
+            paragraphs,
+            config,
+            profile=args.profile,
+            max_concurrency=args.max_concurrency,
+        )
+
+        export_results(
+            final_entities,
+            final_relationships,
+            llm_results,
+            output_dir,
+            skip_visualization=args.skip_visualization,
+        )
+        logger.info("Done. Output written to %s", output_dir)
+        return
+
+    # --- Multi-chapter mode ---
+    chapters = sorted(args.chapters)
     if args.output_dir:
         output_dir = Path(args.output_dir)
     else:
-        output_dir = Path(
-            f"output/kg/book{args.book_index}_chapter{args.chapter_index}"
-        )
+        ch_range = f"{min(chapters)}-{max(chapters)}"
+        output_dir = Path(f"output/kg/book{args.book_index}_ch{ch_range}")
 
     logger.info(
-        "KG extraction: book=%d chapter=%d -> %s",
+        "KG extraction: book=%d chapters=%s -> %s",
         args.book_index,
-        args.chapter_index,
+        chapters,
         output_dir,
     )
 
-    # Load paragraphs
-    paragraphs = load_paragraphs(args.book_index, args.chapter_index)
-    if not paragraphs:
+    # Phase 1: Per-chapter extraction (with caching)
+    chapter_results: dict[
+        int, tuple[list[NormalizedEntity], list[NormalizedRelationship]]
+    ] = {}
+
+    for ch_idx in chapters:
+        chapter_dir = output_dir / f"chapter_{ch_idx}"
+
+        if not args.force:
+            cached = load_chapter_results(chapter_dir)
+            if cached is not None:
+                entities, relationships = cached
+                logger.info(
+                    "Chapter %d: loaded from cache (%d entities, %d relationships)",
+                    ch_idx,
+                    len(entities),
+                    len(relationships),
+                )
+                chapter_results[ch_idx] = (entities, relationships)
+                continue
+
+        # Run extraction for this chapter
+        paragraphs = load_paragraphs(args.book_index, ch_idx)
+        if not paragraphs:
+            logger.error(
+                "No paragraphs found for book=%d chapter=%d, skipping",
+                args.book_index,
+                ch_idx,
+            )
+            continue
+
+        logger.info(
+            "Chapter %d: extracting from %d paragraphs...", ch_idx, len(paragraphs)
+        )
+
+        entities, relationships, llm_results = run_pipeline(
+            paragraphs,
+            config,
+            profile=args.profile,
+            max_concurrency=args.max_concurrency,
+        )
+
+        export_results(
+            entities,
+            relationships,
+            llm_results,
+            chapter_dir,
+            skip_visualization=args.skip_visualization,
+        )
+        logger.info(
+            "Chapter %d: exported %d entities, %d relationships",
+            ch_idx,
+            len(entities),
+            len(relationships),
+        )
+        chapter_results[ch_idx] = (entities, relationships)
+
+    if len(chapter_results) < 2:
         logger.error(
-            "No paragraphs found for book=%d chapter=%d",
-            args.book_index,
-            args.chapter_index,
+            "Need at least 2 chapters for cross-chapter merge, got %d",
+            len(chapter_results),
         )
         return
 
-    logger.info("Loaded %d paragraphs", len(paragraphs))
-
-    # Run pipeline
-    final_entities, final_relationships, llm_results = run_pipeline(
-        paragraphs,
-        config,
-        profile=args.profile,
-        max_concurrency=args.max_concurrency,
+    # Phase 2: Cross-chapter merge
+    logger.info("=== Phase 2: Cross-chapter merge ===")
+    combined_entities, combined_relationships, combined_llm_results, scaling_metrics = (
+        run_cross_chapter_merge(
+            chapter_results,
+            config,
+            profile=args.profile,
+            max_concurrency=args.max_concurrency,
+        )
     )
 
-    # Export
+    # Phase 3: Export combined results
+    combined_dir = output_dir / "combined"
     export_results(
-        final_entities,
-        final_relationships,
-        llm_results,
-        output_dir,
+        combined_entities,
+        combined_relationships,
+        combined_llm_results,
+        combined_dir,
         skip_visualization=args.skip_visualization,
     )
 
-    # Summary
+    # Export scaling metrics
+    if scaling_metrics:
+        df_metrics = pd.DataFrame(scaling_metrics)
+        df_metrics.to_csv(combined_dir / "scaling_metrics.csv", index=False)
+        logger.info(
+            "Exported scaling metrics to %s", combined_dir / "scaling_metrics.csv"
+        )
+
     logger.info("Done. Output written to %s", output_dir)
 
 
