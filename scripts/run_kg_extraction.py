@@ -4,16 +4,26 @@ Translates the notebook pipeline (kg_experiment_v2.ipynb) into a standalone scri
 Processes paragraphs from the database, extracts entities and relationships,
 normalizes via rule-based + embedding + LLM merging, and exports results.
 
-Single chapter:
-    poetry run python scripts/run_kg_extraction.py --book-index 3 --chapter-index 4
-    poetry run python scripts/run_kg_extraction.py --book-index 3 --chapter-index 4 --similarity-threshold 0.7
+Output structure:
+    output/kg/chapters/book{X}_ch{Y}/    — centralized per-chapter cache
+    output/kg/graphs/{name}/              — merged graph outputs with metadata
 
-Multi-chapter (cross-chapter merge):
+Single chapter (writes to centralized cache):
+    poetry run python scripts/run_kg_extraction.py --book-index 3 --chapter-index 4
+
+Multi-chapter (extract + merge):
     poetry run python scripts/run_kg_extraction.py --book-index 3 --chapters 2 3
-    poetry run python scripts/run_kg_extraction.py --book-index 3 --chapters 2 3 --force --profile
+
+Incremental (add chapter to existing graph):
+    poetry run python scripts/run_kg_extraction.py --book-index 3 --chapters 4 --base-graph output/kg/graphs/book3_ch2-3
+
+Custom graph name:
+    poetry run python scripts/run_kg_extraction.py --book-index 3 --chapters 2 3 4 --graph-name book3_greeks
 """
 
 import argparse
+import datetime
+import json
 import logging
 import os
 import time
@@ -1260,10 +1270,15 @@ def run_cross_chapter_merge(
     *,
     profile: bool = False,
     max_concurrency: int = 5,
+    base_entities: list[NormalizedEntity] | None = None,
+    base_relationships: list[NormalizedRelationship] | None = None,
 ) -> tuple[
     list[NormalizedEntity], list[NormalizedRelationship], list[dict], list[dict]
 ]:
     """Merge multiple chapters' KG results into a single unified graph.
+
+    If base_entities/base_relationships are provided, they seed the master graph
+    and all chapters are merged into them (incremental mode).
 
     For each chapter (sorted by chapter_index):
     1. Rule-based merge via merge_normalized_entities()
@@ -1272,8 +1287,7 @@ def run_cross_chapter_merge(
     4. Batch LLM merge decisions
     5. Union-Find finalization
 
-    Returns (final_entities, final_relationships, llm_merge_results).
-    Also logs scaling metrics per chapter-merge step.
+    Returns (final_entities, final_relationships, llm_merge_results, scaling_metrics).
     """
     embeddings_model = OpenAIEmbeddings(model=config["embedding_model"])
     merge_chain = setup_merge_chain(config)
@@ -1346,9 +1360,103 @@ def run_cross_chapter_merge(
     timings: dict[str, list[float]] = defaultdict(list)
 
     sorted_chapters = sorted(chapter_results.keys())
-    logger.info(
-        "Cross-chapter merge: %d chapters %s", len(sorted_chapters), sorted_chapters
-    )
+    has_base = base_entities is not None and base_relationships is not None
+
+    if has_base:
+        logger.info(
+            "Cross-chapter merge: seeding from base graph (%d entities, %d rels), "
+            "adding %d chapters %s",
+            len(base_entities),
+            len(base_relationships),
+            len(sorted_chapters),
+            sorted_chapters,
+        )
+    else:
+        logger.info(
+            "Cross-chapter merge: %d chapters %s",
+            len(sorted_chapters),
+            sorted_chapters,
+        )
+
+    def _seed_master(
+        seed_entities: list[NormalizedEntity],
+        seed_relationships: list[NormalizedRelationship],
+    ) -> None:
+        """Seed the master graph from a list of entities and relationships."""
+        nonlocal \
+            master_entities, \
+            master_relationships, \
+            master_embeddings, \
+            master_entity_order
+        for e in seed_entities:
+            new_id = str(uuid_module.uuid4())
+            new_entity = NormalizedEntity(
+                id=new_id,
+                name=e.name,
+                type=e.type,
+                aliases=e.aliases,
+                description=e.description,
+                source_paragraph_ids=list(e.source_paragraph_ids),
+                source_locations=list(e.source_locations),
+                occurrence_count=e.occurrence_count,
+                merged_from_ids=list(e.merged_from_ids),
+                relationship_ids=[],
+            )
+            master_entities.append(new_entity)
+            uf_parent[new_id] = new_id
+            uf_representative[new_id] = new_entity
+
+        old_to_new = {}
+        for old_e, new_e in zip(seed_entities, master_entities, strict=True):
+            old_to_new[old_e.id] = new_e.id
+        master_entity_lookup = {e.id: e for e in master_entities}
+        for rel in seed_relationships:
+            new_source = old_to_new.get(rel.source_id)
+            new_target = old_to_new.get(rel.target_id)
+            if new_source and new_target:
+                new_rel = NormalizedRelationship(
+                    id=str(uuid_module.uuid4()),
+                    source_id=new_source,
+                    target_id=new_target,
+                    source_entity_name=rel.source_entity_name,
+                    target_entity_name=rel.target_entity_name,
+                    relation_type=rel.relation_type,
+                    temporal_context=rel.temporal_context,
+                    paragraph_id=rel.paragraph_id,
+                    book_index=rel.book_index,
+                    chapter_index=rel.chapter_index,
+                    page=rel.page,
+                )
+                master_relationships.append(new_rel)
+                if new_source in master_entity_lookup:
+                    master_entity_lookup[new_source].relationship_ids.append(new_rel.id)
+                if new_target in master_entity_lookup:
+                    master_entity_lookup[new_target].relationship_ids.append(new_rel.id)
+
+        t0 = time.perf_counter()
+        texts = [create_entity_text(e) for e in master_entities]
+        master_embeddings = np.array(embeddings_model.embed_documents(texts))
+        master_entity_order = [e.id for e in master_entities]
+        timings["embedding"].append(time.perf_counter() - t0)
+
+    # Seed from base graph if provided; otherwise first chapter seeds in the loop
+    if has_base:
+        _seed_master(base_entities, base_relationships)
+        scaling_metrics.append(
+            {
+                "step": "base",
+                "chapter_index": "base",
+                "master_size": len(master_entities),
+                "n_new": len(master_entities),
+                "n_rule_merged": 0,
+                "n_candidates": 0,
+                "n_llm_checked": 0,
+                "n_llm_merged": 0,
+            }
+        )
+        logger.info(
+            "  Seeded master from base graph: %d entities", len(master_entities)
+        )
 
     for step, ch_idx in enumerate(sorted_chapters):
         ch_entities, ch_relationships = chapter_results[ch_idx]
@@ -1359,65 +1467,9 @@ def run_cross_chapter_merge(
             len(ch_relationships),
         )
 
-        if step == 0:
-            # First chapter: seed the master graph
-            for e in ch_entities:
-                new_id = str(uuid_module.uuid4())
-                new_entity = NormalizedEntity(
-                    id=new_id,
-                    name=e.name,
-                    type=e.type,
-                    aliases=e.aliases,
-                    description=e.description,
-                    source_paragraph_ids=list(e.source_paragraph_ids),
-                    source_locations=list(e.source_locations),
-                    occurrence_count=e.occurrence_count,
-                    merged_from_ids=list(e.merged_from_ids),
-                    relationship_ids=[],
-                )
-                master_entities.append(new_entity)
-                uf_parent[new_id] = new_id
-                uf_representative[new_id] = new_entity
-
-            # Remap relationships for first chapter
-            old_to_new = {}
-            for old_e, new_e in zip(ch_entities, master_entities, strict=True):
-                old_to_new[old_e.id] = new_e.id
-            master_entity_lookup = {e.id: e for e in master_entities}
-            for rel in ch_relationships:
-                new_source = old_to_new.get(rel.source_id)
-                new_target = old_to_new.get(rel.target_id)
-                if new_source and new_target:
-                    new_rel = NormalizedRelationship(
-                        id=str(uuid_module.uuid4()),
-                        source_id=new_source,
-                        target_id=new_target,
-                        source_entity_name=rel.source_entity_name,
-                        target_entity_name=rel.target_entity_name,
-                        relation_type=rel.relation_type,
-                        temporal_context=rel.temporal_context,
-                        paragraph_id=rel.paragraph_id,
-                        book_index=rel.book_index,
-                        chapter_index=rel.chapter_index,
-                        page=rel.page,
-                    )
-                    master_relationships.append(new_rel)
-                    if new_source in master_entity_lookup:
-                        master_entity_lookup[new_source].relationship_ids.append(
-                            new_rel.id
-                        )
-                    if new_target in master_entity_lookup:
-                        master_entity_lookup[new_target].relationship_ids.append(
-                            new_rel.id
-                        )
-
-            # Embed all entities from first chapter
-            t0 = time.perf_counter()
-            texts = [create_entity_text(e) for e in master_entities]
-            master_embeddings = np.array(embeddings_model.embed_documents(texts))
-            master_entity_order = [e.id for e in master_entities]
-            timings["embedding"].append(time.perf_counter() - t0)
-
+        if not has_base and step == 0:
+            # First chapter seeds the master graph (no base provided)
+            _seed_master(ch_entities, ch_relationships)
             scaling_metrics.append(
                 {
                     "step": step,
@@ -1433,7 +1485,7 @@ def run_cross_chapter_merge(
             logger.info("  Seeded master with %d entities", len(master_entities))
             continue
 
-        # Steps 2+: merge into existing master
+        # Merge into existing master
 
         # 1. Rule-based merge
         t0 = time.perf_counter()
@@ -1657,6 +1709,39 @@ def run_cross_chapter_merge(
 
 
 # ---------------------------------------------------------------------------
+# JSON serialization (lossless)
+# ---------------------------------------------------------------------------
+
+
+def save_entities_json(entities: list[NormalizedEntity], path: Path) -> None:
+    """Save entities as JSON (lossless)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = [e.model_dump() for e in entities]
+    path.write_text(json.dumps(data, indent=2))
+
+
+def save_relationships_json(
+    relationships: list[NormalizedRelationship], path: Path
+) -> None:
+    """Save relationships as JSON (lossless)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = [r.model_dump() for r in relationships]
+    path.write_text(json.dumps(data, indent=2))
+
+
+def load_entities_json(path: Path) -> list[NormalizedEntity]:
+    """Load entities from JSON."""
+    data = json.loads(path.read_text())
+    return [NormalizedEntity.model_validate(d) for d in data]
+
+
+def load_relationships_json(path: Path) -> list[NormalizedRelationship]:
+    """Load relationships from JSON."""
+    data = json.loads(path.read_text())
+    return [NormalizedRelationship.model_validate(d) for d in data]
+
+
+# ---------------------------------------------------------------------------
 # Export
 # ---------------------------------------------------------------------------
 
@@ -1668,8 +1753,13 @@ def export_results(
     output_dir: Path,
     skip_visualization: bool = False,
 ) -> None:
-    """Export pipeline results to CSV files and optional PyVis visualization."""
+    """Export pipeline results to JSON + CSV files and optional PyVis visualization."""
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # JSON (lossless)
+    save_entities_json(entities, output_dir / "entities.json")
+    save_relationships_json(relationships, output_dir / "relationships.json")
+    logger.info("Exported JSON to %s", output_dir)
 
     # Entities CSV
     entity_records = []
@@ -1795,10 +1885,26 @@ def load_paragraphs(book_index: int, chapter_index: int) -> list[dict]:
 def load_chapter_results(
     chapter_dir: Path,
 ) -> tuple[list[NormalizedEntity], list[NormalizedRelationship]] | None:
-    """Load cached chapter results from CSV files.
+    """Load cached chapter results from JSON (preferred) or CSV files.
 
     Returns (entities, relationships) or None if files don't exist.
     """
+    # Prefer lossless JSON format
+    entities_json = chapter_dir / "entities.json"
+    relationships_json = chapter_dir / "relationships.json"
+    if entities_json.exists() and relationships_json.exists():
+        entities = load_entities_json(entities_json)
+        relationships = load_relationships_json(relationships_json)
+        # Populate relationship_ids on entities
+        entity_lookup = {e.id: e for e in entities}
+        for rel in relationships:
+            if rel.source_id in entity_lookup:
+                entity_lookup[rel.source_id].relationship_ids.append(rel.id)
+            if rel.target_id in entity_lookup:
+                entity_lookup[rel.target_id].relationship_ids.append(rel.id)
+        return entities, relationships
+
+    # Fall back to CSV
     entities_path = chapter_dir / "entities.csv"
     relationships_path = chapter_dir / "relationships.csv"
 
@@ -1909,9 +2015,65 @@ def load_chapter_results(
     return entities, relationships
 
 
-def main():
+# ---------------------------------------------------------------------------
+# Graph load/save
+# ---------------------------------------------------------------------------
+
+
+def load_graph(
+    graph_dir: Path,
+) -> tuple[list[NormalizedEntity], list[NormalizedRelationship], dict]:
+    """Load a saved graph (entities, relationships, metadata) from a directory.
+
+    Tries JSON first, falls back to CSV.
+    """
+    # Try JSON first, fall back to CSV via load_chapter_results
+    if (graph_dir / "entities.json").exists():
+        entities = load_entities_json(graph_dir / "entities.json")
+        relationships = load_relationships_json(graph_dir / "relationships.json")
+        # Populate relationship_ids on entities
+        entity_lookup = {e.id: e for e in entities}
+        for rel in relationships:
+            if rel.source_id in entity_lookup:
+                entity_lookup[rel.source_id].relationship_ids.append(rel.id)
+            if rel.target_id in entity_lookup:
+                entity_lookup[rel.target_id].relationship_ids.append(rel.id)
+    else:
+        result = load_chapter_results(graph_dir)
+        if result is None:
+            msg = f"No entities.json or entities.csv found in {graph_dir}"
+            raise FileNotFoundError(msg)
+        entities, relationships = result
+
+    metadata_path = graph_dir / "metadata.json"
+    metadata = json.loads(metadata_path.read_text()) if metadata_path.exists() else {}
+
+    return entities, relationships, metadata
+
+
+def save_graph_metadata(graph_dir: Path, metadata: dict) -> None:
+    """Write metadata.json for a graph directory."""
+    graph_dir.mkdir(parents=True, exist_ok=True)
+    (graph_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
+
+
+def main():  # noqa: PLR0911
     parser = argparse.ArgumentParser(
-        description="Run KG extraction pipeline on book chapter(s)."
+        description="Run KG extraction pipeline on book chapter(s).",
+        epilog="""Examples:
+  # Single chapter extraction (writes to centralized cache)
+  %(prog)s --book-index 3 --chapter-index 4
+
+  # Extract + merge chapters 2,3
+  %(prog)s --book-index 3 --chapters 2 3
+
+  # Add chapter 4 to an existing graph incrementally
+  %(prog)s --book-index 3 --chapters 4 --base-graph output/kg/graphs/book3_ch2-3
+
+  # Custom graph name
+  %(prog)s --book-index 3 --chapters 2 3 4 --graph-name book3_greeks
+""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--book-index", type=int, required=True, help="Book index in the database"
@@ -1930,10 +2092,16 @@ def main():
         help="Multiple chapter indices for cross-chapter merge (mutually exclusive with --chapter-index)",
     )
     parser.add_argument(
-        "--output-dir",
+        "--base-graph",
         type=str,
         default=None,
-        help="Output directory (default: auto-generated from book/chapter indices)",
+        help="Path to a previous graph directory to extend incrementally",
+    )
+    parser.add_argument(
+        "--graph-name",
+        type=str,
+        default=None,
+        help="Custom name for the output graph directory (default: auto-generated)",
     )
     parser.add_argument(
         "--similarity-threshold",
@@ -1969,6 +2137,10 @@ def main():
         parser.error("--chapter-index and --chapters are mutually exclusive")
     if args.chapter_index is None and args.chapters is None:
         parser.error("Either --chapter-index or --chapters is required")
+    if args.base_graph and args.chapter_index is not None:
+        parser.error(
+            "--base-graph can only be used with --chapters, not --chapter-index"
+        )
 
     # Setup logging
     logging.basicConfig(
@@ -1982,21 +2154,32 @@ def main():
     if args.similarity_threshold is not None:
         config["similarity_threshold"] = args.similarity_threshold
 
-    # --- Single chapter mode (existing behavior) ---
+    # --- Single chapter mode ---
     if args.chapter_index is not None:
-        if args.output_dir:
-            output_dir = Path(args.output_dir)
-        else:
-            output_dir = Path(
-                f"output/kg/book{args.book_index}_chapter{args.chapter_index}"
-            )
+        chapter_dir = Path(
+            f"output/kg/chapters/book{args.book_index}_ch{args.chapter_index}"
+        )
 
         logger.info(
             "KG extraction: book=%d chapter=%d -> %s",
             args.book_index,
             args.chapter_index,
-            output_dir,
+            chapter_dir,
         )
+
+        # Check cache
+        if not args.force:
+            cached = load_chapter_results(chapter_dir)
+            if cached is not None:
+                entities, relationships = cached
+                logger.info(
+                    "Chapter %d: already cached (%d entities, %d relationships). "
+                    "Use --force to regenerate.",
+                    args.chapter_index,
+                    len(entities),
+                    len(relationships),
+                )
+                return
 
         paragraphs = load_paragraphs(args.book_index, args.chapter_index)
         if not paragraphs:
@@ -2020,37 +2203,79 @@ def main():
             final_entities,
             final_relationships,
             llm_results,
-            output_dir,
+            chapter_dir,
             skip_visualization=args.skip_visualization,
         )
-        logger.info("Done. Output written to %s", output_dir)
+        logger.info("Done. Output written to %s", chapter_dir)
         return
 
     # --- Multi-chapter mode ---
     chapters = sorted(args.chapters)
-    if args.output_dir:
-        output_dir = Path(args.output_dir)
+
+    # Load base graph if provided
+    base_entities = None
+    base_relationships = None
+    base_metadata: dict = {}
+    base_chapters: list[int] = []
+
+    if args.base_graph:
+        base_graph_dir = Path(args.base_graph)
+        has_json = (base_graph_dir / "entities.json").exists()
+        has_csv = (base_graph_dir / "entities.csv").exists()
+        if not has_json and not has_csv:
+            logger.error("Base graph not found at %s", base_graph_dir)
+            return
+        base_entities, base_relationships, base_metadata = load_graph(base_graph_dir)
+        base_chapters = base_metadata.get("chapters_included", [])
+        logger.info(
+            "Loaded base graph from %s: %d entities, %d relationships (chapters %s)",
+            base_graph_dir,
+            len(base_entities),
+            len(base_relationships),
+            base_chapters,
+        )
+
+        # Warn about overlapping chapters
+        overlap = set(chapters) & set(base_chapters)
+        if overlap:
+            logger.warning(
+                "Chapters %s already in base graph — they will be skipped",
+                sorted(overlap),
+            )
+            chapters = [ch for ch in chapters if ch not in overlap]
+            if not chapters:
+                logger.error("No new chapters to merge after removing overlaps")
+                return
+
+    # Determine all chapters in final graph (for naming and metadata)
+    all_chapters = sorted(set(base_chapters + chapters))
+
+    # Determine graph output directory
+    if args.graph_name:
+        graph_name = args.graph_name
     else:
-        ch_range = f"{min(chapters)}-{max(chapters)}"
-        output_dir = Path(f"output/kg/book{args.book_index}_ch{ch_range}")
+        ch_range = f"{min(all_chapters)}-{max(all_chapters)}"
+        graph_name = f"book{args.book_index}_ch{ch_range}"
+
+    graph_dir = Path(f"output/kg/graphs/{graph_name}")
 
     logger.info(
         "KG extraction: book=%d chapters=%s -> %s",
         args.book_index,
         chapters,
-        output_dir,
+        graph_dir,
     )
 
-    # Phase 1: Per-chapter extraction (with caching)
+    # Phase 1: Per-chapter extraction (with centralized cache)
     chapter_results: dict[
         int, tuple[list[NormalizedEntity], list[NormalizedRelationship]]
     ] = {}
 
     for ch_idx in chapters:
-        chapter_dir = output_dir / f"chapter_{ch_idx}"
+        cache_dir = Path(f"output/kg/chapters/book{args.book_index}_ch{ch_idx}")
 
         if not args.force:
-            cached = load_chapter_results(chapter_dir)
+            cached = load_chapter_results(cache_dir)
             if cached is not None:
                 entities, relationships = cached
                 logger.info(
@@ -2083,25 +2308,33 @@ def main():
             max_concurrency=args.max_concurrency,
         )
 
+        # Export to centralized chapter cache
         export_results(
             entities,
             relationships,
             llm_results,
-            chapter_dir,
+            cache_dir,
             skip_visualization=args.skip_visualization,
         )
         logger.info(
-            "Chapter %d: exported %d entities, %d relationships",
+            "Chapter %d: exported %d entities, %d relationships to %s",
             ch_idx,
             len(entities),
             len(relationships),
+            cache_dir,
         )
         chapter_results[ch_idx] = (entities, relationships)
 
-    if len(chapter_results) < 2:
+    if not chapter_results:
+        logger.error("No chapter results available for merge")
+        return
+
+    # Need at least 2 total chapters (base + new, or new alone)
+    total_chapters = len(base_chapters) + len(chapter_results)
+    if total_chapters < 2:
         logger.error(
             "Need at least 2 chapters for cross-chapter merge, got %d",
-            len(chapter_results),
+            total_chapters,
         )
         return
 
@@ -2113,28 +2346,46 @@ def main():
             config,
             profile=args.profile,
             max_concurrency=args.max_concurrency,
+            base_entities=base_entities,
+            base_relationships=base_relationships,
         )
     )
 
-    # Phase 3: Export combined results
-    combined_dir = output_dir / "combined"
+    # Phase 3: Export to graph directory
     export_results(
         combined_entities,
         combined_relationships,
         combined_llm_results,
-        combined_dir,
+        graph_dir,
         skip_visualization=args.skip_visualization,
     )
 
     # Export scaling metrics
     if scaling_metrics:
         df_metrics = pd.DataFrame(scaling_metrics)
-        df_metrics.to_csv(combined_dir / "scaling_metrics.csv", index=False)
-        logger.info(
-            "Exported scaling metrics to %s", combined_dir / "scaling_metrics.csv"
-        )
+        df_metrics.to_csv(graph_dir / "scaling_metrics.csv", index=False)
+        logger.info("Exported scaling metrics to %s", graph_dir / "scaling_metrics.csv")
 
-    logger.info("Done. Output written to %s", output_dir)
+    # Save metadata
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+    metadata = {
+        "book_index": args.book_index,
+        "chapters_included": all_chapters,
+        "entity_count": len(combined_entities),
+        "relationship_count": len(combined_relationships),
+        "created_at": base_metadata.get("created_at", now),
+        "updated_at": now,
+        "config": {
+            k: v
+            for k, v in config.items()
+            if k in ("similarity_threshold", "extraction_model", "merge_model")
+        },
+    }
+    if args.base_graph:
+        metadata["base_graph"] = str(args.base_graph)
+    save_graph_metadata(graph_dir, metadata)
+
+    logger.info("Done. Output written to %s", graph_dir)
 
 
 if __name__ == "__main__":
