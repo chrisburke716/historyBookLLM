@@ -14,6 +14,11 @@ if TYPE_CHECKING:
         ChatSession,
         Paragraph,
     )
+    from history_book.database.repositories.kg_repository import (
+        KGEntityRepository,
+        KGGraphRepository,
+        KGRelationshipRepository,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +222,9 @@ class BookRepositoryManager:
         self._paragraph_repo: ParagraphRepository | None = None
         self._chat_session_repo: ChatSessionRepository | None = None
         self._chat_message_repo: ChatMessageRepository | None = None
+        self._kg_entity_repo: KGEntityRepository | None = None
+        self._kg_relationship_repo: KGRelationshipRepository | None = None
+        self._kg_graph_repo: KGGraphRepository | None = None
 
     @property
     def books(self) -> BookRepository:
@@ -253,6 +261,39 @@ class BookRepositoryManager:
             self._chat_message_repo = ChatMessageRepository(self.config)
         return self._chat_message_repo
 
+    @property
+    def kg_entities(self) -> "KGEntityRepository":
+        """Get the KG entity repository."""
+        if self._kg_entity_repo is None:
+            from history_book.database.repositories.kg_repository import (  # noqa: PLC0415
+                KGEntityRepository,
+            )
+
+            self._kg_entity_repo = KGEntityRepository(self.config)
+        return self._kg_entity_repo
+
+    @property
+    def kg_relationships(self) -> "KGRelationshipRepository":
+        """Get the KG relationship repository."""
+        if self._kg_relationship_repo is None:
+            from history_book.database.repositories.kg_repository import (  # noqa: PLC0415
+                KGRelationshipRepository,
+            )
+
+            self._kg_relationship_repo = KGRelationshipRepository(self.config)
+        return self._kg_relationship_repo
+
+    @property
+    def kg_graphs(self) -> "KGGraphRepository":
+        """Get the KG graph metadata repository."""
+        if self._kg_graph_repo is None:
+            from history_book.database.repositories.kg_repository import (  # noqa: PLC0415
+                KGGraphRepository,
+            )
+
+            self._kg_graph_repo = KGGraphRepository(self.config)
+        return self._kg_graph_repo
+
     def close_all(self):
         """Close all repository connections."""
         repositories = [
@@ -261,6 +302,9 @@ class BookRepositoryManager:
             self._paragraph_repo,
             self._chat_session_repo,
             self._chat_message_repo,
+            self._kg_entity_repo,
+            self._kg_relationship_repo,
+            self._kg_graph_repo,
         ]
         for repo in repositories:
             if repo is not None:
@@ -274,3 +318,6 @@ class BookRepositoryManager:
         self._paragraph_repo = None
         self._chat_session_repo = None
         self._chat_message_repo = None
+        self._kg_entity_repo = None
+        self._kg_relationship_repo = None
+        self._kg_graph_repo = None

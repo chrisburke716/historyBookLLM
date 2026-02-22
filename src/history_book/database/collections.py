@@ -29,6 +29,12 @@ def pydantic_field_to_weaviate_property(
         dtype = DataType.NUMBER
     elif annotation is bool:
         dtype = DataType.BOOL
+    elif annotation == list[str]:
+        dtype = DataType.TEXT_ARRAY
+    elif annotation == list[int]:
+        dtype = DataType.INT_ARRAY
+    elif annotation == list[float]:
+        dtype = DataType.NUMBER_ARRAY
     else:
         # Unknown or unsupported type
         return None
