@@ -36,8 +36,7 @@ class KGEntityRepository(WeaviateRepository["KGEntity"]):
         Uses ContainsAny filter on the source_paragraph_ids TEXT_ARRAY field.
         """
         try:
-            collection = self._get_collection()
-            results = collection.query.fetch_objects(
+            results = self.collection.query.fetch_objects(
                 filters=(
                     Filter.by_property("source_paragraph_ids").contains_any(
                         [paragraph_id]
@@ -118,8 +117,7 @@ class KGRelationshipRepository(WeaviateRepository["KGRelationship"]):
         if not entity_ids:
             return []
         try:
-            collection = self._get_collection()
-            results = collection.query.fetch_objects(
+            results = self.collection.query.fetch_objects(
                 filters=(
                     Filter.by_property("entity_ids").contains_any(entity_ids)
                     & Filter.by_property("graph_name").equal(graph_name)
