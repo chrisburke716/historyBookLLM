@@ -61,7 +61,7 @@ class KGEntityRepository(WeaviateRepository["KGEntity"]):
         limit: int = 100,
         threshold: float | None = 0.65,
     ) -> list[tuple["KGEntity", float]]:
-        """Search entities by semantic similarity on search_text.
+        """Search entities by semantic similarity on entity properties.
 
         Args:
             query_text: Text to search for.

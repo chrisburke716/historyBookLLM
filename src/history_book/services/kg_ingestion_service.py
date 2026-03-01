@@ -283,7 +283,7 @@ def assign_ids_single(
 
 
 def create_entity_text(entity: NormalizedEntity) -> str:
-    """Create text representation of entity for embedding / search_text."""
+    """Create text representation of entity for embedding comparisons."""
     parts = [f"Name: {entity.name}", f"Type: {entity.type}"]
     if entity.description:
         parts.append(f"Description: {entity.description}")
@@ -1825,7 +1825,7 @@ class KGIngestionService:
                 )
                 kg_relationships.append(kg_rel)
 
-        # Batch insert (pass None vectors — Weaviate auto-vectorizes search_text)
+        # Batch insert (pass None vectors — Weaviate auto-vectorizes from source properties)
         if kg_entities:
             self.repositories.kg_entities.batch_create_with_vectors(
                 [(e, None) for e in kg_entities]
@@ -1950,5 +1950,4 @@ class KGIngestionService:
             source_pages=sorted(source_pages),
             source_paragraph_ids=entity.source_paragraph_ids,
             merged_from_count=len(entity.merged_from_ids),
-            search_text=create_entity_text(entity),
         )

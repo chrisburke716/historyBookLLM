@@ -21,7 +21,7 @@ class EntityType(StrEnum):
 class KGEntity(BaseModel):
     """A normalized entity in a knowledge graph.
 
-    Stored in Weaviate with vector search on search_text.
+    Stored in Weaviate with vector search on name, type, description, and aliases.
     """
 
     id: str | None = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -38,9 +38,13 @@ class KGEntity(BaseModel):
     source_pages: list[int] = Field(default_factory=list)
     source_paragraph_ids: list[str] = Field(default_factory=list)
     merged_from_count: int = 0
-    search_text: str = ""  # "Name: X | Type: Y | Description: Z | Aliases: ..."
 
-    vectorize_fields: ClassVar[list[str]] = ["search_text"]
+    vectorize_fields: ClassVar[list[str]] = [
+        "name",
+        "entity_type",
+        "description",
+        "aliases",
+    ]
 
 
 class KGRelationship(BaseModel):
