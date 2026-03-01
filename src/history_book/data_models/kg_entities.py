@@ -2,9 +2,20 @@
 
 import uuid
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import ClassVar
 
 from pydantic import BaseModel, Field
+
+
+class EntityType(StrEnum):
+    """Allowed entity types for knowledge graph entities."""
+
+    PERSON = "person"
+    POLITY = "polity"
+    PLACE = "place"
+    EVENT = "event"
+    CONCEPT = "concept"
 
 
 class KGEntity(BaseModel):
@@ -16,7 +27,7 @@ class KGEntity(BaseModel):
     id: str | None = Field(default_factory=lambda: str(uuid.uuid4()))
     graph_name: str
     name: str
-    entity_type: str  # person, polity, place, event
+    entity_type: str  # validated via EntityType enum in extraction chain
     aliases: list[str] = Field(default_factory=list)
     description: str = ""
     occurrence_count: int = 1

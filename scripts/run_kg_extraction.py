@@ -11,7 +11,10 @@ Output structure:
 Single chapter (writes to centralized cache):
     poetry run python scripts/run_kg_extraction.py --book-index 3 --chapter-index 4
 
-Multi-chapter (extract + merge):
+All chapters in a book (extract + merge):
+    poetry run python scripts/run_kg_extraction.py --book-index 3
+
+Specific chapters (extract + merge):
     poetry run python scripts/run_kg_extraction.py --book-index 3 --chapters 2 3
 
 Incremental (add chapter to existing graph):
@@ -26,6 +29,8 @@ import logging
 import os
 import warnings
 
+from history_book.database.config.database_config import WeaviateConfig
+from history_book.database.repositories.book_repository import BookRepositoryManager
 from history_book.services.kg_ingestion_service import KGIngestionService
 
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
@@ -41,7 +46,10 @@ def main():
   # Single chapter extraction (writes to centralized cache)
   %(prog)s --book-index 3 --chapter-index 4
 
-  # Extract + merge chapters 2,3
+  # All chapters in a book (extract + merge)
+  %(prog)s --book-index 3
+
+  # Extract + merge specific chapters
   %(prog)s --book-index 3 --chapters 2 3
 
   # Add chapter 4 to an existing graph incrementally
@@ -109,21 +117,34 @@ def main():
     )
     args = parser.parse_args()
 
-    # Validate mutual exclusivity
-    if args.chapter_index is not None and args.chapters is not None:
-        parser.error("--chapter-index and --chapters are mutually exclusive")
-    if args.chapter_index is None and args.chapters is None:
-        parser.error("Either --chapter-index or --chapters is required")
-    if args.base_graph and args.chapter_index is not None:
-        parser.error(
-            "--base-graph can only be used with --chapters, not --chapter-index"
-        )
-
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
         datefmt="%H:%M:%S",
     )
+
+    # Validate mutual exclusivity
+    if args.chapter_index is not None and args.chapters is not None:
+        parser.error("--chapter-index and --chapters are mutually exclusive")
+    if args.base_graph and args.chapter_index is not None:
+        parser.error(
+            "--base-graph can only be used with --chapters, not --chapter-index"
+        )
+
+    # If only --book-index given, discover all chapters for that book
+    if args.chapter_index is None and args.chapters is None:
+        mgr = BookRepositoryManager(WeaviateConfig.from_environment())
+        chapters = mgr.chapters.find_by_book_index(args.book_index)
+        mgr.close_all()
+        if not chapters:
+            parser.error(f"No chapters found for book index {args.book_index}")
+        args.chapters = sorted(ch.chapter_index for ch in chapters)
+        logger.info(
+            "No chapters specified — running all %d chapters for book %d: %s",
+            len(args.chapters),
+            args.book_index,
+            args.chapters,
+        )
 
     # Build pipeline config overrides
     pipeline_config = {}

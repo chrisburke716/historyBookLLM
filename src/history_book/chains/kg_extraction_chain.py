@@ -7,6 +7,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
+from history_book.data_models.kg_entities import EntityType
+
 # ---------------------------------------------------------------------------
 # LLM output schemas
 # ---------------------------------------------------------------------------
@@ -14,7 +16,7 @@ from pydantic import BaseModel, Field
 
 class Entity(BaseModel):
     name: str
-    type: str
+    type: EntityType
     aliases: list[str] = Field(default_factory=list)
     description: str | None = None
 
@@ -45,6 +47,7 @@ Extract only the most historically significant entities and relationships from t
 - polity: States, empires, peoples, organizations, political bodies (e.g., Rome, Etruscans, Senate, Roman Republic)
 - place: Major cities, regions, bodies of water (e.g., Italy, Carthage, Mediterranean)
 - event: Wars, revolts, reforms, conquests, pivotal moments (e.g., Punic Wars, revolt of the Latin cities)
+- concept: Religions, belief systems, philosophies, ideologies (e.g., Christianity, Judaism, Stoicism, democracy)
 
 **RELATIONSHIP TYPES** (use exactly one of these):
 - ruled: A person or polity governed a place or polity
@@ -70,10 +73,10 @@ Extract only the most historically significant entities and relationships from t
 
 **DO NOT EXTRACT**:
 - Unnamed individuals or groups ("an astronomer", "his great-uncle", "money-lenders")
-- Abstract concepts ("Roman power", "political authority", "civil war" as a concept)
+- Vague abstractions ("Roman power", "political authority", "civil war" as a concept)
 - Generic descriptions ("sea-going vessels", "land and water routes", "frontier provinces")
 - Infrastructure or objects ("roads", "aqueducts", "temples")
-- Cultural traditions or practices ("European tradition", "Greek mythology")
+- Cultural traditions or practices ("European tradition", "Greek mythology") — but DO extract named religions/philosophies as concept
 - Minor geographic features unless historically pivotal
 - Entities mentioned only in passing or as comparisons
 

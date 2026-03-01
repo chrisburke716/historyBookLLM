@@ -109,6 +109,7 @@ TYPE_COLORS = {
     "polity": "#45B7D1",
     "place": "#4ECDC4",
     "event": "#FFA07A",
+    "concept": "#59A14F",
 }
 
 
