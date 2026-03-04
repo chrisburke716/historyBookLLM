@@ -13,6 +13,12 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 
 
+class RuleMergeFilter(BaseModel):
+    should_merge: bool = Field(
+        description="True if the two entities are the same real-world entity"
+    )
+
+
 class MergedEntity(BaseModel):
     name: str
     type: str
@@ -74,9 +80,43 @@ Description: {entity2_description}
 """
 
 
+RULE_FILTER_PROMPT = """You are an expert historian performing entity resolution.
+
+Two entities matched by name or alias. Are they the SAME real-world entity?
+
+**Entity 1:**
+Name: {entity1_name}
+Type: {entity1_type}
+Aliases: {entity1_aliases}
+Description: {entity1_description}
+
+**Entity 2:**
+Name: {entity2_name}
+Type: {entity2_type}
+Aliases: {entity2_aliases}
+Description: {entity2_description}
+
+Default to merging. Only return false if they are clearly distinct entities (e.g., different people who share a surname, or a city vs an empire with the same name)."""
+
+
 # ---------------------------------------------------------------------------
 # Chain factory
 # ---------------------------------------------------------------------------
+
+
+def create_rule_filter_chain(config: dict):
+    """Create a lightweight filter chain for rule-based merge candidates.
+
+    Returns Runnable that takes the same 8-field entity pair input as
+    create_merge_chain and returns RuleMergeFilter (just a boolean).
+    """
+    llm = ChatOpenAI(
+        model=config["rule_filter_model"],
+        temperature=config["rule_filter_temperature"],
+        request_timeout=30,
+    )
+    prompt = ChatPromptTemplate.from_template(RULE_FILTER_PROMPT)
+    return prompt | llm.with_structured_output(RuleMergeFilter)
 
 
 def create_merge_chain(config: dict):

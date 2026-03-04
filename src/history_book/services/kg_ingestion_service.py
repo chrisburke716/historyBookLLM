@@ -24,7 +24,11 @@ from history_book.chains.kg_extraction_chain import (
     ExtractionResult,
     create_extraction_chain,
 )
-from history_book.chains.kg_merge_chain import MergedEntity, create_merge_chain
+from history_book.chains.kg_merge_chain import (
+    MergedEntity,
+    create_merge_chain,
+    create_rule_filter_chain,
+)
 from history_book.data_models.kg_entities import KGEntity, KGGraph, KGRelationship
 from history_book.database.config.database_config import WeaviateConfig
 from history_book.database.repositories.book_repository import BookRepositoryManager
@@ -40,6 +44,8 @@ DEFAULT_CONFIG = {
     "extraction_temperature": 0.0,
     "merge_model": "gpt-5-mini",
     "merge_temperature": 0.0,
+    "rule_filter_model": "gpt-4.1-nano",
+    "rule_filter_temperature": 0.0,
     "embedding_model": "text-embedding-3-small",
     "similarity_threshold": 0.65,
     "max_llm_candidates": 100,
@@ -298,10 +304,15 @@ def merge_into_master_rule_based(
     master_entities: list[NormalizedEntity],
     master_relationships: list[NormalizedRelationship],
     paragraph_meta: dict | None = None,
+    rule_filter_chain=None,
+    max_concurrency: int = 5,
 ) -> tuple[
     list[NormalizedEntity], list[NormalizedRelationship], list[NormalizedEntity]
 ]:
     """Merge new paragraph entities into master graph using exact name + alias matching.
+
+    If rule_filter_chain is provided, rule-matched pairs are verified by a lightweight
+    LLM call before merging (rejects clearly distinct entities sharing a name/alias).
 
     Returns (updated_master_entities, updated_master_relationships, newly_added_entities).
     """
@@ -313,9 +324,9 @@ def merge_into_master_rule_based(
             if alias_key:
                 name_to_master[alias_key] = me
 
-    old_id_to_master_id: dict[str, str] = {}
-    newly_added: list[NormalizedEntity] = []
-    rule_merges = 0
+    # --- Phase 1: Collect matches ---
+    pending_merges: list[tuple[EntityWithId, NormalizedEntity]] = []
+    unmatched: list[EntityWithId] = []
 
     for entity in new_entities:
         key = entity.name.lower().strip()
@@ -327,6 +338,47 @@ def merge_into_master_rule_based(
                 if match:
                     break
 
+        if match and entity.type != match.type:
+            logger.debug(
+                "    Type mismatch: '%s' (%s) vs '%s' (%s) — skipping",
+                entity.name,
+                entity.type,
+                match.name,
+                match.type,
+            )
+            match = None
+
+        if match:
+            pending_merges.append((entity, match))
+        else:
+            unmatched.append(entity)
+
+    # --- Phase 2: LLM filter ---
+    n_filtered = 0
+    if rule_filter_chain and pending_merges:
+        inputs = [_build_merge_inputs(e, m) for e, m in pending_merges]
+        decisions = _batch_with_retry(rule_filter_chain, inputs, max_concurrency)
+        approved = []
+        for (entity, match), decision in zip(pending_merges, decisions, strict=True):
+            if decision.should_merge:
+                approved.append((entity, match))
+            else:
+                n_filtered += 1
+                logger.info(
+                    "  LLM filter rejected: '%s' (%s) != '%s' (%s)",
+                    entity.name,
+                    entity.type,
+                    match.name,
+                    match.type,
+                )
+                unmatched.append(entity)
+        pending_merges = approved
+
+    # --- Phase 3: Apply merges ---
+    old_id_to_master_id: dict[str, str] = {}
+    newly_added: list[NormalizedEntity] = []
+
+    for entity, match in pending_merges:
         loc = None
         if paragraph_meta:
             loc = {
@@ -337,55 +389,64 @@ def merge_into_master_rule_based(
                 "paragraph_id": paragraph_meta.get("id"),
             }
 
-        if match:
-            rule_merges += 1
-            logger.debug("    Rule merge: '%s' -> '%s'", entity.name, match.name)
-            match.aliases = list(set(match.aliases + entity.aliases + [entity.name]))
-            match.aliases = [
-                a
-                for a in match.aliases
-                if a.lower().strip() != match.name.lower().strip()
-            ]
-            if entity.description:
-                match.description = (
-                    f"{match.description} | {entity.description}"
-                    if match.description
-                    else entity.description
-                )
-            match.source_paragraph_ids = list(
-                set(match.source_paragraph_ids + [entity.paragraph_id])
+        logger.debug("    Rule merge: '%s' -> '%s'", entity.name, match.name)
+        match.aliases = list(set(match.aliases + entity.aliases + [entity.name]))
+        match.aliases = [
+            a for a in match.aliases if a.lower().strip() != match.name.lower().strip()
+        ]
+        if entity.description:
+            match.description = (
+                f"{match.description} | {entity.description}"
+                if match.description
+                else entity.description
             )
-            if loc:
-                match.source_locations.append(loc)
-            match.occurrence_count += 1
-            match.merged_from_ids.append(entity.id)
-            old_id_to_master_id[entity.id] = match.id
-            for alias in entity.aliases:
-                alias_key = alias.lower().strip()
-                if alias_key:
-                    name_to_master[alias_key] = match
-        else:
-            new_master = NormalizedEntity(
-                id=str(uuid_module.uuid4()),
-                name=entity.name,
-                type=entity.type,
-                aliases=entity.aliases,
-                description=entity.description or "",
-                source_paragraph_ids=[entity.paragraph_id],
-                source_locations=[loc] if loc else [],
-                occurrence_count=1,
-                merged_from_ids=[entity.id],
-                relationship_ids=[],
-            )
-            master_entities.append(new_master)
-            newly_added.append(new_master)
-            old_id_to_master_id[entity.id] = new_master.id
-            name_to_master[key] = new_master
-            for alias in entity.aliases:
-                alias_key = alias.lower().strip()
-                if alias_key:
-                    name_to_master[alias_key] = new_master
+        match.source_paragraph_ids = list(
+            set(match.source_paragraph_ids + [entity.paragraph_id])
+        )
+        if loc:
+            match.source_locations.append(loc)
+        match.occurrence_count += 1
+        match.merged_from_ids.append(entity.id)
+        old_id_to_master_id[entity.id] = match.id
+        for alias in entity.aliases:
+            alias_key = alias.lower().strip()
+            if alias_key:
+                name_to_master[alias_key] = match
 
+    for entity in unmatched:
+        key = entity.name.lower().strip()
+        loc = None
+        if paragraph_meta:
+            loc = {
+                "book_index": paragraph_meta.get("book_index"),
+                "chapter_index": paragraph_meta.get("chapter_index"),
+                "page": paragraph_meta.get("page"),
+                "paragraph_index": paragraph_meta.get("paragraph_index"),
+                "paragraph_id": paragraph_meta.get("id"),
+            }
+
+        new_master = NormalizedEntity(
+            id=str(uuid_module.uuid4()),
+            name=entity.name,
+            type=entity.type,
+            aliases=entity.aliases,
+            description=entity.description or "",
+            source_paragraph_ids=[entity.paragraph_id],
+            source_locations=[loc] if loc else [],
+            occurrence_count=1,
+            merged_from_ids=[entity.id],
+            relationship_ids=[],
+        )
+        master_entities.append(new_master)
+        newly_added.append(new_master)
+        old_id_to_master_id[entity.id] = new_master.id
+        name_to_master[key] = new_master
+        for alias in entity.aliases:
+            alias_key = alias.lower().strip()
+            if alias_key:
+                name_to_master[alias_key] = new_master
+
+    # --- Remap relationships ---
     master_entity_lookup = {e.id: e for e in master_entities}
     for rel in new_relationships:
         new_source = old_id_to_master_id.get(rel.source_id)
@@ -412,8 +473,15 @@ def merge_into_master_rule_based(
             if new_target in master_entity_lookup:
                 master_entity_lookup[new_target].relationship_ids.append(rel.id)
 
-    if rule_merges:
-        logger.debug("    %d rule-based merge(s)", rule_merges)
+    n_merged = len(pending_merges)
+    if n_merged or n_filtered:
+        logger.debug(
+            "    rule: %d matched, %d filtered, %d merged, %d new",
+            n_merged + n_filtered,
+            n_filtered,
+            n_merged,
+            len(newly_added),
+        )
 
     return master_entities, master_relationships, newly_added
 
@@ -423,10 +491,15 @@ def merge_normalized_entities(
     new_relationships: list[NormalizedRelationship],
     master_entities: list[NormalizedEntity],
     master_relationships: list[NormalizedRelationship],
+    rule_filter_chain=None,
+    max_concurrency: int = 5,
 ) -> tuple[
     list[NormalizedEntity], list[NormalizedRelationship], list[NormalizedEntity]
 ]:
     """Merge NormalizedEntities into master using rule-based name/alias matching.
+
+    If rule_filter_chain is provided, rule-matched pairs are verified by a lightweight
+    LLM call before merging (rejects clearly distinct entities sharing a name/alias).
 
     Works for chapter->book and book->volume merges.
     Returns (updated_master_entities, updated_master_relationships, newly_added_entities).
@@ -439,9 +512,9 @@ def merge_normalized_entities(
             if alias_key:
                 name_to_master[alias_key] = me
 
-    old_id_to_master_id: dict[str, str] = {}
-    newly_added: list[NormalizedEntity] = []
-    rule_merges = 0
+    # --- Phase 1: Collect matches ---
+    pending_merges: list[tuple[NormalizedEntity, NormalizedEntity]] = []
+    unmatched: list[NormalizedEntity] = []
 
     for entity in new_entities:
         key = entity.name.lower().strip()
@@ -453,63 +526,103 @@ def merge_normalized_entities(
                 if match:
                     break
 
-        if match:
-            rule_merges += 1
+        if match and entity.type != match.type:
             logger.debug(
-                "    Cross-chapter rule merge: '%s' -> '%s'", entity.name, match.name
+                "    Type mismatch: '%s' (%s) vs '%s' (%s) — skipping",
+                entity.name,
+                entity.type,
+                match.name,
+                match.type,
             )
-            match.aliases = list(set(match.aliases + entity.aliases + [entity.name]))
-            match.aliases = [
-                a
-                for a in match.aliases
-                if a.lower().strip() != match.name.lower().strip()
-            ]
-            if entity.description:
-                match.description = (
-                    f"{match.description} | {entity.description}"
-                    if match.description
-                    else entity.description
-                )
-            match.source_paragraph_ids = list(
-                set(match.source_paragraph_ids + entity.source_paragraph_ids)
-            )
-            existing_pids = {loc.get("paragraph_id") for loc in match.source_locations}
-            for loc in entity.source_locations:
-                if loc.get("paragraph_id") not in existing_pids:
-                    match.source_locations.append(loc)
-                    existing_pids.add(loc.get("paragraph_id"))
-            match.occurrence_count += entity.occurrence_count
-            match.merged_from_ids = list(
-                set(match.merged_from_ids + entity.merged_from_ids)
-            )
-            old_id_to_master_id[entity.id] = match.id
-            for alias in entity.aliases:
-                alias_key = alias.lower().strip()
-                if alias_key:
-                    name_to_master[alias_key] = match
-        else:
-            new_id = str(uuid_module.uuid4())
-            new_master = NormalizedEntity(
-                id=new_id,
-                name=entity.name,
-                type=entity.type,
-                aliases=entity.aliases,
-                description=entity.description,
-                source_paragraph_ids=list(entity.source_paragraph_ids),
-                source_locations=list(entity.source_locations),
-                occurrence_count=entity.occurrence_count,
-                merged_from_ids=list(entity.merged_from_ids),
-                relationship_ids=[],
-            )
-            master_entities.append(new_master)
-            newly_added.append(new_master)
-            old_id_to_master_id[entity.id] = new_id
-            name_to_master[key] = new_master
-            for alias in entity.aliases:
-                alias_key = alias.lower().strip()
-                if alias_key:
-                    name_to_master[alias_key] = new_master
+            match = None
 
+        if match:
+            pending_merges.append((entity, match))
+        else:
+            unmatched.append(entity)
+
+    # --- Phase 2: LLM filter ---
+    n_filtered = 0
+    if rule_filter_chain and pending_merges:
+        inputs = [_build_merge_inputs(e, m) for e, m in pending_merges]
+        decisions = _batch_with_retry(rule_filter_chain, inputs, max_concurrency)
+        approved = []
+        for (entity, match), decision in zip(pending_merges, decisions, strict=True):
+            if decision.should_merge:
+                approved.append((entity, match))
+            else:
+                n_filtered += 1
+                logger.info(
+                    "  LLM filter rejected: '%s' (%s) != '%s' (%s)",
+                    entity.name,
+                    entity.type,
+                    match.name,
+                    match.type,
+                )
+                unmatched.append(entity)
+        pending_merges = approved
+
+    # --- Phase 3: Apply merges ---
+    old_id_to_master_id: dict[str, str] = {}
+    newly_added: list[NormalizedEntity] = []
+
+    for entity, match in pending_merges:
+        logger.debug(
+            "    Cross-chapter rule merge: '%s' -> '%s'", entity.name, match.name
+        )
+        match.aliases = list(set(match.aliases + entity.aliases + [entity.name]))
+        match.aliases = [
+            a for a in match.aliases if a.lower().strip() != match.name.lower().strip()
+        ]
+        if entity.description:
+            match.description = (
+                f"{match.description} | {entity.description}"
+                if match.description
+                else entity.description
+            )
+        match.source_paragraph_ids = list(
+            set(match.source_paragraph_ids + entity.source_paragraph_ids)
+        )
+        existing_pids = {loc.get("paragraph_id") for loc in match.source_locations}
+        for loc in entity.source_locations:
+            if loc.get("paragraph_id") not in existing_pids:
+                match.source_locations.append(loc)
+                existing_pids.add(loc.get("paragraph_id"))
+        match.occurrence_count += entity.occurrence_count
+        match.merged_from_ids = list(
+            set(match.merged_from_ids + entity.merged_from_ids)
+        )
+        old_id_to_master_id[entity.id] = match.id
+        for alias in entity.aliases:
+            alias_key = alias.lower().strip()
+            if alias_key:
+                name_to_master[alias_key] = match
+
+    for entity in unmatched:
+        key = entity.name.lower().strip()
+        new_id = str(uuid_module.uuid4())
+        new_master = NormalizedEntity(
+            id=new_id,
+            name=entity.name,
+            type=entity.type,
+            aliases=entity.aliases,
+            description=entity.description,
+            source_paragraph_ids=list(entity.source_paragraph_ids),
+            source_locations=list(entity.source_locations),
+            occurrence_count=entity.occurrence_count,
+            merged_from_ids=list(entity.merged_from_ids),
+            relationship_ids=[],
+        )
+        master_entities.append(new_master)
+        newly_added.append(new_master)
+        old_id_to_master_id[entity.id] = new_id
+        name_to_master[key] = new_master
+        for alias in entity.aliases:
+            alias_key = alias.lower().strip()
+            if alias_key:
+                name_to_master[alias_key] = new_master
+
+    # --- Remap relationships ---
     master_entity_lookup = {e.id: e for e in master_entities}
     for rel in new_relationships:
         new_source = old_id_to_master_id.get(rel.source_id)
@@ -534,8 +647,15 @@ def merge_normalized_entities(
             if new_target in master_entity_lookup:
                 master_entity_lookup[new_target].relationship_ids.append(new_rel.id)
 
-    if rule_merges:
-        logger.info("    %d cross-chapter rule-based merge(s)", rule_merges)
+    n_merged = len(pending_merges)
+    if n_merged or n_filtered:
+        logger.info(
+            "    cross-chapter rule: %d matched, %d filtered, %d merged, %d new",
+            n_merged + n_filtered,
+            n_filtered,
+            n_merged,
+            len(newly_added),
+        )
 
     return master_entities, master_relationships, newly_added
 
@@ -557,7 +677,7 @@ def find_candidates_against_master(
     for i in range(len(new_entities)):
         for j in range(len(master_entities)):
             sim = sim_matrix[i, j]
-            if sim >= threshold:
+            if sim >= threshold and new_entities[i].type == master_entities[j].type:
                 candidates.append(
                     {
                         "new_entity": new_entities[i],
@@ -877,6 +997,9 @@ def run_pipeline(
     extraction_chain = create_extraction_chain(config)
     embeddings_model = OpenAIEmbeddings(model=config["embedding_model"])
     merge_chain = create_merge_chain(config)
+    rule_filter_chain = (
+        create_rule_filter_chain(config) if config.get("rule_filter_model") else None
+    )
     threshold = config["similarity_threshold"]
 
     master_entities: list[NormalizedEntity] = []
@@ -937,6 +1060,8 @@ def run_pipeline(
                 master_entities,
                 master_relationships,
                 paragraph_meta=para,
+                rule_filter_chain=rule_filter_chain,
+                max_concurrency=max_concurrency,
             )
         )
         timings["rule_merge"].append(time.perf_counter() - t0)
@@ -1165,6 +1290,9 @@ def run_cross_chapter_merge(  # noqa: PLR0912, PLR0915
     """
     embeddings_model = OpenAIEmbeddings(model=config["embedding_model"])
     merge_chain = create_merge_chain(config)
+    rule_filter_chain = (
+        create_rule_filter_chain(config) if config.get("rule_filter_model") else None
+    )
     threshold = config["similarity_threshold"]
 
     master_entities: list[NormalizedEntity] = []
@@ -1232,7 +1360,12 @@ def run_cross_chapter_merge(  # noqa: PLR0912, PLR0915
         # 1. Rule-based merge
         t0 = time.perf_counter()
         master_entities, master_relationships, newly_added = merge_normalized_entities(
-            ch_entities, ch_relationships, master_entities, master_relationships
+            ch_entities,
+            ch_relationships,
+            master_entities,
+            master_relationships,
+            rule_filter_chain=rule_filter_chain,
+            max_concurrency=max_concurrency,
         )
         timings["rule_merge"].append(time.perf_counter() - t0)
         n_rule_merged = len(ch_entities) - len(newly_added)
