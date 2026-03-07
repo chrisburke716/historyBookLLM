@@ -34,6 +34,11 @@ class Relationship(BaseModel):
         "revolted_against, influenced, part_of, founded, evolved_into, participated_in"
     )
     target_entity: str = Field(description="Exact name from entities list")
+    description: str | None = Field(
+        default=None,
+        description="Brief description capturing key context about this relationship "
+        "(1 sentence). Null if the relation_type alone is sufficient.",
+    )
     temporal_context: str | None = Field(
         default=None,
         description="Date, year, year range, or century when this relationship held "
@@ -85,8 +90,9 @@ Extract only the most historically significant entities and relationships from t
 3. Extract relationships that are EXPLICITLY STATED in the text
 4. Include aliases if the entity is referred to by multiple names (e.g., "Octavian" also called "Augustus")
 5. Do NOT extract dates or time periods as entities — capture them as temporal_context on relationships. temporal_context should be a specific date, year, year range, or century (e.g., "753 BC", "264-241 BC", "sixth century BC"). Leave it null if no time is mentioned in the text for that relationship.
-6. Relationships MUST reference exact entity names from your entities list
-7. Only extract entities that participate in at least one relationship
+6. For each relationship, include a brief description capturing key context (1 sentence). Leave null if the relation_type alone is sufficient.
+7. Relationships MUST reference exact entity names from your entities list
+8. Only extract entities that participate in at least one relationship
 
 **DO NOT EXTRACT**:
 - Unnamed individuals or groups ("an astronomer", "his great-uncle", "money-lenders")

@@ -29,7 +29,7 @@ class KGEntity(BaseModel):
     name: str
     entity_type: str  # validated via EntityType enum in extraction chain
     aliases: list[str] = Field(default_factory=list)
-    description: str = ""
+    descriptions: list[str] = Field(default_factory=list)
     occurrence_count: int = 1
     book_indices: list[int] = Field(default_factory=list)
     source_book_chapters: list[str] = Field(
@@ -42,7 +42,7 @@ class KGEntity(BaseModel):
     vectorize_fields: ClassVar[list[str]] = [
         "name",
         "entity_type",
-        "description",
+        "descriptions",
         "aliases",
     ]
 
@@ -60,6 +60,7 @@ class KGRelationship(BaseModel):
     source_entity_name: str
     target_entity_name: str
     relation_type: str  # ruled, conquered, fought, etc.
+    description: str = ""
     temporal_context: str = ""
     start_year: int | None = None
     end_year: int | None = None

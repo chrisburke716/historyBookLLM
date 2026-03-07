@@ -13,17 +13,14 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 
 
-class RuleMergeFilter(BaseModel):
+class RuleMergeDecision(BaseModel):
     should_merge: bool = Field(
         description="True if the two entities are the same real-world entity"
     )
-
-
-class MergedEntity(BaseModel):
-    name: str
-    type: str
-    aliases: list[str] = Field(default_factory=list)
-    description: str | None = None
+    canonical_name: str | None = Field(
+        default=None,
+        description="The most canonical/common name if merging, otherwise None",
+    )
 
 
 class EntityMergeDecision(BaseModel):
@@ -32,9 +29,9 @@ class EntityMergeDecision(BaseModel):
     should_merge: bool = Field(
         description="True if entities refer to the same historical entity"
     )
-    merged_entity: MergedEntity | None = Field(
+    canonical_name: str | None = Field(
         default=None,
-        description="The merged entity if should_merge=True, otherwise None",
+        description="The most canonical/common name if merging, otherwise None",
     )
 
 
@@ -74,9 +71,7 @@ Description: {entity2_description}
         - Related political and geographical entities (e.g., "Roman Empire" vs "Italy")
         - Different entity types (e.g., "Punic Wars" event vs "Carthage" polity)
 2. If they should be merged:
-   - Choose the most canonical/common name
-   - Write a consolidated description (combine key information, ~2-3 sentences)
-   - Merge aliases (include both original names if not already aliases)
+   - Choose the most canonical/common name for canonical_name
 """
 
 
@@ -96,7 +91,9 @@ Type: {entity2_type}
 Aliases: {entity2_aliases}
 Description: {entity2_description}
 
-Default to merging. Only return false if they are clearly distinct entities (e.g., different people who share a surname, or a city vs an empire with the same name)."""
+Default to merging. Only return false if they are clearly distinct entities (e.g., different people who share a surname, or a city vs an empire with the same name).
+
+If merging, choose the most canonical/common name for canonical_name."""
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +105,7 @@ def create_rule_filter_chain(config: dict):
     """Create a lightweight filter chain for rule-based merge candidates.
 
     Returns Runnable that takes the same 8-field entity pair input as
-    create_merge_chain and returns RuleMergeFilter (just a boolean).
+    create_merge_chain and returns RuleMergeDecision.
     """
     llm = ChatOpenAI(
         model=config["rule_filter_model"],
@@ -116,7 +113,7 @@ def create_rule_filter_chain(config: dict):
         request_timeout=30,
     )
     prompt = ChatPromptTemplate.from_template(RULE_FILTER_PROMPT)
-    return prompt | llm.with_structured_output(RuleMergeFilter)
+    return prompt | llm.with_structured_output(RuleMergeDecision)
 
 
 def create_merge_chain(config: dict):

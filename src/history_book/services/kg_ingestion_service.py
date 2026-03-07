@@ -16,7 +16,7 @@ from pathlib import Path
 import networkx as nx
 import numpy as np
 from langchain_openai import OpenAIEmbeddings
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pyvis.network import Network
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -25,7 +25,6 @@ from history_book.chains.kg_extraction_chain import (
     create_extraction_chain,
 )
 from history_book.chains.kg_merge_chain import (
-    MergedEntity,
     create_merge_chain,
     create_rule_filter_chain,
 )
@@ -77,6 +76,7 @@ class RelationshipWithId(BaseModel):
     source_entity_name: str
     target_entity_name: str
     relation_type: str
+    description: str | None = None
     temporal_context: str | None = None
     start_year: int | None = None
     end_year: int | None = None
@@ -89,12 +89,30 @@ class NormalizedEntity(BaseModel):
     name: str
     type: str
     aliases: list[str] = Field(default_factory=list)
-    description: str
+    descriptions: list[str] = Field(default_factory=list)
     source_paragraph_ids: list[str]
     source_locations: list[dict] = Field(default_factory=list)
     occurrence_count: int
     merged_from_ids: list[str] = Field(default_factory=list)
     relationship_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_description(cls, data):
+        """Backward compat: migrate cached JSON 'description' → 'descriptions'."""
+        if (
+            isinstance(data, dict)
+            and "description" in data
+            and "descriptions" not in data
+        ):
+            desc = data.pop("description")
+            if desc:
+                data["descriptions"] = [
+                    s.strip() for s in desc.split(" | ") if s.strip()
+                ]
+            else:
+                data["descriptions"] = []
+        return data
 
 
 class NormalizedRelationship(BaseModel):
@@ -104,6 +122,7 @@ class NormalizedRelationship(BaseModel):
     source_entity_name: str
     target_entity_name: str
     relation_type: str
+    description: str | None = None
     temporal_context: str | None = None
     start_year: int | None = None
     end_year: int | None = None
@@ -131,24 +150,15 @@ class UnionFind:
             entity_id = self.parent[entity_id]
         return entity_id
 
-    def union(self, id1: str, id2: str, merged_entity: MergedEntity | None) -> None:
+    def union(self, id1: str, id2: str, canonical_name: str | None) -> None:
         root1, root2 = self.find(id1), self.find(id2)
         if root1 == root2:
             return
         self.parent[root2] = root1
         rep, other = self.representative[root1], self.representative[root2]
-        if merged_entity:
-            rep.name = merged_entity.name
-            rep.type = merged_entity.type
-            rep.aliases = list(
-                set(rep.aliases + other.aliases + (merged_entity.aliases or []))
-            )
-            rep.description = merged_entity.description or rep.description
-        else:
-            rep.aliases = list(set(rep.aliases + other.aliases))
-            rep.description = " | ".join(
-                d for d in [rep.description, other.description] if d
-            )
+        _apply_merge_identity(
+            rep, other.name, other.aliases, other.descriptions, canonical_name
+        )
         rep.source_paragraph_ids = list(
             set(rep.source_paragraph_ids + other.source_paragraph_ids)
         )
@@ -187,7 +197,7 @@ class UnionFind:
                 name=rep.name,
                 type=rep.type,
                 aliases=rep.aliases,
-                description=rep.description,
+                descriptions=rep.descriptions,
                 source_paragraph_ids=rep.source_paragraph_ids,
                 source_locations=rep.source_locations,
                 occurrence_count=rep.occurrence_count,
@@ -212,6 +222,7 @@ class UnionFind:
                     source_entity_name=rel.source_entity_name,
                     target_entity_name=rel.target_entity_name,
                     relation_type=rel.relation_type,
+                    description=rel.description,
                     temporal_context=rel.temporal_context,
                     start_year=rel.start_year,
                     end_year=rel.end_year,
@@ -276,6 +287,7 @@ def assign_ids_single(
                 source_entity_name=rel.source_entity,
                 target_entity_name=rel.target_entity,
                 relation_type=rel.relation_type,
+                description=rel.description,
                 temporal_context=rel.temporal_context,
                 start_year=rel.start_year,
                 end_year=rel.end_year,
@@ -306,8 +318,8 @@ def assign_ids_single(
 def create_entity_text(entity: NormalizedEntity) -> str:
     """Create text representation of entity for embedding comparisons."""
     parts = [f"Name: {entity.name}", f"Type: {entity.type}"]
-    if entity.description:
-        parts.append(f"Description: {entity.description}")
+    if entity.descriptions:
+        parts.append(f"Description: {' | '.join(entity.descriptions)}")
     if entity.aliases:
         parts.append(f"Aliases: {', '.join(entity.aliases)}")
     return " | ".join(parts)
@@ -370,13 +382,13 @@ def merge_into_master_rule_based(
 
     # --- Phase 2: LLM filter ---
     n_filtered = 0
+    approved_merges: list[tuple[EntityWithId, NormalizedEntity, str | None]] = []
     if rule_filter_chain and pending_merges:
         inputs = [_build_merge_inputs(e, m) for e, m in pending_merges]
         decisions = _batch_with_retry(rule_filter_chain, inputs, max_concurrency)
-        approved = []
         for (entity, match), decision in zip(pending_merges, decisions, strict=True):
             if decision.should_merge:
-                approved.append((entity, match))
+                approved_merges.append((entity, match, decision.canonical_name))
             else:
                 n_filtered += 1
                 logger.info(
@@ -387,13 +399,14 @@ def merge_into_master_rule_based(
                     match.type,
                 )
                 unmatched.append(entity)
-        pending_merges = approved
+    else:
+        approved_merges = [(e, m, None) for e, m in pending_merges]
 
     # --- Phase 3: Apply merges ---
     old_id_to_master_id: dict[str, str] = {}
     newly_added: list[NormalizedEntity] = []
 
-    for entity, match in pending_merges:
+    for entity, match, canonical_name in approved_merges:
         loc = None
         if paragraph_meta:
             loc = {
@@ -405,16 +418,10 @@ def merge_into_master_rule_based(
             }
 
         logger.debug("    Rule merge: '%s' -> '%s'", entity.name, match.name)
-        match.aliases = list(set(match.aliases + entity.aliases + [entity.name]))
-        match.aliases = [
-            a for a in match.aliases if a.lower().strip() != match.name.lower().strip()
-        ]
-        if entity.description:
-            match.description = (
-                f"{match.description} | {entity.description}"
-                if match.description
-                else entity.description
-            )
+        other_descs = [entity.description] if entity.description else []
+        _apply_merge_identity(
+            match, entity.name, entity.aliases, other_descs, canonical_name
+        )
         match.source_paragraph_ids = list(
             set(match.source_paragraph_ids + [entity.paragraph_id])
         )
@@ -445,7 +452,7 @@ def merge_into_master_rule_based(
             name=entity.name,
             type=entity.type,
             aliases=entity.aliases,
-            description=entity.description or "",
+            descriptions=[entity.description] if entity.description else [],
             source_paragraph_ids=[entity.paragraph_id],
             source_locations=[loc] if loc else [],
             occurrence_count=1,
@@ -474,6 +481,7 @@ def merge_into_master_rule_based(
                 source_entity_name=rel.source_entity_name,
                 target_entity_name=rel.target_entity_name,
                 relation_type=rel.relation_type,
+                description=rel.description,
                 temporal_context=rel.temporal_context,
                 start_year=rel.start_year,
                 end_year=rel.end_year,
@@ -491,7 +499,7 @@ def merge_into_master_rule_based(
             if new_target in master_entity_lookup:
                 master_entity_lookup[new_target].relationship_ids.append(rel.id)
 
-    n_merged = len(pending_merges)
+    n_merged = len(approved_merges)
     if n_merged or n_filtered:
         logger.debug(
             "    rule: %d matched, %d filtered, %d merged, %d new",
@@ -561,13 +569,13 @@ def merge_normalized_entities(
 
     # --- Phase 2: LLM filter ---
     n_filtered = 0
+    approved_merges: list[tuple[NormalizedEntity, NormalizedEntity, str | None]] = []
     if rule_filter_chain and pending_merges:
         inputs = [_build_merge_inputs(e, m) for e, m in pending_merges]
         decisions = _batch_with_retry(rule_filter_chain, inputs, max_concurrency)
-        approved = []
         for (entity, match), decision in zip(pending_merges, decisions, strict=True):
             if decision.should_merge:
-                approved.append((entity, match))
+                approved_merges.append((entity, match, decision.canonical_name))
             else:
                 n_filtered += 1
                 logger.info(
@@ -578,26 +586,20 @@ def merge_normalized_entities(
                     match.type,
                 )
                 unmatched.append(entity)
-        pending_merges = approved
+    else:
+        approved_merges = [(e, m, None) for e, m in pending_merges]
 
     # --- Phase 3: Apply merges ---
     old_id_to_master_id: dict[str, str] = {}
     newly_added: list[NormalizedEntity] = []
 
-    for entity, match in pending_merges:
+    for entity, match, canonical_name in approved_merges:
         logger.debug(
             "    Cross-chapter rule merge: '%s' -> '%s'", entity.name, match.name
         )
-        match.aliases = list(set(match.aliases + entity.aliases + [entity.name]))
-        match.aliases = [
-            a for a in match.aliases if a.lower().strip() != match.name.lower().strip()
-        ]
-        if entity.description:
-            match.description = (
-                f"{match.description} | {entity.description}"
-                if match.description
-                else entity.description
-            )
+        _apply_merge_identity(
+            match, entity.name, entity.aliases, entity.descriptions, canonical_name
+        )
         match.source_paragraph_ids = list(
             set(match.source_paragraph_ids + entity.source_paragraph_ids)
         )
@@ -624,7 +626,7 @@ def merge_normalized_entities(
             name=entity.name,
             type=entity.type,
             aliases=entity.aliases,
-            description=entity.description,
+            descriptions=list(entity.descriptions),
             source_paragraph_ids=list(entity.source_paragraph_ids),
             source_locations=list(entity.source_locations),
             occurrence_count=entity.occurrence_count,
@@ -653,6 +655,7 @@ def merge_normalized_entities(
                 source_entity_name=rel.source_entity_name,
                 target_entity_name=rel.target_entity_name,
                 relation_type=rel.relation_type,
+                description=rel.description,
                 temporal_context=rel.temporal_context,
                 start_year=rel.start_year,
                 end_year=rel.end_year,
@@ -668,7 +671,7 @@ def merge_normalized_entities(
             if new_target in master_entity_lookup:
                 master_entity_lookup[new_target].relationship_ids.append(new_rel.id)
 
-    n_merged = len(pending_merges)
+    n_merged = len(approved_merges)
     if n_merged or n_filtered:
         logger.info(
             "    cross-chapter rule: %d matched, %d filtered, %d merged, %d new",
@@ -714,12 +717,39 @@ def find_candidates_against_master(
 def format_entity_for_prompt(entity) -> dict:
     """Format an entity for the merge prompt."""
     aliases = entity.aliases if entity.aliases else []
+    if hasattr(entity, "descriptions"):
+        description = " | ".join(entity.descriptions) if entity.descriptions else "None"
+    else:
+        description = entity.description or "None"
     return {
         "name": entity.name,
         "type": entity.type,
         "aliases": ", ".join(aliases) if aliases else "None",
-        "description": entity.description or "None",
+        "description": description,
     }
+
+
+def _apply_merge_identity(
+    master: NormalizedEntity,
+    other_name: str,
+    other_aliases: list[str],
+    other_descriptions: list[str],
+    canonical_name: str | None = None,
+) -> None:
+    """Apply identity merge into master entity (in-place).
+
+    Sets canonical name, unions aliases (excluding canonical), extends descriptions.
+    """
+    if canonical_name:
+        master.name = canonical_name
+    # Union all aliases: both entity names + all aliases, excluding canonical
+    canonical = master.name
+    all_names = {master.name, other_name} | set(master.aliases) | set(other_aliases)
+    master.aliases = [
+        a for a in all_names if a.lower().strip() != canonical.lower().strip()
+    ]
+    # Extend descriptions
+    master.descriptions.extend(other_descriptions)
 
 
 def _build_merge_inputs(entity1, entity2) -> dict:
@@ -795,7 +825,7 @@ def build_knowledge_graph(
             name=entity.name,
             entity_type=entity.type,
             aliases=entity.aliases,
-            description=entity.description,
+            descriptions=entity.descriptions,
             occurrence_count=entity.occurrence_count,
             merged_from_ids=entity.merged_from_ids,
             paragraph_ids=entity.source_paragraph_ids,
@@ -877,12 +907,9 @@ def visualize_with_pyvis(
         title += f"<br>Relationships: {len(entity.relationship_ids)}"
         if entity.aliases:
             title += f"<br>Aliases: {', '.join(entity.aliases[:5])}"
-        if entity.description:
-            desc = (
-                entity.description[:150] + "..."
-                if len(entity.description) > 150
-                else entity.description
-            )
+        if entity.descriptions:
+            desc = " | ".join(entity.descriptions)
+            desc = desc[:150] + "..." if len(desc) > 150 else desc
             title += f"<br><br>{desc}"
         if len(entity.merged_from_ids) > 1:
             title += f"<br><br>Merged from {len(entity.merged_from_ids)} entities"
@@ -905,6 +932,8 @@ def visualize_with_pyvis(
             title = f"{rel.source_entity_name} \u2192 {rel.target_entity_name}<br>"
             title += f"Relationship: {rel.relation_type}<br>"
             title += f"Normalized: {entity_lookup[rel.source_id].name} \u2192 {entity_lookup[rel.target_id].name}"
+            if rel.description:
+                title += f"<br>{rel.description}"
             if rel.temporal_context:
                 title += f"<br>When: {rel.temporal_context}"
 
@@ -1200,7 +1229,7 @@ def run_pipeline(
                         uf.union(
                             c["new_entity"].id,
                             c["master_entity"].id,
-                            decision.merged_entity,
+                            decision.canonical_name,
                         )
                         n_llm_merged += 1
                         logger.info(
@@ -1299,7 +1328,7 @@ def _seed_master(
             name=e.name,
             type=e.type,
             aliases=e.aliases,
-            description=e.description,
+            descriptions=list(e.descriptions),
             source_paragraph_ids=list(e.source_paragraph_ids),
             source_locations=list(e.source_locations),
             occurrence_count=e.occurrence_count,
@@ -1324,6 +1353,7 @@ def _seed_master(
                 source_entity_name=rel.source_entity_name,
                 target_entity_name=rel.target_entity_name,
                 relation_type=rel.relation_type,
+                description=rel.description,
                 temporal_context=rel.temporal_context,
                 start_year=rel.start_year,
                 end_year=rel.end_year,
@@ -1518,7 +1548,7 @@ def run_cross_chapter_merge(  # noqa: PLR0912, PLR0915
                         uf.union(
                             c["new_entity"].id,
                             c["master_entity"].id,
-                            decision.merged_entity,
+                            decision.canonical_name,
                         )
                         n_llm_merged += 1
                         logger.info(
@@ -2025,6 +2055,7 @@ class KGIngestionService:
                     source_entity_name=rel.source_entity_name,
                     target_entity_name=rel.target_entity_name,
                     relation_type=rel.relation_type,
+                    description=rel.description or "",
                     temporal_context=rel.temporal_context or "",
                     start_year=rel.start_year,
                     end_year=rel.end_year,
@@ -2099,7 +2130,7 @@ class KGIngestionService:
                     name=ke.name,
                     type=ke.entity_type,
                     aliases=ke.aliases,
-                    description=ke.description,
+                    descriptions=ke.descriptions,
                     source_paragraph_ids=ke.source_paragraph_ids,
                     source_locations=source_locations,
                     occurrence_count=ke.occurrence_count,
@@ -2118,6 +2149,7 @@ class KGIngestionService:
                 source_entity_name=kr.source_entity_name,
                 target_entity_name=kr.target_entity_name,
                 relation_type=kr.relation_type,
+                description=kr.description or None,
                 temporal_context=kr.temporal_context,
                 start_year=kr.start_year,
                 end_year=kr.end_year,
@@ -2157,7 +2189,7 @@ class KGIngestionService:
             name=entity.name,
             entity_type=entity.type,
             aliases=entity.aliases,
-            description=entity.description,
+            descriptions=entity.descriptions,
             occurrence_count=entity.occurrence_count,
             book_indices=sorted(book_indices),
             source_book_chapters=sorted(source_book_chapters),
