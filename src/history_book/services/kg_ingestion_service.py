@@ -29,6 +29,7 @@ from history_book.chains.kg_merge_chain import (
     create_merge_chain,
     create_rule_filter_chain,
 )
+from history_book.chains.kg_temporal_chain import create_temporal_chain
 from history_book.data_models.kg_entities import KGEntity, KGGraph, KGRelationship
 from history_book.database.config.database_config import WeaviateConfig
 from history_book.database.repositories.book_repository import BookRepositoryManager
@@ -46,6 +47,8 @@ DEFAULT_CONFIG = {
     "merge_temperature": 0.0,
     "rule_filter_model": "gpt-4.1-nano",
     "rule_filter_temperature": 0.0,
+    "temporal_model": "gpt-4.1-nano",
+    "temporal_temperature": 0.0,
     "embedding_model": "text-embedding-3-small",
     "similarity_threshold": 0.65,
     "max_llm_candidates": 100,
@@ -75,6 +78,9 @@ class RelationshipWithId(BaseModel):
     target_entity_name: str
     relation_type: str
     temporal_context: str | None = None
+    start_year: int | None = None
+    end_year: int | None = None
+    temporal_precision: str | None = None
     paragraph_id: str
 
 
@@ -99,6 +105,9 @@ class NormalizedRelationship(BaseModel):
     target_entity_name: str
     relation_type: str
     temporal_context: str | None = None
+    start_year: int | None = None
+    end_year: int | None = None
+    temporal_precision: str | None = None
     paragraph_id: str
     book_index: int | None = None
     chapter_index: int | None = None
@@ -204,6 +213,9 @@ class UnionFind:
                     target_entity_name=rel.target_entity_name,
                     relation_type=rel.relation_type,
                     temporal_context=rel.temporal_context,
+                    start_year=rel.start_year,
+                    end_year=rel.end_year,
+                    temporal_precision=rel.temporal_precision,
                     paragraph_id=rel.paragraph_id,
                     book_index=rel.book_index,
                     chapter_index=rel.chapter_index,
@@ -265,6 +277,9 @@ def assign_ids_single(
                 target_entity_name=rel.target_entity,
                 relation_type=rel.relation_type,
                 temporal_context=rel.temporal_context,
+                start_year=rel.start_year,
+                end_year=rel.end_year,
+                temporal_precision=rel.temporal_precision,
                 paragraph_id=result.paragraph_id,
             )
             relationships.append(rel_with_id)
@@ -460,6 +475,9 @@ def merge_into_master_rule_based(
                 target_entity_name=rel.target_entity_name,
                 relation_type=rel.relation_type,
                 temporal_context=rel.temporal_context,
+                start_year=rel.start_year,
+                end_year=rel.end_year,
+                temporal_precision=rel.temporal_precision,
                 paragraph_id=rel.paragraph_id,
                 book_index=paragraph_meta.get("book_index") if paragraph_meta else None,
                 chapter_index=paragraph_meta.get("chapter_index")
@@ -636,6 +654,9 @@ def merge_normalized_entities(
                 target_entity_name=rel.target_entity_name,
                 relation_type=rel.relation_type,
                 temporal_context=rel.temporal_context,
+                start_year=rel.start_year,
+                end_year=rel.end_year,
+                temporal_precision=rel.temporal_precision,
                 paragraph_id=rel.paragraph_id,
                 book_index=rel.book_index,
                 chapter_index=rel.chapter_index,
@@ -1036,6 +1057,50 @@ def run_pipeline(
     for para, result in zip(paragraphs, extraction_results, strict=False):
         result.paragraph_id = para["id"]
 
+    # --- Phase 1b: Parse temporal context ---
+    temporal_chain = (
+        create_temporal_chain(config) if config.get("temporal_model") else None
+    )
+    if temporal_chain:
+        temporal_inputs = []
+        temporal_indices: list[tuple[int, int]] = []
+        for r_idx, result in enumerate(extraction_results):
+            for rel_idx, rel in enumerate(result.relationships):
+                if rel.temporal_context:
+                    temporal_inputs.append(
+                        {
+                            "source_entity": rel.source_entity,
+                            "relation_type": rel.relation_type,
+                            "target_entity": rel.target_entity,
+                            "temporal_context": rel.temporal_context,
+                        }
+                    )
+                    temporal_indices.append((r_idx, rel_idx))
+
+        if temporal_inputs:
+            t0 = time.perf_counter()
+            parsed = _batch_with_retry(temporal_chain, temporal_inputs, max_concurrency)
+            temporal_time = time.perf_counter() - t0
+            timings["temporal"].append(temporal_time)
+
+            n_with_dates = 0
+            for (r_idx, rel_idx), tp in zip(temporal_indices, parsed, strict=True):
+                rel = extraction_results[r_idx].relationships[rel_idx]
+                rel.start_year = tp.start_year
+                rel.end_year = tp.end_year
+                rel.temporal_precision = tp.precision
+                if tp.start_year is not None:
+                    n_with_dates += 1
+
+            logger.info(
+                "Temporal parsing: %d relationships parsed in %.1fs "
+                "(%d with dates, %d unparseable)",
+                len(temporal_inputs),
+                temporal_time,
+                n_with_dates,
+                len(temporal_inputs) - n_with_dates,
+            )
+
     # --- Phase 2: Incremental processing ---
     for i, (para, result) in enumerate(
         zip(paragraphs, extraction_results, strict=False)
@@ -1195,7 +1260,14 @@ def run_pipeline(
     if profile:
         _log_profile(
             timings,
-            ["extraction", "rule_merge", "embedding", "similarity", "llm_merge"],
+            [
+                "extraction",
+                "temporal",
+                "rule_merge",
+                "embedding",
+                "similarity",
+                "llm_merge",
+            ],
         )
 
     return final_entities, final_relationships, all_llm_results
@@ -1253,6 +1325,9 @@ def _seed_master(
                 target_entity_name=rel.target_entity_name,
                 relation_type=rel.relation_type,
                 temporal_context=rel.temporal_context,
+                start_year=rel.start_year,
+                end_year=rel.end_year,
+                temporal_precision=rel.temporal_precision,
                 paragraph_id=rel.paragraph_id,
                 book_index=rel.book_index,
                 chapter_index=rel.chapter_index,
@@ -1951,6 +2026,9 @@ class KGIngestionService:
                     target_entity_name=rel.target_entity_name,
                     relation_type=rel.relation_type,
                     temporal_context=rel.temporal_context or "",
+                    start_year=rel.start_year,
+                    end_year=rel.end_year,
+                    temporal_precision=rel.temporal_precision,
                     paragraph_id=rel.paragraph_id,
                     book_index=rel.book_index or 0,
                     chapter_index=rel.chapter_index or 0,
@@ -2041,6 +2119,9 @@ class KGIngestionService:
                 target_entity_name=kr.target_entity_name,
                 relation_type=kr.relation_type,
                 temporal_context=kr.temporal_context,
+                start_year=kr.start_year,
+                end_year=kr.end_year,
+                temporal_precision=kr.temporal_precision,
                 paragraph_id=kr.paragraph_id,
                 book_index=kr.book_index,
                 chapter_index=kr.chapter_index,

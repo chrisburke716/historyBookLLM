@@ -15,17 +15,34 @@ from history_book.data_models.kg_entities import EntityType
 
 
 class Entity(BaseModel):
-    name: str
-    type: EntityType
-    aliases: list[str] = Field(default_factory=list)
-    description: str | None = None
+    name: str = Field(description="The canonical name of the entity")
+    type: EntityType = Field(
+        description="Entity type: person, polity, place, event, or concept"
+    )
+    aliases: list[str] = Field(
+        default_factory=list, description="Alternative names for this entity"
+    )
+    description: str | None = Field(
+        default=None, description="Brief description based only on this paragraph"
+    )
 
 
 class Relationship(BaseModel):
-    source_entity: str
-    relation_type: str
-    target_entity: str
-    temporal_context: str | None = None
+    source_entity: str = Field(description="Exact name from entities list")
+    relation_type: str = Field(
+        description="One of: ruled, conquered, fought, allied_with, succeeded, "
+        "revolted_against, influenced, part_of, founded, evolved_into, participated_in"
+    )
+    target_entity: str = Field(description="Exact name from entities list")
+    temporal_context: str | None = Field(
+        default=None,
+        description="Date, year, year range, or century when this relationship held "
+        "(e.g., '753 BC', '264-241 BC', 'sixth century BC'). "
+        "Null if no specific time is stated.",
+    )
+    start_year: int | None = Field(default=None, exclude=True)
+    end_year: int | None = Field(default=None, exclude=True)
+    temporal_precision: str | None = Field(default=None, exclude=True)
 
 
 class ExtractionResult(BaseModel):
@@ -67,7 +84,7 @@ Extract only the most historically significant entities and relationships from t
 2. Be highly selective — only major historical actors, places, and events
 3. Extract relationships that are EXPLICITLY STATED in the text
 4. Include aliases if the entity is referred to by multiple names (e.g., "Octavian" also called "Augustus")
-5. Do NOT extract dates or time periods as entities — instead, include them as temporal_context on relationships
+5. Do NOT extract dates or time periods as entities — capture them as temporal_context on relationships. temporal_context should be a specific date, year, year range, or century (e.g., "753 BC", "264-241 BC", "sixth century BC"). Leave it null if no time is mentioned in the text for that relationship.
 6. Relationships MUST reference exact entity names from your entities list
 7. Only extract entities that participate in at least one relationship
 

@@ -61,6 +61,9 @@ class KGRelationship(BaseModel):
     target_entity_name: str
     relation_type: str  # ruled, conquered, fought, etc.
     temporal_context: str = ""
+    start_year: int | None = None
+    end_year: int | None = None
+    temporal_precision: str | None = None
     paragraph_id: str
     book_index: int
     chapter_index: int
