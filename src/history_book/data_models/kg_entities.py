@@ -18,6 +18,19 @@ class EntityType(StrEnum):
     CONCEPT = "concept"
 
 
+class RelationType(StrEnum):
+    """Allowed relationship types for knowledge graph relationships."""
+
+    RULED = "ruled"
+    CONQUERED = "conquered"
+    OPPOSED = "opposed"
+    ALLIED_WITH = "allied_with"
+    SUCCEEDED = "succeeded"
+    INFLUENCED = "influenced"
+    PART_OF = "part_of"
+    PARTICIPATED_IN = "participated_in"
+
+
 class KGEntity(BaseModel):
     """A normalized entity in a knowledge graph.
 
@@ -59,7 +72,7 @@ class KGRelationship(BaseModel):
     )  # [source_entity_id, target_entity_id] for ContainsAny queries
     source_entity_name: str
     target_entity_name: str
-    relation_type: str  # ruled, conquered, fought, etc.
+    relation_type: str  # validated via RelationType enum in extraction chain
     description: str = ""
     temporal_context: str = ""
     start_year: int | None = None

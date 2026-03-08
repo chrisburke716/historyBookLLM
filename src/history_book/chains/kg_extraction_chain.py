@@ -7,7 +7,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
-from history_book.data_models.kg_entities import EntityType
+from history_book.data_models.kg_entities import EntityType, RelationType
 
 # ---------------------------------------------------------------------------
 # LLM output schemas
@@ -29,10 +29,7 @@ class Entity(BaseModel):
 
 class Relationship(BaseModel):
     source_entity: str = Field(description="Exact name from entities list")
-    relation_type: str = Field(
-        description="One of: ruled, conquered, fought, allied_with, succeeded, "
-        "revolted_against, influenced, part_of, founded, evolved_into, participated_in"
-    )
+    relation_type: RelationType = Field(description="The type of relationship")
     target_entity: str = Field(description="Exact name from entities list")
     description: str | None = Field(
         default=None,
@@ -72,17 +69,14 @@ Extract only the most historically significant entities and relationships from t
 - concept: Religions, belief systems, philosophies, ideologies (e.g., Christianity, Judaism, Stoicism, democracy)
 
 **RELATIONSHIP TYPES** (use exactly one of these):
-- ruled: A person or polity governed a place or polity
-- conquered: Military takeover of a place or polity
-- fought: Armed conflict without outright conquest
-- allied_with: Formal alliance or cooperation
-- succeeded: One leader/polity followed another in power
-- revolted_against: Rebellion or uprising against authority
-- influenced: Cultural, political, or intellectual impact
-- part_of: Geographic or organizational membership (e.g., Sicily part_of Roman Republic)
-- founded: Established or created
-- evolved_into: Political transformation (e.g., Roman Republic evolved_into Roman Empire)
-- participated_in: Connects actors to event entities (e.g., Rome participated_in Punic Wars)
+- ruled: A person or polity governed, appointed, or administered a place or polity
+- conquered: Military takeover or seizure of territory or a polity
+- opposed: Hostile action short of conquest — armed conflict, rebellion, revolt, persecution, resistance
+- allied_with: Formal alliance, treaty, diplomatic marriage, tribute arrangement, or cooperation
+- succeeded: One leader, dynasty, or polity followed another in power; includes institutional transformation or collapse
+- influenced: Cultural, intellectual, economic, religious, or trade-based impact; includes founding or establishing entities
+- part_of: Geographic, ethnic, organizational, or political membership/containment
+- participated_in: An actor took part in a named event (war, battle, council, revolt)
 
 **IMPORTANT GUIDELINES**:
 1. Extract entities FROM THIS PARAGRAPH ONLY — do not use external knowledge

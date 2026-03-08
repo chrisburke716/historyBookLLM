@@ -27,6 +27,7 @@ Custom graph name:
 import argparse
 import logging
 import os
+import time
 import warnings
 
 from history_book.database.config.database_config import WeaviateConfig
@@ -122,6 +123,9 @@ def main():
         format="%(asctime)s %(levelname)s %(message)s",
         datefmt="%H:%M:%S",
     )
+    # Silence noisy HTTP request logs from OpenAI and Weaviate clients
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
     # Validate mutual exclusivity
     if args.chapter_index is not None and args.chapters is not None:
@@ -152,6 +156,7 @@ def main():
         pipeline_config["similarity_threshold"] = args.similarity_threshold
 
     service = KGIngestionService(pipeline_config=pipeline_config)
+    t_start = time.perf_counter()
     try:
         if args.chapter_index is not None:
             service.extract_chapter(
@@ -174,7 +179,9 @@ def main():
                 skip_visualization=args.skip_visualization,
             )
     finally:
+        elapsed = time.perf_counter() - t_start
         service.close()
+        logger.info("Total wall time: %.1fs", elapsed)
 
 
 if __name__ == "__main__":
