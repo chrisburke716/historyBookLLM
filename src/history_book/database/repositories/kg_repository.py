@@ -79,6 +79,31 @@ class KGEntityRepository(WeaviateRepository["KGEntity"]):
             where_filter=where_filter,
         )
 
+    def search_entities_hybrid(
+        self,
+        query_text: str,
+        graph_name: str | None = None,
+        limit: int = 100,
+        alpha: float = 0.5,
+    ) -> list[tuple["KGEntity", float]]:
+        """Search entities using hybrid search (vector + BM25).
+
+        Args:
+            query_text: Text to search for.
+            graph_name: Optional graph to scope the search to.
+            limit: Maximum number of results.
+            alpha: Balance between vector (1.0) and BM25 (0.0) search.
+        """
+        kwargs = {}
+        if graph_name:
+            kwargs["filters"] = self._build_where_filter({"graph_name": graph_name})
+        return self.hybrid_search(
+            query_text=query_text,
+            limit=limit,
+            alpha=alpha,
+            **kwargs,
+        )
+
     def delete_by_graph(self, graph_name: str) -> int:
         """Delete all entities for a graph. Returns count deleted."""
         entities = self.find_by_graph(graph_name)
