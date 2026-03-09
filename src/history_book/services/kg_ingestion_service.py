@@ -59,12 +59,17 @@ DEFAULT_CONFIG = {
 # ---------------------------------------------------------------------------
 
 
+class SourceDescription(BaseModel):
+    text: str
+    paragraph_id: str
+
+
 class NormalizedEntity(BaseModel):
     id: str
     name: str
     type: str
     aliases: list[str] = Field(default_factory=list)
-    descriptions: list[str] = Field(default_factory=list)
+    descriptions: list[SourceDescription] = Field(default_factory=list)
     source_paragraph_ids: list[str]
     source_locations: list[dict] = Field(default_factory=list)
     occurrence_count: int
@@ -219,7 +224,13 @@ def assign_ids_single(
             name=entity.name,
             type=entity.type,
             aliases=entity.aliases,
-            descriptions=[entity.description] if entity.description else [],
+            descriptions=[
+                SourceDescription(
+                    text=entity.description, paragraph_id=result.paragraph_id
+                )
+            ]
+            if entity.description
+            else [],
             source_paragraph_ids=[result.paragraph_id],
             source_locations=[loc] if loc else [],
             occurrence_count=1,
@@ -276,7 +287,7 @@ def create_entity_text(entity: NormalizedEntity) -> str:
     """Create text representation of entity for embedding comparisons."""
     parts = [f"Name: {entity.name}", f"Type: {entity.type}"]
     if entity.descriptions:
-        parts.append(f"Description: {' | '.join(entity.descriptions)}")
+        parts.append(f"Description: {' | '.join(d.text for d in entity.descriptions)}")
     if entity.aliases:
         parts.append(f"Aliases: {', '.join(entity.aliases)}")
     return " | ".join(parts)
@@ -469,7 +480,7 @@ def format_entity_for_prompt(entity: NormalizedEntity) -> dict:
         "name": entity.name,
         "type": entity.type,
         "aliases": ", ".join(entity.aliases) if entity.aliases else "None",
-        "description": " | ".join(entity.descriptions)
+        "description": " | ".join(d.text for d in entity.descriptions)
         if entity.descriptions
         else "None",
     }
@@ -479,7 +490,7 @@ def _apply_merge_identity(
     master: NormalizedEntity,
     other_name: str,
     other_aliases: list[str],
-    other_descriptions: list[str],
+    other_descriptions: list[SourceDescription],
     canonical_name: str | None = None,
 ) -> None:
     """Apply identity merge into master entity (in-place).
@@ -654,7 +665,7 @@ def visualize_with_pyvis(
         if entity.aliases:
             title += f"<br>Aliases: {', '.join(entity.aliases[:5])}"
         if entity.descriptions:
-            desc = " | ".join(entity.descriptions)
+            desc = " | ".join(d.text for d in entity.descriptions)
             desc = desc[:150] + "..." if len(desc) > 150 else desc
             title += f"<br><br>{desc}"
         if len(entity.merged_from_ids) > 1:
@@ -1840,7 +1851,14 @@ class KGIngestionService:
                     name=ke.name,
                     type=ke.entity_type,
                     aliases=ke.aliases,
-                    descriptions=ke.descriptions,
+                    descriptions=[
+                        SourceDescription(text=text, paragraph_id=pid)
+                        for text, pid in zip(
+                            ke.descriptions,
+                            ke.description_paragraph_ids,
+                            strict=False,
+                        )
+                    ],
                     source_paragraph_ids=ke.source_paragraph_ids,
                     source_locations=source_locations,
                     occurrence_count=ke.occurrence_count,
@@ -1899,7 +1917,8 @@ class KGIngestionService:
             name=entity.name,
             entity_type=entity.type,
             aliases=entity.aliases,
-            descriptions=entity.descriptions,
+            descriptions=[d.text for d in entity.descriptions],
+            description_paragraph_ids=[d.paragraph_id for d in entity.descriptions],
             occurrence_count=entity.occurrence_count,
             book_indices=sorted(book_indices),
             source_book_chapters=sorted(source_book_chapters),

@@ -43,6 +43,7 @@ class KGEntity(BaseModel):
     entity_type: str  # validated via EntityType enum in extraction chain
     aliases: list[str] = Field(default_factory=list)
     descriptions: list[str] = Field(default_factory=list)
+    description_paragraph_ids: list[str] = Field(default_factory=list)
     occurrence_count: int = 1
     book_indices: list[int] = Field(default_factory=list)
     source_book_chapters: list[str] = Field(
