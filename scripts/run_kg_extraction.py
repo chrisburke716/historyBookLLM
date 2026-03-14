@@ -1,37 +1,31 @@
 """Knowledge Graph extraction pipeline CLI.
 
-Thin wrapper around KGIngestionService. Processes paragraphs from the database,
-extracts entities and relationships, normalizes via rule-based + embedding + LLM
-merging, exports results to files, and stores in Weaviate.
+Thin wrapper around KGIngestionService. Uses Weaviate as sole storage layer.
 
-Output structure:
-    output/kg/chapters/book{X}_ch{Y}/    — centralized per-chapter cache
-    output/kg/graphs/{name}/              — merged graph outputs with metadata
+Usage:
+    # Extract single chapter
+    poetry run python scripts/run_kg_extraction.py chapter --book 3 --chapter 2
 
-Single chapter (writes to centralized cache):
-    poetry run python scripts/run_kg_extraction.py --book-index 3 --chapter-index 4
+    # Build book graph (auto-extracts missing chapters)
+    poetry run python scripts/run_kg_extraction.py book --book 3 [--chapters 0 1 2]
 
-All chapters in a book (extract + merge):
-    poetry run python scripts/run_kg_extraction.py --book-index 3
+    # Build volume graph from book graphs
+    poetry run python scripts/run_kg_extraction.py volume --books 2 3 4 5 [--name full_volume]
 
-Specific chapters (extract + merge):
-    poetry run python scripts/run_kg_extraction.py --book-index 3 --chapters 2 3
+    # Custom cross-book merge
+    poetry run python scripts/run_kg_extraction.py custom --spec '{"2":[5,6],"3":[6,7]}' --name asia
 
-Incremental (add chapter to existing graph):
-    poetry run python scripts/run_kg_extraction.py --book-index 3 --chapters 4 --base-graph output/kg/graphs/book3_ch2-3
-
-Custom graph name:
-    poetry run python scripts/run_kg_extraction.py --book-index 3 --chapters 2 3 4 --graph-name book3_greeks
+    # List all graphs in DB
+    poetry run python scripts/run_kg_extraction.py list
 """
 
 import argparse
+import json
 import logging
 import os
 import time
 import warnings
 
-from history_book.database.config.database_config import WeaviateConfig
-from history_book.database.repositories.book_repository import BookRepositoryManager
 from history_book.services.kg_ingestion_service import KGIngestionService
 
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
@@ -40,65 +34,12 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 logger = logging.getLogger(__name__)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Run KG extraction pipeline on book chapter(s).",
-        epilog="""Examples:
-  # Single chapter extraction (writes to centralized cache)
-  %(prog)s --book-index 3 --chapter-index 4
-
-  # All chapters in a book (extract + merge)
-  %(prog)s --book-index 3
-
-  # Extract + merge specific chapters
-  %(prog)s --book-index 3 --chapters 2 3
-
-  # Add chapter 4 to an existing graph incrementally
-  %(prog)s --book-index 3 --chapters 4 --base-graph output/kg/graphs/book3_ch2-3
-
-  # Custom graph name
-  %(prog)s --book-index 3 --chapters 2 3 4 --graph-name book3_greeks
-""",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+def _add_common_args(parser: argparse.ArgumentParser) -> None:
+    """Add flags common to all extraction/merge subcommands."""
     parser.add_argument(
-        "--book-index", type=int, required=True, help="Book index in the database"
-    )
-    parser.add_argument(
-        "--chapter-index",
-        type=int,
-        default=None,
-        help="Single chapter index (mutually exclusive with --chapters)",
-    )
-    parser.add_argument(
-        "--chapters",
-        type=int,
-        nargs="+",
-        default=None,
-        help="Multiple chapter indices for cross-chapter merge",
-    )
-    parser.add_argument(
-        "--base-graph",
-        type=str,
-        default=None,
-        help="Path to a previous graph directory to extend incrementally",
-    )
-    parser.add_argument(
-        "--graph-name",
-        type=str,
-        default=None,
-        help="Custom name for the output graph directory (default: auto-generated)",
-    )
-    parser.add_argument(
-        "--similarity-threshold",
-        type=float,
-        default=None,
-        help="Cosine similarity threshold for merge candidates (default: 0.65)",
-    )
-    parser.add_argument(
-        "--skip-visualization",
+        "--force",
         action="store_true",
-        help="Skip PyVis HTML generation",
+        help="Regenerate results even if already in DB",
     )
     parser.add_argument(
         "--profile",
@@ -112,10 +53,140 @@ def main():
         help="Max parallel API calls for batch operations (default: 5)",
     )
     parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Regenerate per-chapter results even if cached output exists",
+        "--similarity-threshold",
+        type=float,
+        default=None,
+        help="Cosine similarity threshold for merge candidates (default: 0.65)",
     )
+
+
+def cmd_chapter(args, service):
+    """Extract a single chapter."""
+    service.extract_chapter(
+        args.book,
+        args.chapter,
+        force=args.force,
+        profile=args.profile,
+        max_concurrency=args.max_concurrency,
+    )
+
+
+def cmd_book(args, service):
+    """Build a book graph (auto-extracts missing chapters)."""
+    service.merge_book(
+        args.book,
+        chapters=args.chapters,
+        force=args.force,
+        profile=args.profile,
+        max_concurrency=args.max_concurrency,
+    )
+
+
+def cmd_volume(args, service):
+    """Build a volume graph from book graphs."""
+    service.merge_volume(
+        args.books,
+        graph_name=args.name,
+        force=args.force,
+        profile=args.profile,
+        max_concurrency=args.max_concurrency,
+    )
+
+
+def cmd_custom(args, service):
+    """Custom cross-book merge from a JSON spec."""
+    raw_spec = json.loads(args.spec)
+    # Convert string keys to int
+    chapters = {int(k): v for k, v in raw_spec.items()}
+    service.merge_custom(
+        chapters,
+        graph_name=args.name,
+        force=args.force,
+        profile=args.profile,
+        max_concurrency=args.max_concurrency,
+    )
+
+
+def cmd_list(args, service):
+    """List all graphs in DB."""
+    graphs = service.list_graphs()
+    if not graphs:
+        logger.info("No graphs found in database.")
+        return
+    logger.info(
+        "%-25s %-10s %-8s %-8s %s", "Name", "Type", "Entities", "Rels", "Chapters"
+    )
+    logger.info("-" * 75)
+    for g in sorted(graphs, key=lambda x: x.name):
+        chapters_str = ", ".join(g.book_chapters[:10])
+        if len(g.book_chapters) > 10:
+            chapters_str += f" (+{len(g.book_chapters) - 10} more)"
+        logger.info(
+            "%-25s %-10s %-8d %-8d %s",
+            g.name,
+            g.graph_type,
+            g.entity_count,
+            g.relationship_count,
+            chapters_str,
+        )
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Knowledge Graph extraction pipeline CLI.",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # --- chapter ---
+    p_chapter = subparsers.add_parser(
+        "chapter", help="Extract KG from a single chapter"
+    )
+    p_chapter.add_argument("--book", type=int, required=True, help="Book index")
+    p_chapter.add_argument("--chapter", type=int, required=True, help="Chapter index")
+    _add_common_args(p_chapter)
+
+    # --- book ---
+    p_book = subparsers.add_parser(
+        "book", help="Build book graph (auto-extracts missing chapters)"
+    )
+    p_book.add_argument("--book", type=int, required=True, help="Book index")
+    p_book.add_argument(
+        "--chapters",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Specific chapter indices (default: all chapters)",
+    )
+    _add_common_args(p_book)
+
+    # --- volume ---
+    p_volume = subparsers.add_parser(
+        "volume", help="Build volume graph from book graphs"
+    )
+    p_volume.add_argument(
+        "--books", type=int, nargs="+", required=True, help="Book indices to merge"
+    )
+    p_volume.add_argument(
+        "--name", type=str, default=None, help="Custom graph name (default: auto)"
+    )
+    _add_common_args(p_volume)
+
+    # --- custom ---
+    p_custom = subparsers.add_parser("custom", help="Custom cross-book chapter merge")
+    p_custom.add_argument(
+        "--spec",
+        type=str,
+        required=True,
+        help='JSON mapping: \'{"2":[5,6],"3":[6,7]}\'',
+    )
+    p_custom.add_argument(
+        "--name", type=str, required=True, help="Graph name (required)"
+    )
+    _add_common_args(p_custom)
+
+    # --- list ---
+    subparsers.add_parser("list", help="List all graphs in DB")
+
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -123,61 +194,25 @@ def main():
         format="%(asctime)s %(levelname)s %(message)s",
         datefmt="%H:%M:%S",
     )
-    # Silence noisy HTTP request logs from OpenAI and Weaviate clients
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-    # Validate mutual exclusivity
-    if args.chapter_index is not None and args.chapters is not None:
-        parser.error("--chapter-index and --chapters are mutually exclusive")
-    if args.base_graph and args.chapter_index is not None:
-        parser.error(
-            "--base-graph can only be used with --chapters, not --chapter-index"
-        )
-
-    # If only --book-index given, discover all chapters for that book
-    if args.chapter_index is None and args.chapters is None:
-        mgr = BookRepositoryManager(WeaviateConfig.from_environment())
-        chapters = mgr.chapters.find_by_book_index(args.book_index)
-        mgr.close_all()
-        if not chapters:
-            parser.error(f"No chapters found for book index {args.book_index}")
-        args.chapters = sorted(ch.chapter_index for ch in chapters)
-        logger.info(
-            "No chapters specified — running all %d chapters for book %d: %s",
-            len(args.chapters),
-            args.book_index,
-            args.chapters,
-        )
-
     # Build pipeline config overrides
     pipeline_config = {}
-    if args.similarity_threshold is not None:
+    if hasattr(args, "similarity_threshold") and args.similarity_threshold is not None:
         pipeline_config["similarity_threshold"] = args.similarity_threshold
 
     service = KGIngestionService(pipeline_config=pipeline_config)
     t_start = time.perf_counter()
     try:
-        if args.chapter_index is not None:
-            service.extract_chapter(
-                args.book_index,
-                args.chapter_index,
-                force=args.force,
-                profile=args.profile,
-                max_concurrency=args.max_concurrency,
-                skip_visualization=args.skip_visualization,
-            )
-        else:
-            service.merge_chapters(
-                args.book_index,
-                args.chapters,
-                graph_name=args.graph_name,
-                base_graph=args.base_graph,
-                force=args.force,
-                profile=args.profile,
-                max_concurrency=args.max_concurrency,
-                skip_visualization=args.skip_visualization,
-            )
+        commands = {
+            "chapter": cmd_chapter,
+            "book": cmd_book,
+            "volume": cmd_volume,
+            "custom": cmd_custom,
+            "list": cmd_list,
+        }
+        commands[args.command](args, service)
     finally:
         elapsed = time.perf_counter() - t_start
         service.close()

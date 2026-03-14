@@ -181,9 +181,16 @@ class KGGraphRepository(WeaviateRepository["KGGraph"]):
         )
 
     def find_by_name(self, name: str) -> "KGGraph | None":
-        """Find a graph by its unique name."""
+        """Find a graph by its unique name.
+
+        Uses exact string matching because Weaviate TEXT fields use word
+        tokenization (e.g. 'book3' would also match 'book3_ch2').
+        """
         results = self.find_by_criteria({"name": name})
-        return results[0] if results else None
+        for r in results:
+            if r.name == name:
+                return r
+        return None
 
     def find_by_type(self, graph_type: str) -> list["KGGraph"]:
         """Find all graphs of a specific type (chapter, book, volume)."""

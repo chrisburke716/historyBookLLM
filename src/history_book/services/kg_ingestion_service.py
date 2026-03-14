@@ -1,17 +1,15 @@
 """KG ingestion service — extraction, merge, and Weaviate storage pipeline.
 
-Translates the script pipeline into a production service. Processes paragraphs
-from the database, extracts entities and relationships, normalizes via
-rule-based + embedding + LLM merging, stores in Weaviate, and exports to files.
+Processes paragraphs from the database, extracts entities and relationships,
+normalizes via rule-based + embedding + LLM merging, and stores in Weaviate.
+DB is the sole storage layer — no file I/O.
 """
 
-import json
 import logging
 import time
 import uuid as uuid_module
 from collections import defaultdict
 from datetime import UTC, datetime
-from pathlib import Path
 
 import networkx as nx
 import numpy as np
@@ -71,7 +69,9 @@ class NormalizedEntity(BaseModel):
     aliases: list[str] = Field(default_factory=list)
     descriptions: list[SourceDescription] = Field(default_factory=list)
     source_paragraph_ids: list[str]
-    source_locations: list[dict] = Field(default_factory=list)
+    book_indices: list[int] = Field(default_factory=list)
+    source_book_chapters: list[str] = Field(default_factory=list)
+    source_pages: list[int] = Field(default_factory=list)
     occurrence_count: int
     merged_from_ids: list[str] = Field(default_factory=list)
     relationship_ids: list[str] = Field(default_factory=list)
@@ -124,10 +124,11 @@ class UnionFind:
         rep.source_paragraph_ids = list(
             set(rep.source_paragraph_ids + other.source_paragraph_ids)
         )
-        existing_pids = {loc.get("paragraph_id") for loc in rep.source_locations}
-        for loc in other.source_locations:
-            if loc.get("paragraph_id") not in existing_pids:
-                rep.source_locations.append(loc)
+        rep.book_indices = sorted(set(rep.book_indices + other.book_indices))
+        rep.source_book_chapters = sorted(
+            set(rep.source_book_chapters + other.source_book_chapters)
+        )
+        rep.source_pages = sorted(set(rep.source_pages + other.source_pages))
         rep.occurrence_count += other.occurrence_count
         rep.merged_from_ids = list(set(rep.merged_from_ids + other.merged_from_ids))
         rep.relationship_ids = list(set(rep.relationship_ids + other.relationship_ids))
@@ -193,19 +194,6 @@ TYPE_COLORS = {
 }
 
 
-def _build_location(paragraph_meta: dict | None) -> dict | None:
-    """Build a source_location dict from paragraph metadata."""
-    if not paragraph_meta:
-        return None
-    return {
-        "book_index": paragraph_meta.get("book_index"),
-        "chapter_index": paragraph_meta.get("chapter_index"),
-        "page": paragraph_meta.get("page"),
-        "paragraph_index": paragraph_meta.get("paragraph_index"),
-        "paragraph_id": paragraph_meta.get("id"),
-    }
-
-
 def assign_ids_single(
     result: ExtractionResult,
     paragraph_meta: dict | None = None,
@@ -215,7 +203,21 @@ def assign_ids_single(
     para_entities: dict[str, NormalizedEntity] = {}
     relationships: list[NormalizedRelationship] = []
     skipped = 0
-    loc = _build_location(paragraph_meta)
+
+    # Build aggregate location fields from paragraph metadata
+    book_indices: list[int] = []
+    source_book_chapters: list[str] = []
+    source_pages: list[int] = []
+    if paragraph_meta:
+        bi = paragraph_meta.get("book_index")
+        ci = paragraph_meta.get("chapter_index")
+        page = paragraph_meta.get("page")
+        if bi is not None:
+            book_indices = [bi]
+        if bi is not None and ci is not None:
+            source_book_chapters = [f"{bi}:{ci}"]
+        if page is not None:
+            source_pages = [page]
 
     for entity in result.entities:
         entity_id = str(uuid_module.uuid4())
@@ -232,7 +234,9 @@ def assign_ids_single(
             if entity.description
             else [],
             source_paragraph_ids=[result.paragraph_id],
-            source_locations=[loc] if loc else [],
+            book_indices=list(book_indices),
+            source_book_chapters=list(source_book_chapters),
+            source_pages=list(source_pages),
             occurrence_count=1,
             merged_from_ids=[entity_id],
             relationship_ids=[],
@@ -386,11 +390,11 @@ def merge_rule_based(
         match.source_paragraph_ids = list(
             set(match.source_paragraph_ids + entity.source_paragraph_ids)
         )
-        existing_pids = {loc.get("paragraph_id") for loc in match.source_locations}
-        for loc in entity.source_locations:
-            if loc.get("paragraph_id") not in existing_pids:
-                match.source_locations.append(loc)
-                existing_pids.add(loc.get("paragraph_id"))
+        match.book_indices = sorted(set(match.book_indices + entity.book_indices))
+        match.source_book_chapters = sorted(
+            set(match.source_book_chapters + entity.source_book_chapters)
+        )
+        match.source_pages = sorted(set(match.source_pages + entity.source_pages))
         match.occurrence_count += entity.occurrence_count
         match.merged_from_ids = list(
             set(match.merged_from_ids + entity.merged_from_ids)
@@ -707,82 +711,6 @@ def visualize_with_pyvis(
 
     net.save_graph(output_file)
     logger.info("Saved visualization to %s", output_file)
-
-
-# ---------------------------------------------------------------------------
-# JSON serialization helpers
-# ---------------------------------------------------------------------------
-
-
-def save_entities_json(entities: list[NormalizedEntity], path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = [e.model_dump() for e in entities]
-    path.write_text(json.dumps(data, indent=2))
-
-
-def save_relationships_json(
-    relationships: list[NormalizedRelationship], path: Path
-) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = [r.model_dump() for r in relationships]
-    path.write_text(json.dumps(data, indent=2))
-
-
-def load_entities_json(path: Path) -> list[NormalizedEntity]:
-    data = json.loads(path.read_text())
-    return [NormalizedEntity.model_validate(d) for d in data]
-
-
-def load_relationships_json(path: Path) -> list[NormalizedRelationship]:
-    data = json.loads(path.read_text())
-    return [NormalizedRelationship.model_validate(d) for d in data]
-
-
-def _populate_relationship_ids(
-    entities: list[NormalizedEntity],
-    relationships: list[NormalizedRelationship],
-) -> None:
-    """Populate relationship_ids on entities from relationships (in-place)."""
-    entity_lookup = {e.id: e for e in entities}
-    for rel in relationships:
-        if rel.source_id in entity_lookup:
-            entity_lookup[rel.source_id].relationship_ids.append(rel.id)
-        if rel.target_id in entity_lookup:
-            entity_lookup[rel.target_id].relationship_ids.append(rel.id)
-
-
-# ---------------------------------------------------------------------------
-# File export
-# ---------------------------------------------------------------------------
-
-
-def export_results(
-    entities: list[NormalizedEntity],
-    relationships: list[NormalizedRelationship],
-    llm_results: list[dict],
-    output_dir: Path,
-    skip_visualization: bool = False,
-) -> None:
-    """Export pipeline results to JSON files and optional PyVis visualization."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    save_entities_json(entities, output_dir / "entities.json")
-    save_relationships_json(relationships, output_dir / "relationships.json")
-
-    if llm_results:
-        (output_dir / "llm_merge_results.json").write_text(
-            json.dumps(llm_results, indent=2)
-        )
-
-    logger.info("Exported JSON to %s", output_dir)
-
-    if not skip_visualization:
-        G = build_knowledge_graph(entities, relationships)
-        logger.info(
-            "Graph: %d nodes, %d edges", G.number_of_nodes(), G.number_of_edges()
-        )
-        viz_path = str(output_dir / "knowledge_graph.html")
-        visualize_with_pyvis(G, entities, relationships, viz_path)
 
 
 # ---------------------------------------------------------------------------
@@ -1325,7 +1253,7 @@ def run_cross_chapter_merge(  # noqa: PLR0912, PLR0915
 
 
 class KGIngestionService:
-    """Orchestrates KG extraction, merging, file export, and Weaviate storage."""
+    """Orchestrates KG extraction, merging, and Weaviate storage."""
 
     def __init__(
         self,
@@ -1354,32 +1282,23 @@ class KGIngestionService:
         force: bool = False,
         profile: bool = False,
         max_concurrency: int = 5,
-        skip_visualization: bool = False,
     ) -> str:
-        """Extract KG from a single chapter.
+        """Extract KG from a single chapter and store in Weaviate.
 
-        Stores as chapter graph in Weaviate + writes to file cache.
         Returns graph_name (e.g. 'book3_ch2').
         """
         graph_name = f"book{book_index}_ch{chapter_index}"
-        cache_dir = self._chapter_cache_dir(book_index, chapter_index)
 
-        # Check file cache
+        # Check DB cache
         if not force:
-            cached = self._load_chapter_cache(cache_dir)
-            if cached is not None:
-                entities, relationships = cached
+            existing = self.repositories.kg_graphs.find_by_name(graph_name)
+            if existing is not None:
                 logger.info(
-                    "Chapter %d: already cached (%d entities, %d relationships). "
+                    "Chapter %d: already in DB (%d entities, %d relationships). "
                     "Use force=True to regenerate.",
                     chapter_index,
-                    len(entities),
-                    len(relationships),
-                )
-                # Ensure stored in DB even if from cache
-                book_chapters = [f"{book_index}:{chapter_index}"]
-                self._store_graph(
-                    graph_name, "chapter", entities, relationships, book_chapters
+                    existing.entity_count,
+                    existing.relationship_count,
                 )
                 return graph_name
 
@@ -1391,22 +1310,12 @@ class KGIngestionService:
 
         logger.info("Loaded %d paragraphs", len(paragraphs))
 
-        final_entities, final_relationships, llm_results = run_pipeline(
+        final_entities, final_relationships, _llm_results = run_pipeline(
             paragraphs,
             self._config,
             profile=profile,
             max_concurrency=max_concurrency,
         )
-
-        # Export to file cache
-        export_results(
-            final_entities,
-            final_relationships,
-            llm_results,
-            cache_dir,
-            skip_visualization=skip_visualization,
-        )
-        logger.info("Done. Output written to %s", cache_dir)
 
         # Store in Weaviate
         book_chapters = [f"{book_index}:{chapter_index}"]
@@ -1416,123 +1325,88 @@ class KGIngestionService:
 
         return graph_name
 
-    def merge_chapters(  # noqa: PLR0912
+    def merge_book(
         self,
         book_index: int,
-        chapters: list[int],
+        chapters: list[int] | None = None,
         *,
-        graph_name: str | None = None,
-        base_graph: str | None = None,
         force: bool = False,
         profile: bool = False,
         max_concurrency: int = 5,
-        skip_visualization: bool = False,
     ) -> str:
-        """Extract chapters (cached) -> merge -> store as book graph.
+        """Extract chapters (DB-cached) -> merge -> store as book graph.
 
-        Returns graph_name (e.g. 'book3').
+        If chapters is None, auto-discovers all chapters from DB and uses
+        name 'book{X}'. If a subset is specified, uses 'book{X}_ch{a}_{b}_{c}'.
+        Returns graph_name.
         """
-        chapters = sorted(chapters)
-
-        # Load base graph if provided
-        base_entities = None
-        base_relationships = None
-        base_metadata: dict = {}
-        base_chapters: list[int] = []
-
-        if base_graph:
-            base_graph_dir = Path(base_graph)
-            if not (base_graph_dir / "entities.json").exists():
-                msg = f"Base graph not found at {base_graph_dir}"
-                raise FileNotFoundError(msg)
-            base_entities, base_relationships, base_metadata = self._load_graph_files(
-                base_graph_dir
-            )
-            base_chapters = base_metadata.get("chapters_included", [])
+        # Auto-discover chapters if not specified
+        is_full_book = chapters is None
+        if is_full_book:
+            db_chapters = self.repositories.chapters.find_by_book_index(book_index)
+            if not db_chapters:
+                msg = f"No chapters found for book index {book_index}"
+                raise ValueError(msg)
+            chapters = sorted(ch.chapter_index for ch in db_chapters)
             logger.info(
-                "Loaded base graph from %s: %d entities, %d relationships (chapters %s)",
-                base_graph_dir,
-                len(base_entities),
-                len(base_relationships),
-                base_chapters,
+                "Auto-discovered %d chapters for book %d: %s",
+                len(chapters),
+                book_index,
+                chapters,
             )
-            # Skip overlapping chapters
-            overlap = set(chapters) & set(base_chapters)
-            if overlap:
-                logger.warning(
-                    "Chapters %s already in base graph — they will be skipped",
-                    sorted(overlap),
-                )
-                chapters = [ch for ch in chapters if ch not in overlap]
-                if not chapters:
-                    msg = "No new chapters to merge after removing overlaps"
-                    raise ValueError(msg)
+        else:
+            chapters = sorted(chapters)
 
-        all_chapters = sorted(set(base_chapters + chapters))
+        if is_full_book:
+            graph_name = f"book{book_index}"
+        else:
+            ch_suffix = "_".join(str(ch) for ch in chapters)
+            graph_name = f"book{book_index}_ch{ch_suffix}"
 
-        # Determine graph output name
-        if not graph_name:
-            ch_range = f"{min(all_chapters)}-{max(all_chapters)}"
-            graph_name = f"book{book_index}_ch{ch_range}"
-
-        graph_dir = self._graph_output_dir(graph_name)
         logger.info(
-            "KG extraction: book=%d chapters=%s -> %s",
+            "KG book merge: book=%d chapters=%s -> %s",
             book_index,
             chapters,
-            graph_dir,
+            graph_name,
         )
 
-        # Phase 1: Per-chapter extraction (with caching)
+        # Phase 1: Ensure chapter graphs exist
         chapter_results: dict[
             int, tuple[list[NormalizedEntity], list[NormalizedRelationship]]
         ] = {}
 
         for ch_idx in chapters:
-            ch_cache_dir = self._chapter_cache_dir(book_index, ch_idx)
+            ch_graph_name = f"book{book_index}_ch{ch_idx}"
+            existing = self.repositories.kg_graphs.find_by_name(ch_graph_name)
 
-            if not force:
-                cached = self._load_chapter_cache(ch_cache_dir)
-                if cached is not None:
-                    entities, relationships = cached
-                    logger.info(
-                        "Chapter %d: loaded from cache (%d entities, %d relationships)",
-                        ch_idx,
-                        len(entities),
-                        len(relationships),
-                    )
-                    chapter_results[ch_idx] = (entities, relationships)
-                    continue
-
-            # Run extraction for this chapter
-            paragraphs = self._load_paragraphs(book_index, ch_idx)
-            if not paragraphs:
-                logger.error(
-                    "No paragraphs found for book=%d chapter=%d, skipping",
+            if existing is None or force:
+                logger.info(
+                    "Chapter %d: %s...",
+                    ch_idx,
+                    "re-extracting (force)" if existing else "extracting",
+                )
+                self.extract_chapter(
                     book_index,
                     ch_idx,
+                    force=force,
+                    profile=profile,
+                    max_concurrency=max_concurrency,
+                )
+
+            # Load from DB
+            result = self._load_graph_from_db(ch_graph_name)
+            if result is None:
+                logger.error(
+                    "Failed to load chapter graph '%s' from DB, skipping",
+                    ch_graph_name,
                 )
                 continue
-
+            entities, relationships = result
             logger.info(
-                "Chapter %d: extracting from %d paragraphs...",
+                "Chapter %d: loaded from DB (%d entities, %d relationships)",
                 ch_idx,
-                len(paragraphs),
-            )
-            entities, relationships, llm_results = run_pipeline(
-                paragraphs,
-                self._config,
-                profile=profile,
-                max_concurrency=max_concurrency,
-            )
-
-            # Export to chapter cache
-            export_results(
-                entities,
-                relationships,
-                llm_results,
-                ch_cache_dir,
-                skip_visualization=skip_visualization,
+                len(entities),
+                len(relationships),
             )
             chapter_results[ch_idx] = (entities, relationships)
 
@@ -1540,58 +1414,120 @@ class KGIngestionService:
             msg = "No chapter results available for merge"
             raise ValueError(msg)
 
-        total_chapters = len(base_chapters) + len(chapter_results)
-        if total_chapters < 2:
-            msg = f"Need at least 2 chapters for merge, got {total_chapters}"
+        if len(chapter_results) < 2:
+            msg = f"Need at least 2 chapters for merge, got {len(chapter_results)}"
             raise ValueError(msg)
 
         # Phase 2: Cross-chapter merge
         logger.info("=== Phase 2: Cross-chapter merge ===")
-        combined_entities, combined_rels, combined_llm = run_cross_chapter_merge(
+        combined_entities, combined_rels, _combined_llm = run_cross_chapter_merge(
             chapter_results,
             self._config,
             profile=profile,
             max_concurrency=max_concurrency,
-            base_entities=base_entities,
-            base_relationships=base_relationships,
         )
-
-        # Phase 3: Export to graph directory
-        export_results(
-            combined_entities,
-            combined_rels,
-            combined_llm,
-            graph_dir,
-            skip_visualization=skip_visualization,
-        )
-
-        # Save file metadata
-        now = datetime.now(UTC).isoformat()
-        metadata = {
-            "book_index": book_index,
-            "chapters_included": all_chapters,
-            "entity_count": len(combined_entities),
-            "relationship_count": len(combined_rels),
-            "created_at": base_metadata.get("created_at", now),
-            "updated_at": now,
-            "config": {
-                k: v
-                for k, v in self._config.items()
-                if k in ("similarity_threshold", "extraction_model", "merge_model")
-            },
-        }
-        if base_graph:
-            metadata["base_graph"] = str(base_graph)
-        self._save_graph_metadata(graph_dir, metadata)
 
         # Store in Weaviate
-        book_chapters = [f"{book_index}:{ch}" for ch in all_chapters]
+        book_chapters = [f"{book_index}:{ch}" for ch in chapters]
         self._store_graph(
             graph_name, "book", combined_entities, combined_rels, book_chapters
         )
 
-        logger.info("Done. Output written to %s", graph_dir)
         return graph_name
+
+    def merge_volume(
+        self,
+        book_indices: list[int],
+        *,
+        graph_name: str | None = None,
+        force: bool = False,
+        profile: bool = False,
+        max_concurrency: int = 5,
+    ) -> str:
+        """Merge book graphs into a volume graph.
+
+        Ensures book graphs exist (calls merge_book for missing ones if force,
+        errors if not force and missing). Returns graph_name.
+        """
+        if not graph_name:
+            graph_name = f"volume_{min(book_indices)}-{max(book_indices)}"
+
+        # Ensure book graphs exist
+        book_graph_names: list[str] = []
+        for bi in sorted(book_indices):
+            bg_name = f"book{bi}"
+            existing = self.repositories.kg_graphs.find_by_name(bg_name)
+            if existing is None:
+                if force:
+                    logger.info("Book %d graph missing, building...", bi)
+                    self.merge_book(
+                        bi,
+                        force=force,
+                        profile=profile,
+                        max_concurrency=max_concurrency,
+                    )
+                else:
+                    msg = (
+                        f"Book graph '{bg_name}' not found in DB. "
+                        f"Run 'book --book {bi}' first or use --force."
+                    )
+                    raise ValueError(msg)
+            book_graph_names.append(bg_name)
+
+        return self.merge_graphs(
+            book_graph_names,
+            output_name=graph_name,
+            graph_type="volume",
+            profile=profile,
+            max_concurrency=max_concurrency,
+        )
+
+    def merge_custom(
+        self,
+        chapters: dict[int, list[int]],
+        *,
+        graph_name: str,
+        force: bool = False,
+        profile: bool = False,
+        max_concurrency: int = 5,
+    ) -> str:
+        """Merge specific chapters from multiple books into a custom graph.
+
+        Args:
+            chapters: {book_index: [chapter_indices]} mapping.
+            graph_name: Required name for the output graph.
+
+        Returns graph_name.
+        """
+        # Ensure chapter graphs exist
+        chapter_graph_names: list[str] = []
+        for book_index in sorted(chapters.keys()):
+            for ch_idx in sorted(chapters[book_index]):
+                ch_graph_name = f"book{book_index}_ch{ch_idx}"
+                existing = self.repositories.kg_graphs.find_by_name(ch_graph_name)
+                if existing is None or force:
+                    logger.info(
+                        "Chapter book%d_ch%d: %s...",
+                        book_index,
+                        ch_idx,
+                        "re-extracting (force)" if existing else "extracting",
+                    )
+                    self.extract_chapter(
+                        book_index,
+                        ch_idx,
+                        force=force,
+                        profile=profile,
+                        max_concurrency=max_concurrency,
+                    )
+                chapter_graph_names.append(ch_graph_name)
+
+        return self.merge_graphs(
+            chapter_graph_names,
+            output_name=graph_name,
+            graph_type="custom",
+            profile=profile,
+            max_concurrency=max_concurrency,
+        )
 
     def merge_graphs(
         self,
@@ -1601,13 +1537,11 @@ class KGIngestionService:
         graph_type: str = "volume",
         profile: bool = False,
         max_concurrency: int = 5,
-        skip_visualization: bool = False,
     ) -> str:
         """Merge N existing graphs from Weaviate into a new graph.
 
-        Works for book->volume or any arbitrary merge. Returns graph_name.
+        Low-level merge-by-graph-name method. Returns graph_name.
         """
-        # Load existing graphs from Weaviate
         graph_results: dict[
             int, tuple[list[NormalizedEntity], list[NormalizedRelationship]]
         ] = {}
@@ -1626,38 +1560,31 @@ class KGIngestionService:
                 len(entities),
                 len(relationships),
             )
-            # Gather book_chapters from graph metadata
             kg_graph = self.repositories.kg_graphs.find_by_name(gname)
             if kg_graph:
                 all_book_chapters.extend(kg_graph.book_chapters)
 
         all_book_chapters = sorted(set(all_book_chapters))
 
-        # Run cross-chapter merge (treating each graph as a "chapter")
-        combined_entities, combined_rels, combined_llm = run_cross_chapter_merge(
+        combined_entities, combined_rels, _combined_llm = run_cross_chapter_merge(
             graph_results,
             self._config,
             profile=profile,
             max_concurrency=max_concurrency,
         )
 
-        # Export to file
-        graph_dir = self._graph_output_dir(output_name)
-        export_results(
-            combined_entities,
-            combined_rels,
-            combined_llm,
-            graph_dir,
-            skip_visualization=skip_visualization,
-        )
-
-        # Store in Weaviate
         self._store_graph(
             output_name, graph_type, combined_entities, combined_rels, all_book_chapters
         )
 
         logger.info("Done. Merged %d graphs into '%s'", len(graph_names), output_name)
         return output_name
+
+    def load_graph(
+        self, graph_name: str
+    ) -> tuple[list[NormalizedEntity], list[NormalizedRelationship]] | None:
+        """Load a graph from Weaviate. Public wrapper for standalone tools."""
+        return self._load_graph_from_db(graph_name)
 
     def list_graphs(self) -> list[KGGraph]:
         """List all KG graphs stored in Weaviate."""
@@ -1674,19 +1601,6 @@ class KGIngestionService:
             self._repo_manager = None
 
     # --- Private helpers ---
-
-    @staticmethod
-    def _chapter_cache_dir(book_index: int, chapter_index: int) -> Path:
-        return Path(f"output/kg/chapters/book{book_index}_ch{chapter_index}")
-
-    @staticmethod
-    def _graph_output_dir(graph_name: str) -> Path:
-        return Path(f"output/kg/graphs/{graph_name}")
-
-    @staticmethod
-    def _save_graph_metadata(graph_dir: Path, metadata: dict) -> None:
-        graph_dir.mkdir(parents=True, exist_ok=True)
-        (graph_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
 
     def _load_paragraphs(self, book_index: int, chapter_index: int) -> list[dict]:
         """Load paragraphs from the database for a given book and chapter."""
@@ -1706,40 +1620,6 @@ class KGIngestionService:
         ]
         paragraphs.sort(key=lambda p: (p.get("page", 0), p.get("paragraph_index", 0)))
         return paragraphs
-
-    @staticmethod
-    def _load_chapter_cache(
-        cache_dir: Path,
-    ) -> tuple[list[NormalizedEntity], list[NormalizedRelationship]] | None:
-        """Load cached chapter results from JSON files."""
-        entities_json = cache_dir / "entities.json"
-        relationships_json = cache_dir / "relationships.json"
-        if entities_json.exists() and relationships_json.exists():
-            entities = load_entities_json(entities_json)
-            relationships = load_relationships_json(relationships_json)
-            _populate_relationship_ids(entities, relationships)
-            return entities, relationships
-        return None
-
-    @staticmethod
-    def _load_graph_files(
-        graph_dir: Path,
-    ) -> tuple[list[NormalizedEntity], list[NormalizedRelationship], dict]:
-        """Load a saved graph from JSON files."""
-        entities_json = graph_dir / "entities.json"
-        relationships_json = graph_dir / "relationships.json"
-        if not entities_json.exists():
-            msg = f"No entities.json found in {graph_dir}"
-            raise FileNotFoundError(msg)
-        entities = load_entities_json(entities_json)
-        relationships = load_relationships_json(relationships_json)
-        _populate_relationship_ids(entities, relationships)
-
-        metadata_path = graph_dir / "metadata.json"
-        metadata = (
-            json.loads(metadata_path.read_text()) if metadata_path.exists() else {}
-        )
-        return entities, relationships, metadata
 
     def _store_graph(
         self,
@@ -1842,9 +1722,6 @@ class KGIngestionService:
 
         entities = []
         for ke in kg_entities:
-            source_locations = [
-                {"paragraph_id": pid} for pid in ke.source_paragraph_ids
-            ]
             entities.append(
                 NormalizedEntity(
                     id=ke.id,
@@ -1860,7 +1737,9 @@ class KGIngestionService:
                         )
                     ],
                     source_paragraph_ids=ke.source_paragraph_ids,
-                    source_locations=source_locations,
+                    book_indices=ke.book_indices,
+                    source_book_chapters=ke.source_book_chapters,
+                    source_pages=ke.source_pages,
                     occurrence_count=ke.occurrence_count,
                     merged_from_ids=[],
                     relationship_ids=[],
@@ -1898,20 +1777,6 @@ class KGIngestionService:
     @staticmethod
     def _to_kg_entity(entity: NormalizedEntity, graph_name: str) -> KGEntity:
         """Convert a pipeline NormalizedEntity to a DB KGEntity."""
-        book_indices = set()
-        source_book_chapters = set()
-        source_pages = set()
-        for loc in entity.source_locations:
-            bi = loc.get("book_index")
-            ci = loc.get("chapter_index")
-            page = loc.get("page")
-            if bi is not None:
-                book_indices.add(bi)
-            if bi is not None and ci is not None:
-                source_book_chapters.add(f"{bi}:{ci}")
-            if page is not None:
-                source_pages.add(page)
-
         return KGEntity(
             graph_name=graph_name,
             name=entity.name,
@@ -1920,9 +1785,9 @@ class KGIngestionService:
             descriptions=[d.text for d in entity.descriptions],
             description_paragraph_ids=[d.paragraph_id for d in entity.descriptions],
             occurrence_count=entity.occurrence_count,
-            book_indices=sorted(book_indices),
-            source_book_chapters=sorted(source_book_chapters),
-            source_pages=sorted(source_pages),
+            book_indices=entity.book_indices,
+            source_book_chapters=entity.source_book_chapters,
+            source_pages=entity.source_pages,
             source_paragraph_ids=entity.source_paragraph_ids,
             merged_from_count=len(entity.merged_from_ids),
         )
