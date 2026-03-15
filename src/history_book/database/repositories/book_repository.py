@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from history_book.database.repositories.kg_repository import (
         KGEntityRepository,
         KGGraphRepository,
+        KGMergeDecisionRepository,
         KGRelationshipRepository,
     )
 
@@ -225,6 +226,7 @@ class BookRepositoryManager:
         self._kg_entity_repo: KGEntityRepository | None = None
         self._kg_relationship_repo: KGRelationshipRepository | None = None
         self._kg_graph_repo: KGGraphRepository | None = None
+        self._kg_merge_decision_repo: KGMergeDecisionRepository | None = None
 
     @property
     def books(self) -> BookRepository:
@@ -294,6 +296,17 @@ class BookRepositoryManager:
             self._kg_graph_repo = KGGraphRepository(self.config)
         return self._kg_graph_repo
 
+    @property
+    def kg_merge_decisions(self) -> "KGMergeDecisionRepository":
+        """Get the KG merge decision audit repository."""
+        if self._kg_merge_decision_repo is None:
+            from history_book.database.repositories.kg_repository import (  # noqa: PLC0415
+                KGMergeDecisionRepository,
+            )
+
+            self._kg_merge_decision_repo = KGMergeDecisionRepository(self.config)
+        return self._kg_merge_decision_repo
+
     def close_all(self):
         """Close all repository connections."""
         repositories = [
@@ -305,6 +318,7 @@ class BookRepositoryManager:
             self._kg_entity_repo,
             self._kg_relationship_repo,
             self._kg_graph_repo,
+            self._kg_merge_decision_repo,
         ]
         for repo in repositories:
             if repo is not None:
@@ -321,3 +335,4 @@ class BookRepositoryManager:
         self._kg_entity_repo = None
         self._kg_relationship_repo = None
         self._kg_graph_repo = None
+        self._kg_merge_decision_repo = None

@@ -98,3 +98,24 @@ class KGGraph(BaseModel):
     relationship_count: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class KGMergeDecision(BaseModel):
+    """Audit record for a single entity merge decision."""
+
+    id: str | None = Field(default_factory=lambda: str(uuid.uuid4()))
+    graph_name: str
+    merge_type: str  # "rule" or "llm"
+    entity1_name: str  # new entity (being merged in)
+    entity1_type: str
+    entity1_aliases: list[str] = Field(default_factory=list)
+    entity1_source_graph: str = ""  # chapter graph entity1 was loaded from ("" for within-chapter extraction)
+    entity2_name: str  # master entity (being merged into)
+    entity2_type: str
+    entity2_aliases: list[str] = Field(default_factory=list)
+    canonical_name: str = ""
+    similarity: float | None = None  # LLM merges only
+    reasoning: str = ""  # LLM merges only
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    vectorize_fields: ClassVar[list[str]] = []  # audit-only, no vector search needed

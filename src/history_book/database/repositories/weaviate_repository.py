@@ -387,6 +387,10 @@ class WeaviateRepository(VectorRepository[T]):
             logger.error(f"Failed to get vector for entity {entity_id}: {str(e)}")
             return None
 
+    def batch_create(self, entities: list[T]) -> list[str]:
+        """Batch insert entities without vectors (for non-vectorized collections)."""
+        return self.batch_create_with_vectors([(e, None) for e in entities])
+
     def batch_create_with_vectors(
         self, entities_and_vectors: list[tuple[T, list[float] | None]], **kwargs
     ) -> list[str]:

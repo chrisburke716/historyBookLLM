@@ -9,7 +9,12 @@ from history_book.database.config.database_config import WeaviateConfig
 from history_book.database.repositories.weaviate_repository import WeaviateRepository
 
 if TYPE_CHECKING:
-    from history_book.data_models.kg_entities import KGEntity, KGGraph, KGRelationship
+    from history_book.data_models.kg_entities import (
+        KGEntity,
+        KGGraph,
+        KGMergeDecision,
+        KGRelationship,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -195,3 +200,90 @@ class KGGraphRepository(WeaviateRepository["KGGraph"]):
     def find_by_type(self, graph_type: str) -> list["KGGraph"]:
         """Find all graphs of a specific type (chapter, book, volume)."""
         return self.find_by_criteria({"graph_type": graph_type})
+
+
+class KGMergeDecisionRepository(WeaviateRepository["KGMergeDecision"]):
+    """Repository for KG merge audit decisions."""
+
+    def __init__(self, config: WeaviateConfig):
+        from history_book.data_models.kg_entities import KGMergeDecision  # noqa: PLC0415, I001
+
+        super().__init__(
+            config=config,
+            collection_name="KGMergeDecisions",
+            entity_class=KGMergeDecision,
+        )
+
+    def find_by_graph(self, graph_name: str) -> list["KGMergeDecision"]:
+        """Find all merge decisions for a specific graph.
+
+        Uses exact string match (same pattern as KGGraphRepository.find_by_name)
+        to avoid Weaviate tokenization matching adjacent graph names.
+        """
+        results = self.find_by_criteria({"graph_name": graph_name})
+        return [r for r in results if r.graph_name == graph_name]
+
+    def find_by_entity_name(
+        self, name: str, graph_name: str | None = None
+    ) -> list["KGMergeDecision"]:
+        """Find merge decisions involving an entity by canonical or entity name."""
+        try:
+            name_filter = (
+                Filter.by_property("entity1_name").equal(name)
+                | Filter.by_property("entity2_name").equal(name)
+                | Filter.by_property("canonical_name").equal(name)
+            )
+            combined = (
+                name_filter & Filter.by_property("graph_name").equal(graph_name)
+                if graph_name
+                else name_filter
+            )
+            results = self.collection.query.fetch_objects(filters=combined, limit=1000)
+            return [
+                self._weaviate_object_to_entity(obj)
+                for obj in results.objects
+                if self._weaviate_object_to_entity(obj) is not None
+            ]
+        except Exception as e:
+            logger.error("Failed to find merge decisions by entity name: %s", e)
+            return []
+
+    def find_by_entity(
+        self, name: str, entity_type: str, graph_name: str | None = None
+    ) -> list["KGMergeDecision"]:
+        """Find merge decisions involving a specific entity (name + type).
+
+        Matches name against entity1_name, entity2_name, and canonical_name,
+        and type against entity1_type or entity2_type.
+        """
+        try:
+            name_filter = (
+                Filter.by_property("entity1_name").equal(name)
+                | Filter.by_property("entity2_name").equal(name)
+                | Filter.by_property("canonical_name").equal(name)
+            )
+            type_filter = (
+                Filter.by_property("entity1_type").equal(entity_type)
+                | Filter.by_property("entity2_type").equal(entity_type)
+            )
+            combined = name_filter & type_filter
+            if graph_name:
+                combined = combined & Filter.by_property("graph_name").equal(graph_name)
+            results = self.collection.query.fetch_objects(filters=combined, limit=1000)
+            return [
+                self._weaviate_object_to_entity(obj)
+                for obj in results.objects
+                if self._weaviate_object_to_entity(obj) is not None
+            ]
+        except Exception as e:
+            logger.error("Failed to find merge decisions by entity: %s", e)
+            return []
+
+    def delete_by_graph(self, graph_name: str) -> int:
+        """Delete all merge decisions for a graph. Returns count deleted."""
+        decisions = self.find_by_graph(graph_name)
+        count = 0
+        for d in decisions:
+            if d.id and self.delete(d.id):
+                count += 1
+        return count
