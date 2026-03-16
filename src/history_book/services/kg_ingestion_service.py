@@ -391,7 +391,8 @@ def merge_rule_based(
 
     for entity, match, canonical_name in approved_merges:
         logger.debug("    Rule merge: '%s' -> '%s'", entity.name, match.name)
-        rule_decisions.append({
+        # Capture pre-merge names before _apply_merge_identity renames match in-place
+        partial = {
             "merge_type": "rule",
             "entity1_name": entity.name,
             "entity1_type": entity.type,
@@ -403,7 +404,7 @@ def merge_rule_based(
             "canonical_name": canonical_name or "",
             "similarity": None,
             "reasoning": "",
-        })
+        }
         _apply_merge_identity(
             match, entity.name, entity.aliases, entity.descriptions, canonical_name
         )
@@ -424,6 +425,8 @@ def merge_rule_based(
             alias_key = alias.lower().strip()
             if alias_key:
                 name_to_master[alias_key] = match
+        partial["occurrence_count_after"] = match.occurrence_count
+        rule_decisions.append(partial)
 
     for entity in unmatched:
         key = entity.name.lower().strip()
@@ -438,6 +441,20 @@ def merge_rule_based(
             alias_key = alias.lower().strip()
             if alias_key:
                 name_to_master[alias_key] = new_master
+        rule_decisions.append({
+            "merge_type": "root",
+            "entity1_name": new_master.name,
+            "entity1_type": new_master.type,
+            "entity1_aliases": list(new_master.aliases),
+            "entity1_source_graph": new_master.source_graph,
+            "entity2_name": new_master.name,
+            "entity2_type": new_master.type,
+            "entity2_aliases": [],
+            "canonical_name": new_master.name,
+            "occurrence_count_after": new_master.occurrence_count,
+            "similarity": None,
+            "reasoning": "",
+        })
 
     # --- Remap relationships ---
     master_entity_lookup = {e.id: e for e in master_entities}
@@ -548,7 +565,7 @@ def _build_merge_inputs(entity1, entity2) -> dict:
 def _batch_with_retry(chain, inputs_list: list, max_concurrency: int) -> list:
     """Run chain.batch() with exponential backoff on rate limit / timeout errors."""
     max_attempts = 5
-    retryable_keywords = ["rate", "timeout", "timed out", "connection"]
+    retryable_keywords = ["rate", "timeout", "timed out", "connection", "could not parse"]
     for attempt in range(max_attempts):
         try:
             return chain.batch(inputs_list, config={"max_concurrency": max_concurrency})
@@ -811,6 +828,13 @@ def _run_embedding_merge(
             pairs_to_check, decisions, strict=False
         ):
             if decision.should_merge:
+                uf.union(
+                    c["new_entity"].id,
+                    c["master_entity"].id,
+                    decision.canonical_name,
+                )
+                new_root = uf.find(c["master_entity"].id)
+                rep_after = uf.representative[new_root]
                 llm_results.append(
                     {
                         "merge_type": "llm",
@@ -824,12 +848,8 @@ def _run_embedding_merge(
                         "similarity": c["similarity"],
                         "reasoning": decision.reasoning or "",
                         "canonical_name": decision.canonical_name or "",
+                        "occurrence_count_after": rep_after.occurrence_count,
                     }
-                )
-                uf.union(
-                    c["new_entity"].id,
-                    c["master_entity"].id,
-                    decision.canonical_name,
                 )
                 n_llm_merged += 1
                 logger.info(

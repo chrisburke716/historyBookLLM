@@ -3,7 +3,7 @@
 import logging
 from typing import TYPE_CHECKING
 
-from weaviate.classes.query import Filter
+from weaviate.classes.query import Filter, Sort
 
 from history_book.database.config.database_config import WeaviateConfig
 from history_book.database.repositories.weaviate_repository import WeaviateRepository
@@ -33,7 +33,8 @@ class KGEntityRepository(WeaviateRepository["KGEntity"]):
 
     def find_by_graph(self, graph_name: str) -> list["KGEntity"]:
         """Find all entities belonging to a specific graph."""
-        return self.find_by_criteria({"graph_name": graph_name})
+        results = self.find_by_criteria({"graph_name": graph_name})
+        return [r for r in results if r.graph_name == graph_name]
 
     def find_by_paragraph(self, paragraph_id: str, graph_name: str) -> list["KGEntity"]:
         """Find entities that appear in a specific paragraph.
@@ -51,9 +52,10 @@ class KGEntityRepository(WeaviateRepository["KGEntity"]):
                 limit=1000,
             )
             return [
-                self._weaviate_object_to_entity(obj)
+                e
                 for obj in results.objects
-                if self._weaviate_object_to_entity(obj) is not None
+                if (e := self._weaviate_object_to_entity(obj)) is not None
+                and e.graph_name == graph_name
             ]
         except Exception as e:
             logger.error("Failed to find entities by paragraph: %s", e)
@@ -135,7 +137,8 @@ class KGRelationshipRepository(WeaviateRepository["KGRelationship"]):
 
     def find_by_graph(self, graph_name: str) -> list["KGRelationship"]:
         """Find all relationships belonging to a specific graph."""
-        return self.find_by_criteria({"graph_name": graph_name})
+        results = self.find_by_criteria({"graph_name": graph_name})
+        return [r for r in results if r.graph_name == graph_name]
 
     def find_by_entities(
         self, entity_ids: list[str], graph_name: str
@@ -155,9 +158,10 @@ class KGRelationshipRepository(WeaviateRepository["KGRelationship"]):
                 limit=10000,
             )
             return [
-                self._weaviate_object_to_entity(obj)
+                r
                 for obj in results.objects
-                if self._weaviate_object_to_entity(obj) is not None
+                if (r := self._weaviate_object_to_entity(obj)) is not None
+                and r.graph_name == graph_name
             ]
         except Exception as e:
             logger.error("Failed to find relationships by entities: %s", e)
@@ -221,7 +225,10 @@ class KGMergeDecisionRepository(WeaviateRepository["KGMergeDecision"]):
         to avoid Weaviate tokenization matching adjacent graph names.
         """
         results = self.find_by_criteria({"graph_name": graph_name})
-        return [r for r in results if r.graph_name == graph_name]
+        return sorted(
+            [r for r in results if r.graph_name == graph_name],
+            key=lambda d: d.occurrence_count_after,
+        )
 
     def find_by_entity_name(
         self, name: str, graph_name: str | None = None
@@ -238,11 +245,16 @@ class KGMergeDecisionRepository(WeaviateRepository["KGMergeDecision"]):
                 if graph_name
                 else name_filter
             )
-            results = self.collection.query.fetch_objects(filters=combined, limit=1000)
+            results = self.collection.query.fetch_objects(
+                filters=combined,
+                sort=Sort.by_property("occurrence_count_after", ascending=True),
+                limit=1000,
+            )
             return [
-                self._weaviate_object_to_entity(obj)
+                d
                 for obj in results.objects
-                if self._weaviate_object_to_entity(obj) is not None
+                if (d := self._weaviate_object_to_entity(obj)) is not None
+                and (graph_name is None or d.graph_name == graph_name)
             ]
         except Exception as e:
             logger.error("Failed to find merge decisions by entity name: %s", e)
@@ -269,11 +281,16 @@ class KGMergeDecisionRepository(WeaviateRepository["KGMergeDecision"]):
             combined = name_filter & type_filter
             if graph_name:
                 combined = combined & Filter.by_property("graph_name").equal(graph_name)
-            results = self.collection.query.fetch_objects(filters=combined, limit=1000)
+            results = self.collection.query.fetch_objects(
+                filters=combined,
+                sort=Sort.by_property("occurrence_count_after", ascending=True),
+                limit=1000,
+            )
             return [
-                self._weaviate_object_to_entity(obj)
+                d
                 for obj in results.objects
-                if self._weaviate_object_to_entity(obj) is not None
+                if (d := self._weaviate_object_to_entity(obj)) is not None
+                and (graph_name is None or d.graph_name == graph_name)
             ]
         except Exception as e:
             logger.error("Failed to find merge decisions by entity: %s", e)

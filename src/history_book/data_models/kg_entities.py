@@ -116,6 +116,7 @@ class KGMergeDecision(BaseModel):
     canonical_name: str = ""
     similarity: float | None = None  # LLM merges only
     reasoning: str = ""  # LLM merges only
+    occurrence_count_after: int = 0  # master's occurrence_count immediately after this merge
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     vectorize_fields: ClassVar[list[str]] = []  # audit-only, no vector search needed
