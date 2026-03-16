@@ -47,7 +47,7 @@ DEFAULT_CONFIG = {
     "extraction_temperature": 0.0,
     "merge_model": "gpt-5-mini",
     "merge_temperature": 0.0,
-    "rule_filter_model": "gpt-4.1-nano",
+    "rule_filter_model": "gpt-4.1-mini",
     "rule_filter_temperature": 0.0,
     "temporal_model": "gpt-4.1-nano",
     "temporal_temperature": 0.0,
@@ -325,40 +325,44 @@ def merge_rule_based(
 
     Returns (updated_master_entities, updated_master_relationships, newly_added_entities, rule_decisions).
     """
-    name_to_master: dict[str, NormalizedEntity] = {}
+    # Build one-to-many index: each name/alias key maps to all master entities that use it.
+    name_to_masters: dict[str, list[NormalizedEntity]] = {}
     for me in master_entities:
-        name_to_master[me.name.lower().strip()] = me
-        for alias in me.aliases:
-            alias_key = alias.lower().strip()
-            if alias_key:
-                name_to_master[alias_key] = me
+        for key in [me.name.lower().strip()] + [
+            a.lower().strip() for a in me.aliases if a.strip()
+        ]:
+            name_to_masters.setdefault(key, []).append(me)
 
     # --- Phase 1: Collect matches ---
+    # For each new entity, gather all unique master candidates that share a name or alias,
+    # filtered to same type and sorted by occurrence_count descending (most established first).
     pending_merges: list[tuple[NormalizedEntity, NormalizedEntity]] = []
     unmatched: list[NormalizedEntity] = []
 
     for entity in new_entities:
-        key = entity.name.lower().strip()
-        match = name_to_master.get(key)
-        if not match:
-            for alias in entity.aliases:
-                alias_key = alias.lower().strip()
-                match = name_to_master.get(alias_key)
-                if match:
-                    break
+        seen_ids: set[str] = set()
+        candidates: list[NormalizedEntity] = []
+        for key in [entity.name.lower().strip()] + [
+            a.lower().strip() for a in entity.aliases if a.strip()
+        ]:
+            for candidate in name_to_masters.get(key, []):
+                if candidate.id not in seen_ids:
+                    seen_ids.add(candidate.id)
+                    if candidate.type == entity.type:
+                        candidates.append(candidate)
+                    else:
+                        logger.debug(
+                            "    Type mismatch: '%s' (%s) vs '%s' (%s) — skipping",
+                            entity.name,
+                            entity.type,
+                            candidate.name,
+                            candidate.type,
+                        )
+        candidates.sort(key=lambda e: e.occurrence_count, reverse=True)
 
-        if match and entity.type != match.type:
-            logger.debug(
-                "    Type mismatch: '%s' (%s) vs '%s' (%s) — skipping",
-                entity.name,
-                entity.type,
-                match.name,
-                match.type,
-            )
-            match = None
-
-        if match:
-            pending_merges.append((entity, match))
+        if candidates:
+            for candidate in candidates:
+                pending_merges.append((entity, candidate))
         else:
             unmatched.append(entity)
 
@@ -368,9 +372,14 @@ def merge_rule_based(
     if rule_filter_chain and pending_merges:
         inputs = [_build_merge_inputs(e, m) for e, m in pending_merges]
         decisions = _batch_with_retry(rule_filter_chain, inputs, max_concurrency)
+
+        all_approved: list[tuple[NormalizedEntity, NormalizedEntity, str | None]] = []
+        rejected_entity_ids: set[str] = set()
+        entity_by_id: dict[str, NormalizedEntity] = {e.id: e for e, _ in pending_merges}
+
         for (entity, match), decision in zip(pending_merges, decisions, strict=True):
             if decision.should_merge:
-                approved_merges.append((entity, match, decision.canonical_name))
+                all_approved.append((entity, match, decision.canonical_name))
             else:
                 n_filtered += 1
                 logger.info(
@@ -380,9 +389,25 @@ def merge_rule_based(
                     match.name,
                     match.type,
                 )
-                unmatched.append(entity)
+                rejected_entity_ids.add(entity.id)
+
+        # Take the first accepted candidate per entity (list is sorted by occ_count desc).
+        seen_accepted: set[str] = set()
+        for entity, match, canonical_name in all_approved:
+            if entity.id not in seen_accepted:
+                seen_accepted.add(entity.id)
+                approved_merges.append((entity, match, canonical_name))
+
+        # Only treat as unmatched if no candidate was accepted.
+        for entity_id in rejected_entity_ids - seen_accepted:
+            unmatched.append(entity_by_id[entity_id])
     else:
-        approved_merges = [(e, m, None) for e, m in pending_merges]
+        # No filter: take the first (highest occ_count) candidate per entity.
+        seen_accepted = set()
+        for e, m in pending_merges:
+            if e.id not in seen_accepted:
+                seen_accepted.add(e.id)
+                approved_merges.append((e, m, None))
 
     # --- Phase 3: Apply merges ---
     old_id_to_master_id: dict[str, str] = {}
@@ -421,26 +446,16 @@ def merge_rule_based(
             set(match.merged_from_ids + entity.merged_from_ids)
         )
         old_id_to_master_id[entity.id] = match.id
-        for alias in entity.aliases:
-            alias_key = alias.lower().strip()
-            if alias_key:
-                name_to_master[alias_key] = match
         partial["occurrence_count_after"] = match.occurrence_count
         rule_decisions.append(partial)
 
     for entity in unmatched:
-        key = entity.name.lower().strip()
         new_master = entity.model_copy(
             deep=True, update={"id": str(uuid_module.uuid4()), "relationship_ids": []}
         )
         master_entities.append(new_master)
         newly_added.append(new_master)
         old_id_to_master_id[entity.id] = new_master.id
-        name_to_master[key] = new_master
-        for alias in entity.aliases:
-            alias_key = alias.lower().strip()
-            if alias_key:
-                name_to_master[alias_key] = new_master
         rule_decisions.append({
             "merge_type": "root",
             "entity1_name": new_master.name,
