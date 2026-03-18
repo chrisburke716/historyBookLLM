@@ -312,7 +312,7 @@ def merge_rule_based(
     max_concurrency: int = 5,
     remap_relationship_ids: bool = False,
 ) -> tuple[
-    list[NormalizedEntity], list[NormalizedRelationship], list[NormalizedEntity], list[dict]
+    list[NormalizedEntity], list[NormalizedRelationship], list[NormalizedEntity], list[dict], int
 ]:
     """Merge new entities into master graph using exact name + alias matching.
 
@@ -323,7 +323,7 @@ def merge_rule_based(
         remap_relationship_ids: If True, mint new UUIDs for relationships (use for
             cross-chapter merge to avoid ID collisions).
 
-    Returns (updated_master_entities, updated_master_relationships, newly_added_entities, rule_decisions).
+    Returns (updated_master_entities, updated_master_relationships, newly_added_entities, rule_decisions, n_rule_filtered).
     """
     # Build one-to-many index: each name/alias key maps to all master entities that use it.
     name_to_masters: dict[str, list[NormalizedEntity]] = {}
@@ -497,7 +497,7 @@ def merge_rule_based(
             len(newly_added),
         )
 
-    return master_entities, master_relationships, newly_added, rule_decisions
+    return master_entities, master_relationships, newly_added, rule_decisions, n_filtered
 
 
 def find_candidates_against_master(
@@ -911,6 +911,8 @@ def run_pipeline(
 
     timings: dict[str, list[float]] = defaultdict(list)
     all_merge_decisions: list[dict] = []
+    total_rule_filtered = 0
+    total_llm_checked = 0
     logger.info("Similarity threshold: %.2f", threshold)
 
     # --- Phase 1: Batch extract all paragraphs ---
@@ -998,21 +1000,25 @@ def run_pipeline(
 
         # Rule-based merge into master
         t0 = time.perf_counter()
-        master_entities, master_relationships, newly_added, rule_decisions = merge_rule_based(
-            entities,
-            relationships,
-            master_entities,
-            master_relationships,
-            rule_filter_chain=rule_filter_chain,
-            max_concurrency=max_concurrency,
+        master_entities, master_relationships, newly_added, rule_decisions, n_rule_filtered = (
+            merge_rule_based(
+                entities,
+                relationships,
+                master_entities,
+                master_relationships,
+                rule_filter_chain=rule_filter_chain,
+                max_concurrency=max_concurrency,
+            )
         )
         all_merge_decisions.extend(rule_decisions)
         timings["rule_merge"].append(time.perf_counter() - t0)
         n_rule = len(entities) - len(newly_added)
+        total_rule_filtered += n_rule_filtered
 
         n_candidates = 0
         n_llm_checked = 0
         n_llm_merged = 0
+        n_llm_rejected = 0
 
         if newly_added:
             new_embs, llm_results, n_candidates, n_llm_checked, n_llm_merged = (
@@ -1031,6 +1037,8 @@ def run_pipeline(
                 )
             )
             all_merge_decisions.extend(llm_results)
+            n_llm_rejected = n_llm_checked - n_llm_merged
+            total_llm_checked += n_llm_checked
 
             # Update master embeddings
             if master_embeddings is None:
@@ -1041,8 +1049,8 @@ def run_pipeline(
 
         logger.info(
             "[%d] p%s para %s | +%d ext, %d kept | "
-            "rule: %d merged, %d new | "
-            "llm: %d cand, %d checked, %d merged | "
+            "rule: %d merged, %d rejected, %d new | "
+            "llm: %d cand, %d checked, %d rejected, %d merged | "
             "master: %de %dr",
             i,
             para["page"],
@@ -1050,9 +1058,11 @@ def run_pipeline(
             len(result.entities),
             len(entities),
             n_rule,
+            n_rule_filtered,
             len(newly_added),
             n_candidates,
             n_llm_checked,
+            n_llm_rejected,
             n_llm_merged,
             len(master_entities),
             len(master_relationships),
@@ -1063,6 +1073,7 @@ def run_pipeline(
         master_entities, master_relationships
     )
 
+    rule_merge_count = sum(1 for d in all_merge_decisions if d["merge_type"] == "rule")
     llm_merge_count = sum(1 for d in all_merge_decisions if d["merge_type"] == "llm")
     logger.info(
         "Final: %d entities, %d relationships",
@@ -1070,10 +1081,15 @@ def run_pipeline(
         len(final_relationships),
     )
     logger.info(
-        "Pipeline: %d paragraphs -> %d after rule-based -> %d final (%d LLM merges)",
+        "Pipeline: %d paragraphs -> %d after rule-based -> %d final "
+        "(%d rule merges, %d rule rejected, %d LLM checked, %d LLM rejected, %d LLM merged)",
         len(paragraphs),
         len(master_entities),
         len(final_entities),
+        rule_merge_count,
+        total_rule_filtered,
+        total_llm_checked,
+        total_llm_checked - llm_merge_count,
         llm_merge_count,
     )
 
@@ -1179,6 +1195,8 @@ def run_cross_chapter_merge(  # noqa: PLR0912, PLR0915
 
     all_merge_decisions: list[dict] = []
     timings: dict[str, list[float]] = defaultdict(list)
+    total_rule_filtered = 0
+    total_llm_checked = 0
 
     sorted_chapters = sorted(chapter_results.keys())
     has_base = base_entities is not None and base_relationships is not None
@@ -1235,23 +1253,27 @@ def run_cross_chapter_merge(  # noqa: PLR0912, PLR0915
 
         # 1. Rule-based merge
         t0 = time.perf_counter()
-        master_entities, master_relationships, newly_added, rule_decisions = merge_rule_based(
-            ch_entities,
-            ch_relationships,
-            master_entities,
-            master_relationships,
-            rule_filter_chain=rule_filter_chain,
-            max_concurrency=max_concurrency,
-            remap_relationship_ids=True,
+        master_entities, master_relationships, newly_added, rule_decisions, n_rule_filtered = (
+            merge_rule_based(
+                ch_entities,
+                ch_relationships,
+                master_entities,
+                master_relationships,
+                rule_filter_chain=rule_filter_chain,
+                max_concurrency=max_concurrency,
+                remap_relationship_ids=True,
+            )
         )
         all_merge_decisions.extend(rule_decisions)
         timings["rule_merge"].append(time.perf_counter() - t0)
         n_rule_merged = len(ch_entities) - len(newly_added)
+        total_rule_filtered += n_rule_filtered
 
         # 2. Embedding merge
         n_candidates = 0
         n_llm_checked = 0
         n_llm_merged = 0
+        n_llm_rejected = 0
 
         if newly_added:
             new_embs, llm_results, n_candidates, n_llm_checked, n_llm_merged = (
@@ -1270,6 +1292,8 @@ def run_cross_chapter_merge(  # noqa: PLR0912, PLR0915
                 )
             )
             all_merge_decisions.extend(llm_results)
+            n_llm_rejected = n_llm_checked - n_llm_merged
+            total_llm_checked += n_llm_checked
 
             if master_embeddings is None:
                 master_embeddings = new_embs
@@ -1278,13 +1302,15 @@ def run_cross_chapter_merge(  # noqa: PLR0912, PLR0915
             master_entity_order.extend(e.id for e in newly_added)
 
         logger.info(
-            "  Chapter %d: +%d new, %d rule-merged, %d candidates, "
-            "%d LLM-checked, %d LLM-merged | master: %d entities",
+            "  Chapter %d: +%d new, %d rule-merged, %d rule-rejected, %d candidates, "
+            "%d LLM-checked, %d LLM-rejected, %d LLM-merged | master: %d entities",
             ch_idx,
             len(newly_added),
             n_rule_merged,
+            n_rule_filtered,
             n_candidates,
             n_llm_checked,
+            n_llm_rejected,
             n_llm_merged,
             len(master_entities),
         )
@@ -1294,11 +1320,17 @@ def run_cross_chapter_merge(  # noqa: PLR0912, PLR0915
         master_entities, master_relationships
     )
 
+    rule_merge_count = sum(1 for d in all_merge_decisions if d["merge_type"] == "rule")
     llm_merge_count = sum(1 for d in all_merge_decisions if d["merge_type"] == "llm")
     logger.info(
-        "Cross-chapter final: %d entities, %d relationships (%d LLM merges)",
+        "Cross-chapter final: %d entities, %d relationships "
+        "(%d rule merges, %d rule rejected, %d LLM checked, %d LLM rejected, %d LLM merged)",
         len(final_entities),
         len(final_relationships),
+        rule_merge_count,
+        total_rule_filtered,
+        total_llm_checked,
+        total_llm_checked - llm_merge_count,
         llm_merge_count,
     )
 
@@ -1500,7 +1532,7 @@ class KGIngestionService:
 
     def merge_volume(
         self,
-        book_indices: list[int],
+        book_indices: list[int] | None = None,
         *,
         graph_name: str | None = None,
         force: bool = False,
@@ -1509,9 +1541,20 @@ class KGIngestionService:
     ) -> str:
         """Merge book graphs into a volume graph.
 
+        If book_indices is None, auto-discovers all book graphs from DB.
         Ensures book graphs exist (calls merge_book for missing ones if force,
         errors if not force and missing). Returns graph_name.
         """
+        if book_indices is None:
+            book_graphs = self.repositories.kg_graphs.find_by_type("book")
+            if not book_graphs:
+                msg = "No book graphs found in DB. Run 'book' commands first."
+                raise ValueError(msg)
+            book_indices = sorted(
+                int(g.name[4:]) for g in book_graphs if g.name.startswith("book")
+            )
+            logger.info("Auto-discovered book indices: %s", book_indices)
+
         if not graph_name:
             graph_name = f"volume_{min(book_indices)}-{max(book_indices)}"
 

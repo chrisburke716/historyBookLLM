@@ -164,7 +164,11 @@ def main():
         "volume", help="Build volume graph from book graphs"
     )
     p_volume.add_argument(
-        "--books", type=int, nargs="+", required=True, help="Book indices to merge"
+        "--books",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Book indices to merge (default: all book graphs in DB)",
     )
     p_volume.add_argument(
         "--name", type=str, default=None, help="Custom graph name (default: auto)"
