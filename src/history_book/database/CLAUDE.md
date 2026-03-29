@@ -24,7 +24,8 @@ poetry run python scripts/manage_collections.py
 database/
 ├── repositories/           # Repository implementations
 │   ├── weaviate_repository.py    # Generic base (645 lines)
-│   └── book_repository.py        # Specialized repos (286 lines)
+│   ├── book_repository.py        # Book/Chapter/Paragraph/Chat repos
+│   └── kg_repository.py          # KG entity/relationship/graph/merge repos
 ├── interfaces/            # Abstract contracts
 │   ├── repository_interface.py
 │   └── vector_repository_interface.py
@@ -121,6 +122,39 @@ class ChatMessageRepository(WeaviateRepository[ChatMessage]):
     def find_by_session_id(self, session_id: str) -> list[ChatMessage]
 ```
 
+### KG Repositories (`repositories/kg_repository.py`)
+
+All four inherit from `WeaviateRepository[T]`.
+
+#### KGEntityRepository — collection `KGEntities`
+- `find_by_graph(graph_name)` — All entities for a graph (exact match)
+- `find_by_paragraph(paragraph_id, graph_name)` — Entities via `ContainsAny` on `source_paragraph_ids`
+- `search_entities(query_text, graph_name, limit, threshold)` — Vector similarity search
+- `search_entities_hybrid(query_text, graph_name, limit, alpha)` — Hybrid vector+BM25
+- `delete_by_graph(graph_name)` — Bulk delete for a graph
+
+#### KGRelationshipRepository — collection `KGRelationships`
+- `find_by_graph(graph_name)` — All relationships for a graph (exact match)
+- `find_by_entities(entity_ids, graph_name)` — Relationships involving any listed entity ID
+- `delete_by_graph(graph_name)`
+
+#### KGGraphRepository — collection `KGGraphs`
+- `find_by_name(name)` — Exact graph name lookup (avoids tokenization bleed: `book3_ch4` ≠ `book3_ch4_5`)
+- `find_by_type(graph_type)` — All graphs of type `"chapter"` | `"book"` | `"volume"` | `"custom"`
+
+#### KGMergeDecisionRepository — collection `KGMergeDecisions`
+
+Audit log of every merge decision. `occurrence_count_after` acts as a sequence number — sorting by it reconstructs the merge tree.
+
+- `find_by_graph(graph_name)` — All decisions, sorted by `occurrence_count_after` asc
+- `find_by_entity_name(name, graph_name)` — Matches `entity1_name | entity2_name | canonical_name`
+- `find_by_entity(name, entity_type, graph_name)` — Name + type filter (use to inspect a specific entity's merge history)
+- `delete_by_graph(graph_name)`
+
+**Exact-match pattern** (all KG repos): Weaviate TEXT tokenizes on word boundaries so `book3_ch4` would match `book3_ch4_5`. All `find_by_graph` and similar methods do a Python-side `r.graph_name == graph_name` filter after the Weaviate query.
+
+---
+
 ### BookRepositoryManager
 
 **File**: `repositories/book_repository.py`
@@ -138,6 +172,11 @@ class BookRepositoryManager:
         self.paragraphs = ParagraphRepository(config)
         self.chat_sessions = ChatSessionRepository(config)
         self.chat_messages = ChatMessageRepository(config)
+        # KG repositories
+        self.kg_entities = KGEntityRepository(config)
+        self.kg_relationships = KGRelationshipRepository(config)
+        self.kg_graphs = KGGraphRepository(config)
+        self.kg_merge_decisions = KGMergeDecisionRepository(config)
 ```
 
 **Usage**:
@@ -146,10 +185,14 @@ from history_book.database.repositories import BookRepositoryManager
 
 manager = BookRepositoryManager()
 
-# Access any repository
+# Book/chat repos
 books = manager.books.list(limit=10)
 paragraphs = manager.paragraphs.hybrid_search("first civilizations", limit=5)
 messages = manager.chat_messages.find_by_session_id("session-uuid")
+
+# KG repos
+entities = manager.kg_entities.find_by_graph("book3_ch4")
+decisions = manager.kg_merge_decisions.find_by_entity("Julius Caesar", "person", "book3_ch4")
 ```
 
 ### WeaviateConfig
