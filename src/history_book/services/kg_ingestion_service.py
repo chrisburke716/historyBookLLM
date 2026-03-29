@@ -80,7 +80,9 @@ class NormalizedEntity(BaseModel):
     occurrence_count: int
     merged_from_ids: list[str] = Field(default_factory=list)
     relationship_ids: list[str] = Field(default_factory=list)
-    source_graph: str = ""  # graph this entity was loaded from; "" for freshly-extracted entities
+    source_graph: str = (
+        ""  # graph this entity was loaded from; "" for freshly-extracted entities
+    )
 
 
 class NormalizedRelationship(BaseModel):
@@ -312,7 +314,11 @@ def merge_rule_based(
     max_concurrency: int = 5,
     remap_relationship_ids: bool = False,
 ) -> tuple[
-    list[NormalizedEntity], list[NormalizedRelationship], list[NormalizedEntity], list[dict], int
+    list[NormalizedEntity],
+    list[NormalizedRelationship],
+    list[NormalizedEntity],
+    list[dict],
+    int,
 ]:
     """Merge new entities into master graph using exact name + alias matching.
 
@@ -456,20 +462,22 @@ def merge_rule_based(
         master_entities.append(new_master)
         newly_added.append(new_master)
         old_id_to_master_id[entity.id] = new_master.id
-        rule_decisions.append({
-            "merge_type": "root",
-            "entity1_name": new_master.name,
-            "entity1_type": new_master.type,
-            "entity1_aliases": list(new_master.aliases),
-            "entity1_source_graph": new_master.source_graph,
-            "entity2_name": new_master.name,
-            "entity2_type": new_master.type,
-            "entity2_aliases": [],
-            "canonical_name": new_master.name,
-            "occurrence_count_after": new_master.occurrence_count,
-            "similarity": None,
-            "reasoning": "",
-        })
+        rule_decisions.append(
+            {
+                "merge_type": "root",
+                "entity1_name": new_master.name,
+                "entity1_type": new_master.type,
+                "entity1_aliases": list(new_master.aliases),
+                "entity1_source_graph": new_master.source_graph,
+                "entity2_name": new_master.name,
+                "entity2_type": new_master.type,
+                "entity2_aliases": [],
+                "canonical_name": new_master.name,
+                "occurrence_count_after": new_master.occurrence_count,
+                "similarity": None,
+                "reasoning": "",
+            }
+        )
 
     # --- Remap relationships ---
     master_entity_lookup = {e.id: e for e in master_entities}
@@ -497,7 +505,13 @@ def merge_rule_based(
             len(newly_added),
         )
 
-    return master_entities, master_relationships, newly_added, rule_decisions, n_filtered
+    return (
+        master_entities,
+        master_relationships,
+        newly_added,
+        rule_decisions,
+        n_filtered,
+    )
 
 
 def find_candidates_against_master(
@@ -580,7 +594,13 @@ def _build_merge_inputs(entity1, entity2) -> dict:
 def _batch_with_retry(chain, inputs_list: list, max_concurrency: int) -> list:
     """Run chain.batch() with exponential backoff on rate limit / timeout errors."""
     max_attempts = 5
-    retryable_keywords = ["rate", "timeout", "timed out", "connection", "could not parse"]
+    retryable_keywords = [
+        "rate",
+        "timeout",
+        "timed out",
+        "connection",
+        "could not parse",
+    ]
     for attempt in range(max_attempts):
         try:
             return chain.batch(inputs_list, config={"max_concurrency": max_concurrency})
@@ -1000,15 +1020,19 @@ def run_pipeline(
 
         # Rule-based merge into master
         t0 = time.perf_counter()
-        master_entities, master_relationships, newly_added, rule_decisions, n_rule_filtered = (
-            merge_rule_based(
-                entities,
-                relationships,
-                master_entities,
-                master_relationships,
-                rule_filter_chain=rule_filter_chain,
-                max_concurrency=max_concurrency,
-            )
+        (
+            master_entities,
+            master_relationships,
+            newly_added,
+            rule_decisions,
+            n_rule_filtered,
+        ) = merge_rule_based(
+            entities,
+            relationships,
+            master_entities,
+            master_relationships,
+            rule_filter_chain=rule_filter_chain,
+            max_concurrency=max_concurrency,
         )
         all_merge_decisions.extend(rule_decisions)
         timings["rule_merge"].append(time.perf_counter() - t0)
@@ -1042,11 +1066,18 @@ def run_pipeline(
 
             # Update master embeddings — guard against malformed arrays
             # (embed_documents returning [] gives np.array([]) shape (0,) which breaks vstack)
-            emb_ok = new_embs.ndim == 2 and new_embs.shape[0] == len(newly_added) and new_embs.shape[1] > 0
+            emb_ok = (
+                new_embs.ndim == 2
+                and new_embs.shape[0] == len(newly_added)
+                and new_embs.shape[1] > 0
+            )
             if emb_ok:
                 if master_embeddings is None:
                     master_embeddings = new_embs
-                elif master_embeddings.ndim == 2 and master_embeddings.shape[1] == new_embs.shape[1]:
+                elif (
+                    master_embeddings.ndim == 2
+                    and master_embeddings.shape[1] == new_embs.shape[1]
+                ):
                     master_embeddings = np.vstack([master_embeddings, new_embs])
                 else:
                     logger.warning(
@@ -1270,16 +1301,20 @@ def run_cross_chapter_merge(  # noqa: PLR0912, PLR0915
 
         # 1. Rule-based merge
         t0 = time.perf_counter()
-        master_entities, master_relationships, newly_added, rule_decisions, n_rule_filtered = (
-            merge_rule_based(
-                ch_entities,
-                ch_relationships,
-                master_entities,
-                master_relationships,
-                rule_filter_chain=rule_filter_chain,
-                max_concurrency=max_concurrency,
-                remap_relationship_ids=True,
-            )
+        (
+            master_entities,
+            master_relationships,
+            newly_added,
+            rule_decisions,
+            n_rule_filtered,
+        ) = merge_rule_based(
+            ch_entities,
+            ch_relationships,
+            master_entities,
+            master_relationships,
+            rule_filter_chain=rule_filter_chain,
+            max_concurrency=max_concurrency,
+            remap_relationship_ids=True,
         )
         all_merge_decisions.extend(rule_decisions)
         timings["rule_merge"].append(time.perf_counter() - t0)
@@ -1312,11 +1347,18 @@ def run_cross_chapter_merge(  # noqa: PLR0912, PLR0915
             n_llm_rejected = n_llm_checked - n_llm_merged
             total_llm_checked += n_llm_checked
 
-            emb_ok = new_embs.ndim == 2 and new_embs.shape[0] == len(newly_added) and new_embs.shape[1] > 0
+            emb_ok = (
+                new_embs.ndim == 2
+                and new_embs.shape[0] == len(newly_added)
+                and new_embs.shape[1] > 0
+            )
             if emb_ok:
                 if master_embeddings is None:
                     master_embeddings = new_embs
-                elif master_embeddings.ndim == 2 and master_embeddings.shape[1] == new_embs.shape[1]:
+                elif (
+                    master_embeddings.ndim == 2
+                    and master_embeddings.shape[1] == new_embs.shape[1]
+                ):
                     master_embeddings = np.vstack([master_embeddings, new_embs])
                 else:
                     logger.warning(

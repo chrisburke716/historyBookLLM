@@ -274,10 +274,9 @@ class KGMergeDecisionRepository(WeaviateRepository["KGMergeDecision"]):
                 | Filter.by_property("entity2_name").equal(name)
                 | Filter.by_property("canonical_name").equal(name)
             )
-            type_filter = (
-                Filter.by_property("entity1_type").equal(entity_type)
-                | Filter.by_property("entity2_type").equal(entity_type)
-            )
+            type_filter = Filter.by_property("entity1_type").equal(
+                entity_type
+            ) | Filter.by_property("entity2_type").equal(entity_type)
             combined = name_filter & type_filter
             if graph_name:
                 combined = combined & Filter.by_property("graph_name").equal(graph_name)

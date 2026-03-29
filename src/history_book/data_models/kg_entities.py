@@ -109,14 +109,18 @@ class KGMergeDecision(BaseModel):
     entity1_name: str  # new entity (being merged in)
     entity1_type: str
     entity1_aliases: list[str] = Field(default_factory=list)
-    entity1_source_graph: str = ""  # chapter graph entity1 was loaded from ("" for within-chapter extraction)
+    entity1_source_graph: str = (
+        ""  # chapter graph entity1 was loaded from ("" for within-chapter extraction)
+    )
     entity2_name: str  # master entity (being merged into)
     entity2_type: str
     entity2_aliases: list[str] = Field(default_factory=list)
     canonical_name: str = ""
     similarity: float | None = None  # LLM merges only
     reasoning: str = ""  # LLM merges only
-    occurrence_count_after: int = 0  # master's occurrence_count immediately after this merge
+    occurrence_count_after: int = (
+        0  # master's occurrence_count immediately after this merge
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     vectorize_fields: ClassVar[list[str]] = []  # audit-only, no vector search needed
