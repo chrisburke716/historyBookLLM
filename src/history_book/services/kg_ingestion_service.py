@@ -1040,12 +1040,29 @@ def run_pipeline(
             n_llm_rejected = n_llm_checked - n_llm_merged
             total_llm_checked += n_llm_checked
 
-            # Update master embeddings
-            if master_embeddings is None:
-                master_embeddings = new_embs
+            # Update master embeddings — guard against malformed arrays
+            # (embed_documents returning [] gives np.array([]) shape (0,) which breaks vstack)
+            emb_ok = new_embs.ndim == 2 and new_embs.shape[0] == len(newly_added) and new_embs.shape[1] > 0
+            if emb_ok:
+                if master_embeddings is None:
+                    master_embeddings = new_embs
+                elif master_embeddings.ndim == 2 and master_embeddings.shape[1] == new_embs.shape[1]:
+                    master_embeddings = np.vstack([master_embeddings, new_embs])
+                else:
+                    logger.warning(
+                        "master_embeddings shape %s incompatible with new_embs shape %s — resetting",
+                        master_embeddings.shape,
+                        new_embs.shape,
+                    )
+                    master_embeddings = new_embs
+                    master_entity_order.clear()
+                master_entity_order.extend(e.id for e in newly_added)
             else:
-                master_embeddings = np.vstack([master_embeddings, new_embs])
-            master_entity_order.extend(e.id for e in newly_added)
+                logger.warning(
+                    "Unexpected embedding shape %s for %d entities — skipping embedding index update",
+                    new_embs.shape,
+                    len(newly_added),
+                )
 
         logger.info(
             "[%d] p%s para %s | +%d ext, %d kept | "
@@ -1295,11 +1312,27 @@ def run_cross_chapter_merge(  # noqa: PLR0912, PLR0915
             n_llm_rejected = n_llm_checked - n_llm_merged
             total_llm_checked += n_llm_checked
 
-            if master_embeddings is None:
-                master_embeddings = new_embs
+            emb_ok = new_embs.ndim == 2 and new_embs.shape[0] == len(newly_added) and new_embs.shape[1] > 0
+            if emb_ok:
+                if master_embeddings is None:
+                    master_embeddings = new_embs
+                elif master_embeddings.ndim == 2 and master_embeddings.shape[1] == new_embs.shape[1]:
+                    master_embeddings = np.vstack([master_embeddings, new_embs])
+                else:
+                    logger.warning(
+                        "master_embeddings shape %s incompatible with new_embs shape %s — resetting",
+                        master_embeddings.shape,
+                        new_embs.shape,
+                    )
+                    master_embeddings = new_embs
+                    master_entity_order.clear()
+                master_entity_order.extend(e.id for e in newly_added)
             else:
-                master_embeddings = np.vstack([master_embeddings, new_embs])
-            master_entity_order.extend(e.id for e in newly_added)
+                logger.warning(
+                    "Unexpected embedding shape %s for %d entities — skipping embedding index update",
+                    new_embs.shape,
+                    len(newly_added),
+                )
 
         logger.info(
             "  Chapter %d: +%d new, %d rule-merged, %d rule-rejected, %d candidates, "
@@ -1546,13 +1579,11 @@ class KGIngestionService:
         errors if not force and missing). Returns graph_name.
         """
         if book_indices is None:
-            book_graphs = self.repositories.kg_graphs.find_by_type("book")
-            if not book_graphs:
-                msg = "No book graphs found in DB. Run 'book' commands first."
+            db_books = self.repositories.books.list_all()
+            if not db_books:
+                msg = "No books found in DB. Run ingestion first."
                 raise ValueError(msg)
-            book_indices = sorted(
-                int(g.name[4:]) for g in book_graphs if g.name.startswith("book")
-            )
+            book_indices = sorted(b.book_index for b in db_books)
             logger.info("Auto-discovered book indices: %s", book_indices)
 
         if not graph_name:
@@ -1563,21 +1594,18 @@ class KGIngestionService:
         for bi in sorted(book_indices):
             bg_name = f"book{bi}"
             existing = self.repositories.kg_graphs.find_by_name(bg_name)
-            if existing is None:
-                if force:
-                    logger.info("Book %d graph missing, building...", bi)
-                    self.merge_book(
-                        bi,
-                        force=force,
-                        profile=profile,
-                        max_concurrency=max_concurrency,
-                    )
-                else:
-                    msg = (
-                        f"Book graph '{bg_name}' not found in DB. "
-                        f"Run 'book --book {bi}' first or use --force."
-                    )
-                    raise ValueError(msg)
+            if existing is None or force:
+                logger.info(
+                    "Book %d: %s...",
+                    bi,
+                    "re-building (force)" if existing else "building",
+                )
+                self.merge_book(
+                    bi,
+                    force=force,
+                    profile=profile,
+                    max_concurrency=max_concurrency,
+                )
             book_graph_names.append(bg_name)
 
         return self.merge_graphs(
