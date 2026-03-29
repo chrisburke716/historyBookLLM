@@ -4,7 +4,7 @@ import logging
 from typing import Any, TypeVar
 
 from weaviate import WeaviateClient
-from weaviate.classes.query import Filter
+from weaviate.classes.query import Filter, MetadataQuery, Sort
 from weaviate.collections import Collection
 
 from history_book.database import server
@@ -222,34 +222,34 @@ class WeaviateRepository(VectorRepository[T]):
         """Synchronous version of exists."""
         return self.get_by_id(entity_id, **kwargs) is not None
 
-    def find_by_criteria(self, criteria: dict[str, Any], **kwargs) -> list[T]:
-        """Synchronous version of find_by_criteria."""
+    def find_by_criteria(
+        self,
+        criteria: dict[str, Any],
+        sort_by: str | None = None,
+        ascending: bool = True,
+        limit: int | None = None,
+        **kwargs,
+    ) -> list[T]:
+        """Find entities matching the given field-value criteria."""
         try:
-            # For now, let's implement a simple version that fetches all and filters in Python
-            # This is not efficient but will allow us to test the interface
-            query = self.collection.query.fetch_objects(**kwargs)
+            where = self._build_where_filter(criteria)
+            sort = (
+                Sort.by_property(name=sort_by, ascending=ascending) if sort_by else None
+            )
+            query = self.collection.query.fetch_objects(
+                filters=where, sort=sort, limit=limit, **kwargs
+            )
 
             entities = []
             for obj in query.objects:
                 entity = self._weaviate_object_to_entity(obj)
-                if entity and self._entity_matches_criteria(entity, criteria):
+                if entity:
                     entities.append(entity)
 
             return entities
 
         except Exception as e:
             raise QueryError(f"Failed to find entities by criteria: {str(e)}", e) from e
-
-    def _entity_matches_criteria(self, entity: T, criteria: dict[str, Any]) -> bool:
-        """Check if an entity matches the given criteria."""
-        for field, value in criteria.items():
-            if hasattr(entity, field):
-                entity_value = getattr(entity, field)
-                if entity_value != value:
-                    return False
-            else:
-                return False
-        return True
 
     # Vector-specific methods
 
@@ -387,6 +387,10 @@ class WeaviateRepository(VectorRepository[T]):
             logger.error(f"Failed to get vector for entity {entity_id}: {str(e)}")
             return None
 
+    def batch_create(self, entities: list[T]) -> list[str]:
+        """Batch insert entities without vectors (for non-vectorized collections)."""
+        return self.batch_create_with_vectors([(e, None) for e in entities])
+
     def batch_create_with_vectors(
         self, entities_and_vectors: list[tuple[T, list[float] | None]], **kwargs
     ) -> list[str]:
@@ -437,6 +441,7 @@ class WeaviateRepository(VectorRepository[T]):
                 vector=query_vector,
                 alpha=alpha,
                 limit=limit,
+                return_metadata=MetadataQuery(score=True),
                 **kwargs,
             )
 

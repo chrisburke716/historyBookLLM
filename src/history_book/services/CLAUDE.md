@@ -16,6 +16,12 @@ poetry run python scripts/run_ingestion.py
 
 # Run evaluations
 poetry run python scripts/run_evals.py
+
+# KG pipeline (see run_kg_extraction.py for full CLI)
+PYTHONPATH=src poetry run python scripts/run_kg_extraction.py chapter --book 3 --chapter 4
+PYTHONPATH=src poetry run python scripts/run_kg_extraction.py book --book 3
+PYTHONPATH=src poetry run python scripts/run_kg_extraction.py volume
+PYTHONPATH=src poetry run python scripts/run_kg_extraction.py list
 ```
 
 ## Services Overview
@@ -125,6 +131,58 @@ result = service.ingest_pdf(
 ```
 
 **Integration**: Used by `scripts/run_ingestion.py` → uses BookRepositoryManager and text_processing module.
+
+---
+
+### KGIngestionService (`kg_ingestion_service.py`)
+
+**Purpose**: Multi-stage knowledge graph extraction and merging pipeline for historical text.
+
+**CLI**: `scripts/run_kg_extraction.py` — thin wrapper; use this for all KG operations.
+
+**DEFAULT_CONFIG** (override via `pipeline_config` dict):
+```python
+extraction_model = "gpt-4.1"        # Per-paragraph entity/relationship extraction
+merge_model = "o4-mini"             # LLM similarity merge decisions
+rule_filter_model = "gpt-4.1-mini"  # Validate rule-based (name/alias) merge candidates
+similarity_threshold = 0.65         # Cosine similarity cutoff for merge candidates
+max_concurrency = 5                 # Max parallel LLM calls per batch
+```
+
+**Key Methods**:
+- `extract_chapter(book, chapter, force, ...)` — Run per-paragraph extraction + rule + LLM merge for one chapter; stores `KGGraph` in DB
+- `merge_book(book, chapters, force, ...)` — Cross-chapter merge of all chapter graphs into `book{N}` graph; auto-extracts missing chapters
+- `merge_volume(book_indices, graph_name, force, ...)` — Cross-book merge; `book_indices=None` auto-discovers all books from DB
+- `merge_custom(chapters_spec, graph_name, ...)` — Arbitrary `{book: [chapters]}` merge for custom subsets
+- `list_graphs()` — Return all `KGGraph` records from DB
+
+**Pipeline Flow** (per chapter):
+```
+Paragraphs → LLM extract entities+rels → Rule merge (name/alias exact match, LLM-filtered)
+           → Embed new entities → Find similarity candidates vs master
+           → LLM merge filter → Update master graph → Store to Weaviate
+```
+
+**Merge Types** (stored in `KGMergeDecision.merge_type`):
+- `"root"` — Entity first encountered; becomes master
+- `"rule"` — Exact name/alias match confirmed by rule-filter LLM
+- `"llm"` — Cosine similarity candidate confirmed by merge LLM
+
+**`merge_rule_based` internals** (critical to understand for debugging):
+- `name_to_masters: dict[str, list[NormalizedEntity]]` — Multi-value dict; shared aliases (e.g., "Caesar" for both Julius Caesar and Augustus) map to all candidates
+- Candidates sorted by `occurrence_count` desc; LLM filter run on all candidates; first accepted per entity wins
+- No post-merge dict mutation — safe because within one paragraph/chapter there are no duplicate real-world entities
+
+**Audit trail**: Every merge decision written to `KGMergeDecisions` collection with `occurrence_count_after` (sequence number enabling merge tree reconstruction) and `reasoning`.
+
+**Log format** (per paragraph):
+```
+rule: {N} merged, {N} rejected, {N} new | llm: {N} cand, {N} checked, {N} rejected, {N} merged
+```
+
+**`--force` semantics**: Without `--force`, existing graphs are skipped and missing ones are built. `--force` rebuilds existing graphs (deletes and re-creates).
+
+**Integration**: Uses `BookRepositoryManager` for KG collections + `chains/` for LLM calls.
 
 ---
 

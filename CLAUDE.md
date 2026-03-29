@@ -21,6 +21,12 @@ PYTHONPATH=src poetry run uvicorn src.history_book.api.main:app --reload --port 
 poetry run python scripts/run_ingestion.py
 poetry run python scripts/setup_development_config.py
 poetry run python scripts/setup_test_config.py
+
+# Knowledge graph extraction
+PYTHONPATH=src poetry run python scripts/run_kg_extraction.py chapter --book 3 --chapter 4
+PYTHONPATH=src poetry run python scripts/run_kg_extraction.py book --book 3
+PYTHONPATH=src poetry run python scripts/run_kg_extraction.py volume        # all books
+PYTHONPATH=src poetry run python scripts/run_kg_extraction.py list
 ```
 
 ### Frontend (React TypeScript)
@@ -49,15 +55,20 @@ This is a full-stack RAG-powered chat application with a Python FastAPI backend 
 - `ParagraphService`: High-level paragraph query operations
 - `GraphRagService`: LangGraph-based RAG with graph execution and checkpointing
 - `GraphChatService`: Session orchestration for graph-based chat with MemorySaver
+- `KGIngestionService`: Knowledge graph extraction + multi-level merge pipeline
+
+**Chain Layer** (`src/history_book/chains/`):
+- LCEL chain factories for KG operations: extraction, merge (LLM + rule-filter), temporal parsing
+- See `/src/history_book/chains/CLAUDE.md` for details
 
 **Repository Layer** (`src/history_book/database/repositories/`):
 - `WeaviateRepository<T>`: Generic base repository with type-safe CRUD operations
-- `BookRepositoryManager`: Aggregates specialized repositories (books, chapters, paragraphs)
-- All repositories implement consistent interfaces for testability
+- `BookRepositoryManager`: Aggregates all repositories (books, chapters, paragraphs, KG collections)
+- KG repositories: `KGEntityRepository`, `KGRelationshipRepository`, `KGGraphRepository`, `KGMergeDecisionRepository`
 
-**Entity Layer** (`src/history_book/data_models/entities.py`):
-- Pure data models: `Book`, `Chapter`, `Paragraph`, `ChatSession`, `ChatMessage`
-- No business logic or database dependencies
+**Entity Layer** (`src/history_book/data_models/entities.py` + `kg_entities.py`):
+- Book models: `Book`, `Chapter`, `Paragraph`, `ChatSession`, `ChatMessage`
+- KG models: `KGEntity`, `KGRelationship`, `KGGraph`, `KGMergeDecision`, `NormalizedEntity`
 
 ### Key Data Flow
 
@@ -75,6 +86,13 @@ User Message → ChatService → RagService → [Retrieval → LCEL Chain → LL
 ```
 User Message → GraphChatService → GraphRagService → [Graph: retrieve_node → generate_node] → AI Response
                                                      ↓ (MemorySaver checkpointing)
+```
+
+**KG Pipeline**:
+```
+Chapter paragraphs → LLM extraction → Rule merge (name/alias, LLM-filtered)
+                   → Embed new entities → Similarity candidates → LLM merge
+                   → Chapter KGGraph → Cross-chapter merge → Book KGGraph → Cross-book merge → Volume KGGraph
 ```
 
 ### Agent API (LangGraph-based)
@@ -142,9 +160,10 @@ See `/src/history_book/services/agents/CLAUDE.md` for implementation details.
 
 For in-depth information about specific subsystems, see:
 
-- **[Services](/src/history_book/services/CLAUDE.md)** - Business logic layer (ChatService, RagService, IngestionService, ParagraphService)
+- **[Services](/src/history_book/services/CLAUDE.md)** - Business logic layer (ChatService, RagService, IngestionService, KGIngestionService)
+- **[Chains](/src/history_book/chains/CLAUDE.md)** - LLM chain factories for KG extraction, merge, temporal parsing
 - **[Agent System](/src/history_book/services/agents/CLAUDE.md)** - LangGraph-based agent implementation (GraphRagService, GraphChatService)
-- **[Database](/src/history_book/database/CLAUDE.md)** - Repository pattern and Weaviate integration
+- **[Database](/src/history_book/database/CLAUDE.md)** - Repository pattern, Weaviate integration, KG repositories
 - **[API](/src/history_book/api/CLAUDE.md)** - FastAPI REST endpoints
 - **[LLM Configuration](/src/history_book/llm/CLAUDE.md)** - LLM provider setup (OpenAI, Anthropic)
 - **[Evaluations](/src/history_book/evals/CLAUDE.md)** - RAG evaluation framework

@@ -29,6 +29,12 @@ def pydantic_field_to_weaviate_property(
         dtype = DataType.NUMBER
     elif annotation is bool:
         dtype = DataType.BOOL
+    elif annotation == list[str]:
+        dtype = DataType.TEXT_ARRAY
+    elif annotation == list[int]:
+        dtype = DataType.INT_ARRAY
+    elif annotation == list[float]:
+        dtype = DataType.NUMBER_ARRAY
     else:
         # Unknown or unsupported type
         return None
@@ -52,16 +58,14 @@ def create_collection_from_pydantic(
 
     vectorizer_config = []
     if vectorize_fields:
-        for prop in properties:
-            if prop.name in vectorize_fields:
-                vectorizer_config.append(
-                    Configure.NamedVectors.text2vec_openai(
-                        name=f"{prop.name}_vector",
-                        source_properties=[prop.name],
-                        model="text-embedding-3-large",
-                        dimensions=256,
-                    )
-                )
+        vectorizer_config = [
+            Configure.NamedVectors.text2vec_openai(
+                name="default",
+                source_properties=vectorize_fields,
+                model="text-embedding-3-large",
+                dimensions=256,
+            )
+        ]
 
     collection_config = {"name": class_name, "properties": properties}
     if vectorizer_config:
