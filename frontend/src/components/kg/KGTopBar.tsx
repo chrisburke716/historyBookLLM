@@ -38,7 +38,7 @@ import { KGGraphMeta, ENTITY_TYPE_COLORS } from '../../types/kg';
 function buildGraphLabel(graph: KGGraphMeta): string {
   if (graph.graph_type === 'volume') return 'Full Volume';
   if (graph.graph_type === 'book') {
-    const bookNums = [...new Set(graph.book_chapters.map((bc) => bc.split(':')[0]))];
+    const bookNums = Array.from(new Set(graph.book_chapters.map((bc) => bc.split(':')[0])));
     return `Book ${bookNums.join(', ')}`;
   }
   // chapter

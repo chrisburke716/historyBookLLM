@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import ForceGraph2D, { ForceGraphMethods } from 'react-force-graph-2d';
+import ForceGraph2D from 'react-force-graph-2d';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { setFocus, clearFocus } from '../../store/graphSlice';
@@ -19,7 +19,8 @@ const ForceGraphPanel: React.FC<ForceGraphPanelProps> = ({ graphData, isLoading 
   const dispatch = useAppDispatch();
   const { focusEntityId, colorMap } = useAppSelector((s) => s.graph);
   const containerRef = useRef<HTMLDivElement>(null);
-  const graphRef = useRef<ForceGraphMethods<GraphNode>>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const graphRef = useRef<any>(null);
 
   // Position cache: preserves node positions across graph reloads (stubbed — ready to wire)
   const positionCache = useRef<Map<string, { x: number; y: number }>>(new Map());
