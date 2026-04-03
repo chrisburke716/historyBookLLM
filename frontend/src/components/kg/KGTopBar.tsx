@@ -17,6 +17,7 @@ import {
   CircularProgress,
   Typography,
   Tooltip,
+  Slider,
 } from '@mui/material';
 import {
   ArrowBack,
@@ -30,6 +31,7 @@ import {
   setDisplayMode,
   setHopCount,
   setSearchResults,
+  setOccurrenceThreshold,
 } from '../../store/graphSlice';
 import { useGraphListQuery } from '../../hooks/useKGQueries';
 import { kgAPI } from '../../services/kgAPI';
@@ -51,7 +53,7 @@ function buildGraphLabel(graph: KGGraphMeta): string {
 
 const KGTopBar: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { graphName, displayMode, hopCount, searchResults, focusHistory, historyIndex } =
+  const { graphName, displayMode, hopCount, searchResults, focusHistory, historyIndex, occurrenceThreshold } =
     useAppSelector((s) => s.graph);
 
   const { data: graphList, isLoading: graphsLoading } = useGraphListQuery();
@@ -226,6 +228,23 @@ const KGTopBar: React.FC = () => {
           <MenuItem value={3}>3</MenuItem>
         </Select>
       </FormControl>
+
+      {/* Occurrence threshold slider */}
+      <Box sx={{ display: 'flex', flexDirection: 'column', width: 140, px: 1 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1 }}>
+          Min. occurrences: {occurrenceThreshold === 1 ? 'all' : `≥ ${occurrenceThreshold}`}
+        </Typography>
+        <Slider
+          size="small"
+          min={1}
+          max={4}
+          step={1}
+          value={occurrenceThreshold}
+          onChange={(_e, val) => dispatch(setOccurrenceThreshold(val as number))}
+          marks
+          sx={{ py: 0.5 }}
+        />
+      </Box>
 
       {/* History navigation (stubbed) */}
       <Box sx={{ display: 'flex', gap: 0.5 }}>

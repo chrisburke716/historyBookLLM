@@ -8,6 +8,7 @@ interface GraphState {
   hopCount: 1 | 2 | 3;
   searchResults: SearchResult[];
   colorMap: Record<string, string>;
+  occurrenceThreshold: number; // show nodes with occurrence_count >= this value
   // History (stubbed — buttons rendered but disabled)
   focusHistory: string[];
   historyIndex: number;
@@ -20,6 +21,7 @@ const initialState: GraphState = {
   hopCount: 2,
   searchResults: [],
   colorMap: ENTITY_TYPE_COLORS,
+  occurrenceThreshold: 2,
   focusHistory: [],
   historyIndex: -1,
 };
@@ -57,6 +59,9 @@ const graphSlice = createSlice({
     setColorMap(state, action: PayloadAction<Record<string, string>>) {
       state.colorMap = action.payload;
     },
+    setOccurrenceThreshold(state, action: PayloadAction<number>) {
+      state.occurrenceThreshold = action.payload;
+    },
   },
 });
 
@@ -68,6 +73,7 @@ export const {
   setHopCount,
   setSearchResults,
   setColorMap,
+  setOccurrenceThreshold,
 } = graphSlice.actions;
 
 export default graphSlice.reducer;
