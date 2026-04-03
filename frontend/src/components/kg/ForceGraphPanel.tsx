@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { useAppDispatch, useAppSelector } from '../../store';
@@ -8,6 +8,15 @@ import { GraphResponse, GraphNode, ENTITY_TYPE_COLORS } from '../../types/kg';
 // Utility: map occurrence_count to node display radius
 function nodeSize(occurrenceCount: number): number {
   return Math.max(4, Math.log(occurrenceCount + 1) * 3);
+}
+
+// After the force simulation runs, link.source/target mutate from string IDs to node objects.
+// This helper handles both forms.
+function linkNodeId(endpoint: unknown): string {
+  if (typeof endpoint === 'object' && endpoint !== null && 'id' in endpoint) {
+    return (endpoint as { id: string }).id;
+  }
+  return endpoint as string;
 }
 
 interface ForceGraphPanelProps {
@@ -24,6 +33,17 @@ const ForceGraphPanel: React.FC<ForceGraphPanelProps> = ({ graphData, isLoading 
 
   // Position cache: preserves node positions across graph reloads (stubbed — ready to wire)
   const positionCache = useRef<Map<string, { x: number; y: number }>>(new Map());
+
+  // Set of node IDs directly connected to the focused entity (first-order neighbors)
+  const neighborIds = useMemo((): Set<string> => {
+    if (!focusEntityId || !graphData) return new Set();
+    const neighbors = new Set<string>();
+    for (const link of graphData.links) {
+      if (link.source === focusEntityId) neighbors.add(link.target);
+      if (link.target === focusEntityId) neighbors.add(link.source);
+    }
+    return neighbors;
+  }, [focusEntityId, graphData]);
 
   // Center on focused node when focusEntityId changes
   useEffect(() => {
@@ -52,14 +72,20 @@ const ForceGraphPanel: React.FC<ForceGraphPanelProps> = ({ graphData, isLoading 
       const radius = nodeSize(node.occurrence_count);
       const color = colorMap[node.entity_type] ?? ENTITY_TYPE_COLORS[node.entity_type] ?? '#999';
 
+      const isFocused = node.id === focusEntityId;
+      const isNeighbor = neighborIds.has(node.id);
+      const isDimmed = focusEntityId !== null && !isFocused && !isNeighbor;
+
+      ctx.globalAlpha = isDimmed ? 0.5 : 1;
+
       // Draw circle
       ctx.beginPath();
       ctx.arc(x, y, radius, 0, 2 * Math.PI);
       ctx.fillStyle = color;
       ctx.fill();
 
-      // Highlight focused node
-      if (node.id === focusEntityId) {
+      // Ring on focused node
+      if (isFocused) {
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 2 / globalScale;
         ctx.stroke();
@@ -67,16 +93,17 @@ const ForceGraphPanel: React.FC<ForceGraphPanelProps> = ({ graphData, isLoading 
 
       // Label rendered below the node (only when zoomed in enough)
       if (globalScale >= 1.5) {
-        const label = node.name;
         const fontSize = 12 / globalScale;
         ctx.font = `${fontSize}px Sans-Serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillStyle = '#222';
-        ctx.fillText(label, x, y + radius + 2 / globalScale);
+        ctx.fillText(node.name, x, y + radius + 2 / globalScale);
       }
+
+      ctx.globalAlpha = 1;
     },
-    [colorMap, focusEntityId]
+    [colorMap, focusEntityId, neighborIds]
   );
 
   const nodeLabel = useCallback(
@@ -125,8 +152,25 @@ const ForceGraphPanel: React.FC<ForceGraphPanelProps> = ({ graphData, isLoading 
         linkLabel={linkLabel as any}
         linkDirectionalArrowLength={4}
         linkDirectionalArrowRelPos={1}
-        linkColor={() => 'rgba(0,0,0,0.25)'}
-        linkDirectionalArrowColor={() => 'rgba(0,0,0,0.5)'}
+        linkColor={(link: any) => {
+          if (!focusEntityId) return 'rgba(0,0,0,0.25)';
+          const src = linkNodeId(link.source);
+          const tgt = linkNodeId(link.target);
+          const isFirstOrder = src === focusEntityId || tgt === focusEntityId;
+          return isFirstOrder ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.15)';
+        }}
+        linkWidth={(link: any) => {
+          if (!focusEntityId) return 1;
+          const src = linkNodeId(link.source);
+          const tgt = linkNodeId(link.target);
+          return src === focusEntityId || tgt === focusEntityId ? 1.5 : 0.5;
+        }}
+        linkDirectionalArrowColor={(link: any) => {
+          if (!focusEntityId) return 'rgba(0,0,0,0.5)';
+          const src = linkNodeId(link.source);
+          const tgt = linkNodeId(link.target);
+          return src === focusEntityId || tgt === focusEntityId ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0.25)';
+        }}
         onNodeClick={handleNodeClick as any}
         onBackgroundClick={handleBackgroundClick}
         backgroundColor="#ffffff"
