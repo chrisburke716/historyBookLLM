@@ -40,7 +40,7 @@ export interface EntityDetail {
   name: string;
   entity_type: string;
   aliases: string[];
-  description: string;
+  descriptions: string[];
   occurrence_count: number;
   relationships: RelationshipSummary[];
 }

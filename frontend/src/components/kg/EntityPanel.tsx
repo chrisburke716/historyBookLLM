@@ -127,11 +127,15 @@ const EntityPanel: React.FC<EntityPanelProps> = ({ activeGraph }) => {
 
       {/* Scrollable body */}
       <Box sx={{ flex: 1, overflow: 'auto', p: 2, pt: 1.5 }}>
-        {entity.description && (
+        {entity.descriptions.length > 0 && (
           <>
-            <Typography variant="body2" sx={{ mb: 2, lineHeight: 1.6 }}>
-              {entity.description}
-            </Typography>
+            <Box component="ul" sx={{ m: 0, pl: 2.5, mb: 2 }}>
+              {entity.descriptions.map((desc, i) => (
+                <Typography key={i} component="li" variant="body2" sx={{ lineHeight: 1.6, mb: 0.5 }}>
+                  {desc}
+                </Typography>
+              ))}
+            </Box>
             <Divider sx={{ mb: 1.5 }} />
           </>
         )}

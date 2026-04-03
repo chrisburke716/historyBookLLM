@@ -42,7 +42,7 @@ class EntityDetail(BaseModel):
     name: str
     entity_type: str
     aliases: list[str]
-    description: str
+    descriptions: list[str]
     occurrence_count: int
     relationships: list[RelationshipSummary]
 

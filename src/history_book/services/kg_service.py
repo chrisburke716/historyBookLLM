@@ -105,7 +105,7 @@ class KGService:
             name=entity.name,
             entity_type=entity.entity_type,
             aliases=entity.aliases,
-            description=" ".join(entity.descriptions),
+            descriptions=entity.descriptions,
             occurrence_count=entity.occurrence_count,
             relationships=rel_summaries,
         )
