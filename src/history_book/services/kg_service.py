@@ -2,6 +2,8 @@
 
 import logging
 
+import networkx as nx
+
 from history_book.api.models.kg_models import (
     EntityDetail,
     GraphLink,
@@ -26,6 +28,7 @@ class KGService:
             config = WeaviateConfig.from_environment()
             repo_manager = BookRepositoryManager(config)
         self.repo_manager = repo_manager
+        self._nx_cache: dict[str, nx.DiGraph] = {}
 
     def list_graphs(self):
         """Return all available KGGraph metadata objects."""
@@ -35,38 +38,29 @@ class KGService:
         """Return all nodes and links for a named graph."""
         entities = self.repo_manager.kg_entities.find_by_graph(graph_name)
         relationships = self.repo_manager.kg_relationships.find_by_graph(graph_name)
+        # Build and cache NX graph while we have the data, avoiding a second
+        # DB round-trip when get_subgraph is called subsequently.
+        if graph_name not in self._nx_cache:
+            self._nx_cache[graph_name] = self._build_nx_graph(entities, relationships)
         return self._build_graph_response(entities, relationships, graph_name)
 
     def get_subgraph(self, entity_id: str, hops: int, graph_name: str) -> GraphResponse:
         """Return an N-hop subgraph centered on entity_id within graph_name."""
-        frontier: set[str] = {entity_id}
-        visited_entities: set[str] = {entity_id}
-        seen_rel_ids: set[str] = set()
-        all_relationships: list[KGRelationship] = []
-
-        for _ in range(hops):
-            if not frontier:
-                break
-            rels = self.repo_manager.kg_relationships.find_by_entities(
-                list(frontier), graph_name
+        G = self._get_nx_graph(graph_name)
+        if entity_id not in G:
+            return GraphResponse(
+                nodes=[], links=[], graph_name=graph_name, node_count=0, edge_count=0
             )
-            new_entity_ids: set[str] = set()
-            for r in rels:
-                if r.id and r.id not in seen_rel_ids:
-                    seen_rel_ids.add(r.id)
-                    all_relationships.append(r)
-                new_entity_ids.add(r.source_entity_id)
-                new_entity_ids.add(r.target_entity_id)
-            frontier = new_entity_ids - visited_entities
-            visited_entities.update(new_entity_ids)
 
-        entities: list[KGEntity] = []
-        for eid in visited_entities:
-            entity = self.repo_manager.kg_entities.get_by_id(eid)
-            if entity is not None:
-                entities.append(entity)
+        sub = nx.ego_graph(G, entity_id, radius=hops, undirected=True)
 
-        return self._build_graph_response(entities, all_relationships, graph_name)
+        entities = [G.nodes[n]["entity"] for n in sub.nodes if "entity" in G.nodes[n]]
+        relationships = [
+            G.edges[u, v, k]["relationship"]
+            for u, v, k in sub.edges(keys=True)
+            if "relationship" in G.edges[u, v, k]
+        ]
+        return self._build_graph_response(entities, relationships, graph_name)
 
     def get_entity(self, entity_id: str) -> EntityDetail | None:
         """Return detailed entity info including denormalized relationships."""
@@ -143,6 +137,31 @@ class KGService:
                 break
 
         return SearchResponse(results=search_results, query=query)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _get_nx_graph(self, graph_name: str) -> nx.DiGraph:
+        """Return cached NX graph, building from DB if not yet cached."""
+        if graph_name not in self._nx_cache:
+            entities = self.repo_manager.kg_entities.find_by_graph(graph_name)
+            relationships = self.repo_manager.kg_relationships.find_by_graph(graph_name)
+            self._nx_cache[graph_name] = self._build_nx_graph(entities, relationships)
+        return self._nx_cache[graph_name]
+
+    def _build_nx_graph(
+        self, entities: list[KGEntity], relationships: list[KGRelationship]
+    ) -> nx.DiGraph:
+        """Build a NetworkX DiGraph from entity and relationship lists."""
+        G: nx.DiGraph = nx.MultiDiGraph()
+        for e in entities:
+            if e.id:
+                G.add_node(e.id, entity=e)
+        for r in relationships:
+            if r.source_entity_id in G and r.target_entity_id in G:
+                G.add_edge(r.source_entity_id, r.target_entity_id, relationship=r)
+        return G
 
     def _build_graph_response(
         self,
