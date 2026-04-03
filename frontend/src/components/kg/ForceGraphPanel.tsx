@@ -7,7 +7,7 @@ import { GraphResponse, GraphNode, ENTITY_TYPE_COLORS } from '../../types/kg';
 
 // Utility: map occurrence_count to node display radius
 function nodeSize(occurrenceCount: number): number {
-  return Math.max(4, Math.sqrt(occurrenceCount) * 3);
+  return Math.max(4, Math.log(occurrenceCount + 1) * 3);
 }
 
 interface ForceGraphPanelProps {
@@ -60,20 +60,20 @@ const ForceGraphPanel: React.FC<ForceGraphPanelProps> = ({ graphData, isLoading 
 
       // Highlight focused node
       if (node.id === focusEntityId) {
-        ctx.strokeStyle = '#fff';
+        ctx.strokeStyle = '#000';
         ctx.lineWidth = 2 / globalScale;
         ctx.stroke();
       }
 
-      // Label (only render when zoomed in enough)
+      // Label rendered below the node (only when zoomed in enough)
       if (globalScale >= 1.5) {
         const label = node.name;
-        const fontSize = Math.min(12, radius * 1.2) / globalScale;
+        const fontSize = 12 / globalScale;
         ctx.font = `${fontSize}px Sans-Serif`;
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#fff';
-        ctx.fillText(label, x, y);
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#222';
+        ctx.fillText(label, x, y + radius + 2 / globalScale);
       }
     },
     [colorMap, focusEntityId]
@@ -125,10 +125,11 @@ const ForceGraphPanel: React.FC<ForceGraphPanelProps> = ({ graphData, isLoading 
         linkLabel={linkLabel as any}
         linkDirectionalArrowLength={4}
         linkDirectionalArrowRelPos={1}
-        linkColor={() => 'rgba(150,150,150,0.4)'}
+        linkColor={() => 'rgba(0,0,0,0.25)'}
+        linkDirectionalArrowColor={() => 'rgba(0,0,0,0.5)'}
         onNodeClick={handleNodeClick as any}
         onBackgroundClick={handleBackgroundClick}
-        backgroundColor="#1a1a2e"
+        backgroundColor="#ffffff"
         width={containerRef.current?.clientWidth}
         height={containerRef.current?.clientHeight}
       />
