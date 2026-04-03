@@ -32,6 +32,7 @@ import {
   setHopCount,
   setSearchResults,
   setOccurrenceThreshold,
+  setTrimLeaves,
 } from '../../store/graphSlice';
 import { useGraphListQuery } from '../../hooks/useKGQueries';
 import { kgAPI } from '../../services/kgAPI';
@@ -53,7 +54,7 @@ function buildGraphLabel(graph: KGGraphMeta): string {
 
 const KGTopBar: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { graphName, displayMode, hopCount, searchResults, focusHistory, historyIndex, occurrenceThreshold } =
+  const { graphName, displayMode, hopCount, searchResults, focusHistory, historyIndex, occurrenceThreshold, trimLeaves } =
     useAppSelector((s) => s.graph);
 
   const { data: graphList, isLoading: graphsLoading } = useGraphListQuery();
@@ -245,6 +246,18 @@ const KGTopBar: React.FC = () => {
           sx={{ py: 0.5 }}
         />
       </Box>
+
+      {/* Leaf trim toggle */}
+      <Tooltip title="Recursively remove nodes with only one connection">
+        <ToggleButton
+          value="trimLeaves"
+          size="small"
+          selected={trimLeaves}
+          onChange={() => dispatch(setTrimLeaves(!trimLeaves))}
+        >
+          Trim leaves
+        </ToggleButton>
+      </Tooltip>
 
       {/* History navigation (stubbed) */}
       <Box sx={{ display: 'flex', gap: 0.5 }}>

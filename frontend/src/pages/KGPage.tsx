@@ -19,6 +19,43 @@ function linkEndpointId(endpoint: unknown): string {
   return endpoint as string;
 }
 
+function trimLeavesRecursive(
+  nodes: GraphResponse['nodes'],
+  links: GraphResponse['links'],
+  protectedId: string | null
+): { nodes: GraphResponse['nodes']; links: GraphResponse['links'] } {
+  let activeNodes = new Set(nodes.map((n) => n.id));
+  let activeLinks = links;
+
+  while (true) {
+    const degree = new Map<string, number>();
+    Array.from(activeNodes).forEach((id) => degree.set(id, 0));
+    for (const link of activeLinks) {
+      const src = linkEndpointId(link.source);
+      const tgt = linkEndpointId(link.target);
+      if (activeNodes.has(src)) degree.set(src, (degree.get(src) ?? 0) + 1);
+      if (activeNodes.has(tgt)) degree.set(tgt, (degree.get(tgt) ?? 0) + 1);
+    }
+
+    const leaves = new Set(
+      Array.from(activeNodes).filter((id) => (degree.get(id) ?? 0) <= 1 && id !== protectedId)
+    );
+    if (leaves.size === 0) break;
+
+    Array.from(leaves).forEach((id) => activeNodes.delete(id));
+    activeLinks = activeLinks.filter((l) => {
+      const src = linkEndpointId(l.source);
+      const tgt = linkEndpointId(l.target);
+      return !leaves.has(src) && !leaves.has(tgt);
+    });
+  }
+
+  return {
+    nodes: nodes.filter((n) => activeNodes.has(n.id)),
+    links: activeLinks,
+  };
+}
+
 function applyTrim(graph: GraphResponse, focusEntityId: string | null, threshold: number): GraphResponse {
   const keepIds = new Set(
     graph.nodes
@@ -38,7 +75,7 @@ function applyTrim(graph: GraphResponse, focusEntityId: string | null, threshold
 }
 
 const KGPage: React.FC = () => {
-  const { graphName, displayMode, hopCount, focusEntityId, occurrenceThreshold } = useAppSelector((s) => s.graph);
+  const { graphName, displayMode, hopCount, focusEntityId, occurrenceThreshold, trimLeaves } = useAppSelector((s) => s.graph);
 
   const {
     data: fullGraph,
@@ -59,9 +96,19 @@ const KGPage: React.FC = () => {
   const isLoading = displayMode === 'nhop' && focusEntityId ? subgraphLoading : fullGraphLoading;
 
   const displayGraph = useMemo(() => {
-    if (!activeGraph || occurrenceThreshold <= 1) return activeGraph;
-    return applyTrim(activeGraph, focusEntityId, occurrenceThreshold);
-  }, [activeGraph, occurrenceThreshold, focusEntityId]);
+    if (!activeGraph) return activeGraph;
+    const afterThreshold =
+      occurrenceThreshold <= 1
+        ? activeGraph
+        : applyTrim(activeGraph, focusEntityId, occurrenceThreshold);
+    if (!trimLeaves) return afterThreshold;
+    const { nodes, links } = trimLeavesRecursive(
+      afterThreshold.nodes,
+      afterThreshold.links,
+      focusEntityId
+    );
+    return { ...afterThreshold, nodes, links, node_count: nodes.length, edge_count: links.length };
+  }, [activeGraph, occurrenceThreshold, trimLeaves, focusEntityId]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)' }}>
