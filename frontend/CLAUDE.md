@@ -26,7 +26,10 @@ cd frontend && npx tsc --noEmit
 - **React 19** with TypeScript
 - **Material-UI (MUI)** v7 - Component library
 - **Axios** - HTTP client
-- **React Hooks** - State management
+- **React Hooks** - State management (Chat/Book pages)
+- **Redux Toolkit + react-redux** - Global state for KG Explorer
+- **TanStack Query** - Server state / caching for KG data
+- **react-force-graph-2d** - Force-directed graph canvas rendering (KG Explorer)
 - **Jest + React Testing Library** - Testing
 
 ## Dual Backend Support
@@ -71,25 +74,35 @@ These will be **optional/collapsible** features for power users. For now, the UI
 
 ```
 frontend/src/
-├── components/           # React components
+├── components/
 │   ├── BookSelector.tsx      # Book and chapter dropdown selector
 │   ├── ChapterView.tsx       # Chapter content display
 │   ├── MessageInput.tsx      # User input field
 │   ├── MessageList.tsx       # Message display
-│   └── SessionDropdown.tsx   # Session selector
+│   ├── SessionDropdown.tsx   # Session selector
+│   └── kg/
+│       ├── KGTopBar.tsx      # Graph selector, search, display controls
+│       ├── ForceGraphPanel.tsx  # react-force-graph-2d canvas wrapper
+│       └── EntityPanel.tsx   # Entity detail + relationship list
 ├── pages/
 │   ├── BookPage.tsx          # Book browsing page
-│   └── ChatPage.tsx          # Main chat page
+│   ├── ChatPage.tsx          # Main chat page
+│   └── KGPage.tsx            # KG Explorer page (layout + display logic)
 ├── services/
 │   ├── api.ts               # Unified API abstraction (switches backends)
 │   ├── agentAPI.ts          # Agent API client (LangGraph)
-│   └── (ChatAPI in api.ts)  # Chat API client (LCEL)
+│   └── kgAPI.ts             # KG API client (/api/kg/*)
+├── store/
+│   ├── index.ts             # Redux store configuration
+│   └── graphSlice.ts        # KG Explorer state (focus, graph, display mode, filters)
 ├── hooks/
-│   └── useChat.ts           # Chat state management hook
+│   ├── useChat.ts           # Chat state management hook
+│   └── useKGQueries.ts      # TanStack Query hooks for KG data
 ├── types/
 │   ├── index.ts             # Shared TypeScript interfaces
-│   └── agent.ts             # Agent-specific types (metadata, future features)
-├── App.tsx                  # Root component with routing
+│   ├── agent.ts             # Agent-specific types
+│   └── kg.ts                # KG API types (mirrors kg_models.py exactly)
+├── App.tsx                  # Root component with routing + Redux/Query providers
 └── index.tsx                # Entry point
 ```
 
@@ -303,6 +316,40 @@ interface SessionDropdownProps {
 2. Auto-create session if none exists
 3. User sends message → call `sendMessage()`
 4. Display AI response with citations
+
+---
+
+## KG Explorer (`/kg`)
+
+Interactive force-directed graph visualization of the knowledge graph.
+
+### Architecture
+
+- **`KGPage.tsx`**: Top-level layout; owns `displayGraph` memo (applies occurrence filter then recursive leaf trim); passes filtered data to `ForceGraphPanel` and raw graph stats to `EntityPanel`.
+- **`ForceGraphPanel.tsx`**: Wraps `react-force-graph-2d`. Custom canvas node rendering with focus highlighting. First-order neighbors of focused entity are fully opaque; others dimmed to 50%. Link opacity/width also scales with focus proximity.
+- **`EntityPanel.tsx`**: Unfocused → graph stats. Focused → entity name, type, aliases, description bullets, relationship list with direction icons, relation_type chips, clickable neighbor names, and `b{N}:ch{N}` source citations.
+- **`KGTopBar.tsx`**: Graph selector dropdown (volume/book/chapter grouped + sorted, titles from `/api/books`), entity search (enter key → API call → dropdown), N-hop/Full toggle, hop count, occurrence threshold slider (1–4), leaf trim toggle, back/forward history buttons (stubbed).
+
+### Redux state (`graphSlice`)
+
+| Field | Default | Purpose |
+|-------|---------|---------|
+| `focusEntityId` | `null` | Selected node; drives subgraph fetch and panel |
+| `graphName` | `'volume_full'` | Active graph scope |
+| `displayMode` | `'full'` | `'full'` = whole graph, `'nhop'` = ego subgraph |
+| `hopCount` | `2` | Ego radius for N-hop mode |
+| `occurrenceThreshold` | `2` | Filter nodes with count < threshold |
+| `trimLeaves` | `false` | Recursively remove degree-≤1 nodes after threshold filter |
+| `searchResults` | `[]` | Current search dropdown results |
+
+`clearFocus` resets `displayMode` → `'full'`. `setGraphName` clears focus.
+
+### Key implementation details
+
+- **Link mutation**: `react-force-graph-2d` mutates `link.source`/`link.target` from string IDs to node objects during simulation. Always use `linkNodeId(endpoint)` (defined in both `ForceGraphPanel` and `KGPage`) to resolve IDs from links.
+- **Neighbor highlighting**: `neighborIds` useMemo must use `linkNodeId()` — direct string comparison fails post-simulation.
+- **Leaf trimming**: `trimLeavesRecursive` in `KGPage` uses degree `<= 1` (catches isolated nodes too). Focused entity is always protected from removal.
+- **Graph dropdown filtering**: Book-type graphs filtered with `/^book\d+$/` to exclude partial merge artifacts (e.g., `book3_ch4_5`).
 
 ---
 

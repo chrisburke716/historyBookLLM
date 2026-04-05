@@ -186,6 +186,25 @@ rule: {N} merged, {N} rejected, {N} new | llm: {N} cand, {N} checked, {N} reject
 
 ---
 
+### KGService (`kg_service.py`)
+
+**Purpose**: Read-only queries against ingested knowledge graphs for the KG Explorer frontend.
+
+**Key Methods**:
+- `list_graphs()` → list of `KGGraph` metadata objects
+- `get_graph(graph_name)` → all nodes + links; builds & caches `nx.MultiDiGraph`
+- `get_subgraph(entity_id, hops, graph_name)` → N-hop ego subgraph via `nx.ego_graph`
+- `get_entity(entity_id)` → `EntityDetail` with denormalized relationship summaries (includes `book_index`, `chapter_index` for citations)
+- `search(query, graph_name, entity_types, limit)` → hybrid search via `KGEntityRepository.search_entities_hybrid`
+
+**Caching**: `nx.MultiDiGraph` cached per `graph_name` in `_nx_cache`. `get_graph()` populates cache; `get_subgraph()` reuses it.
+
+**`MultiDiGraph` rationale**: KG has parallel edges (multiple relationships between the same entity pair) — `DiGraph` would silently drop them.
+
+**Integration**: Called by `api/routes/kg.py` via `@lru_cache`-injected dependency.
+
+---
+
 ### ParagraphService (`paragraph_service.py` - 220 lines)
 
 **Purpose**: High-level paragraph operations and vector search.
