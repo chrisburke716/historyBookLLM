@@ -6,7 +6,6 @@ import {
   Divider,
   List,
   ListItem,
-  ListItemText,
   IconButton,
   CircularProgress,
   Tooltip,

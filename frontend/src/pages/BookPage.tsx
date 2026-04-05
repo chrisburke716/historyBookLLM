@@ -132,6 +132,7 @@ const BookPage: React.FC = () => {
   };
 
   // Save scroll position to localStorage (debounced)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const saveScrollPosition = useCallback(
     debounce(() => {
       if (selectedBookIndex === null || selectedChapterIndex === null) return;
@@ -140,14 +141,12 @@ const BookPage: React.FC = () => {
       const position = scrollContainerRef.current.scrollTop;
       const key = `book-scroll-${selectedBookIndex}-${selectedChapterIndex}`;
 
-      // Store position with timestamp for cleanup
       const data = {
         position,
         timestamp: Date.now(),
       };
       localStorage.setItem(key, JSON.stringify(data));
 
-      // Clean up old positions
       cleanupOldScrollPositions();
     }, 300),
     [selectedBookIndex, selectedChapterIndex]

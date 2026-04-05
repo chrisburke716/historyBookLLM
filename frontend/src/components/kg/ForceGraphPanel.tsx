@@ -31,9 +31,6 @@ const ForceGraphPanel: React.FC<ForceGraphPanelProps> = ({ graphData, isLoading 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
 
-  // Position cache: preserves node positions across graph reloads (stubbed — ready to wire)
-  const positionCache = useRef<Map<string, { x: number; y: number }>>(new Map());
-
   // Set of node IDs directly connected to the focused entity (first-order neighbors)
   const neighborIds = useMemo((): Set<string> => {
     if (!focusEntityId || !graphData) return new Set();
