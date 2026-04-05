@@ -34,20 +34,27 @@ import {
   setOccurrenceThreshold,
   setTrimLeaves,
 } from '../../store/graphSlice';
-import { useGraphListQuery } from '../../hooks/useKGQueries';
+import { useGraphListQuery, useBooksWithChaptersQuery } from '../../hooks/useKGQueries';
 import { kgAPI } from '../../services/kgAPI';
 import { KGGraphMeta, ENTITY_TYPE_COLORS } from '../../types/kg';
 
-function buildGraphLabel(graph: KGGraphMeta): string {
+function buildGraphLabel(
+  graph: KGGraphMeta,
+  bookTitles: Map<number, string>,
+  chapterTitles: Map<string, string>
+): string {
   if (graph.graph_type === 'volume') return 'Full Volume';
   if (graph.graph_type === 'book') {
-    const bookNums = Array.from(new Set(graph.book_chapters.map((bc) => bc.split(':')[0])));
-    return `Book ${bookNums.join(', ')}`;
+    const bookNum = parseInt(graph.name.replace('book', ''), 10);
+    const title = bookTitles.get(bookNum);
+    return title ? `Book ${bookNum}: ${title}` : `Book ${bookNum}`;
   }
   // chapter
   if (graph.book_chapters.length > 0) {
-    const [book, chapter] = graph.book_chapters[0].split(':');
-    return `Book ${book} · Ch. ${chapter}`;
+    const [bookStr, chapterStr] = graph.book_chapters[0].split(':');
+    const [bookNum, chapterNum] = [parseInt(bookStr, 10), parseInt(chapterStr, 10)];
+    const title = chapterTitles.get(`${bookNum}:${chapterNum}`);
+    return title ? `Book ${bookNum} · Ch. ${chapterNum}: ${title}` : `Book ${bookNum} · Ch. ${chapterNum}`;
   }
   return graph.name;
 }
@@ -58,6 +65,7 @@ const KGTopBar: React.FC = () => {
     useAppSelector((s) => s.graph);
 
   const { data: graphList, isLoading: graphsLoading } = useGraphListQuery();
+  const { bookTitles, chapterTitles } = useBooksWithChaptersQuery();
 
   const [searchInput, setSearchInput] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -93,10 +101,20 @@ const KGTopBar: React.FC = () => {
     [dispatch]
   );
 
-  // Group graphs for dropdown
+  // Group and sort graphs for dropdown
   const volumeGraphs = graphList?.graphs.filter((g) => g.graph_type === 'volume') ?? [];
-  const bookGraphs = graphList?.graphs.filter((g) => g.graph_type === 'book') ?? [];
-  const chapterGraphs = graphList?.graphs.filter((g) => g.graph_type === 'chapter') ?? [];
+  const bookGraphs = (graphList?.graphs.filter(
+    (g) => g.graph_type === 'book' && /^book\d+$/.test(g.name)
+  ) ?? []).sort((a, b) => {
+    const bookNum = (name: string) => parseInt(name.replace('book', ''), 10);
+    return bookNum(a.name) - bookNum(b.name);
+  });
+  const chapterGraphs = (graphList?.graphs.filter((g) => g.graph_type === 'chapter') ?? [])
+    .sort((a, b) => {
+      const [ab, ac] = (a.book_chapters[0] ?? '0:0').split(':').map(Number);
+      const [bb, bc] = (b.book_chapters[0] ?? '0:0').split(':').map(Number);
+      return ab !== bb ? ab - bb : ac - bc;
+    });
 
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < focusHistory.length - 1;
@@ -178,7 +196,7 @@ const KGTopBar: React.FC = () => {
         >
           {volumeGraphs.map((g) => (
             <MenuItem key={g.name} value={g.name}>
-              {buildGraphLabel(g)}
+              {buildGraphLabel(g, bookTitles, chapterTitles)}
             </MenuItem>
           ))}
           {bookGraphs.length > 0 && (
@@ -188,7 +206,7 @@ const KGTopBar: React.FC = () => {
           )}
           {bookGraphs.map((g) => (
             <MenuItem key={g.name} value={g.name}>
-              {buildGraphLabel(g)}
+              {buildGraphLabel(g, bookTitles, chapterTitles)}
             </MenuItem>
           ))}
           {chapterGraphs.length > 0 && (
@@ -198,7 +216,7 @@ const KGTopBar: React.FC = () => {
           )}
           {chapterGraphs.map((g) => (
             <MenuItem key={g.name} value={g.name}>
-              {buildGraphLabel(g)}
+              {buildGraphLabel(g, bookTitles, chapterTitles)}
             </MenuItem>
           ))}
         </Select>
