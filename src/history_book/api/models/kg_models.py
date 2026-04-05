@@ -35,6 +35,8 @@ class RelationshipSummary(BaseModel):
     direction: Literal["outgoing", "incoming"]
     other_entity_id: str
     other_entity_name: str
+    book_index: int
+    chapter_index: int
 
 
 class EntityDetail(BaseModel):

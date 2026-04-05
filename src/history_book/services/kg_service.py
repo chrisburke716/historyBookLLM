@@ -91,6 +91,8 @@ class KGService:
                     direction=direction,
                     other_entity_id=other_id,
                     other_entity_name=other_name,
+                    book_index=r.book_index,
+                    chapter_index=r.chapter_index,
                 )
             )
 

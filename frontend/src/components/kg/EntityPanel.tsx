@@ -182,6 +182,9 @@ const EntityPanel: React.FC<EntityPanelProps> = ({ activeGraph }) => {
                       >
                         {rel.other_entity_name}
                       </Button>
+                      <Typography variant="caption" color="text.disabled">
+                        b{rel.book_index}:ch{rel.chapter_index}
+                      </Typography>
                     </Box>
                     {rel.description && (
                       <Typography

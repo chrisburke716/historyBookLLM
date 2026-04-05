@@ -33,6 +33,8 @@ export interface RelationshipSummary {
   direction: 'outgoing' | 'incoming';
   other_entity_id: string;
   other_entity_name: string;
+  book_index: number;
+  chapter_index: number;
 }
 
 export interface EntityDetail {
