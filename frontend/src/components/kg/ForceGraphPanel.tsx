@@ -39,8 +39,10 @@ const ForceGraphPanel: React.FC<ForceGraphPanelProps> = ({ graphData, isLoading 
     if (!focusEntityId || !graphData) return new Set();
     const neighbors = new Set<string>();
     for (const link of graphData.links) {
-      if (link.source === focusEntityId) neighbors.add(link.target);
-      if (link.target === focusEntityId) neighbors.add(link.source);
+      const src = linkNodeId(link.source);
+      const tgt = linkNodeId(link.target);
+      if (src === focusEntityId) neighbors.add(tgt);
+      if (tgt === focusEntityId) neighbors.add(src);
     }
     return neighbors;
   }, [focusEntityId, graphData]);
