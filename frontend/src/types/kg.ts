@@ -92,3 +92,87 @@ export const ENTITY_TYPE_COLORS: Record<string, string> = {
   event: '#e15759',
   concept: '#b07aa1',
 };
+
+// ---------------------------------------------------------------------------
+// Metric enums (mirror backend NodeSizeMetric / NodeColorMetric / NodePairMetric)
+// ---------------------------------------------------------------------------
+
+export type NodeSizeMetric =
+  | 'occurrence_count'
+  | 'degree_centrality'
+  | 'betweenness_centrality'
+  | 'pagerank'
+  | 'closeness_centrality'
+  | 'kcore_number';
+
+export type NodeColorMetric =
+  | 'entity_type'
+  | 'community_louvain'
+  | 'community_girvan_newman'
+  | 'community_label_propagation'
+  | 'community_spectral'
+  | 'local_clustering_coefficient'
+  | 'kcore_number';
+
+export type NodePairMetric =
+  | 'cosine_similarity'
+  | 'jaccard_similarity'
+  | 'adamic_adar'
+  | 'common_neighbor_count'
+  | 'shortest_path_length'
+  | 'resistance_distance';
+
+export const NODE_PAIR_METRICS: NodePairMetric[] = [
+  'cosine_similarity',
+  'jaccard_similarity',
+  'adamic_adar',
+  'common_neighbor_count',
+  'shortest_path_length',
+  'resistance_distance',
+];
+
+// ---------------------------------------------------------------------------
+// Metric response types (mirror backend Pydantic models)
+// ---------------------------------------------------------------------------
+
+export interface GraphMetricsResponse {
+  graph_name: string;
+  density: number;
+  giant_component_ratio: number;
+  num_connected_components: number;
+  avg_shortest_path_length: number | null;
+  diameter: number | null;
+  global_clustering_coefficient: number;
+  num_communities: number;
+  articulation_point_count: number;
+  status: 'ready' | 'computing';
+}
+
+export interface NodeMetricResponse {
+  graph_name: string;
+  metric: string;
+  params: Record<string, number>;
+  values: Record<string, number>; // entity UUID → metric value
+  norm_min: number;
+  norm_max: number;
+  status: 'ready' | 'computing';
+}
+
+export interface CommunityMetricResponse {
+  graph_name: string;
+  metric: string;
+  params: Record<string, number>;
+  values: Record<string, number>; // entity UUID → community ID (int stored as number)
+  num_communities: number;
+  status: 'ready' | 'computing';
+}
+
+export interface NodePairMetricResponse {
+  graph_name: string;
+  focus_entity_id: string;
+  metric: string;
+  params: Record<string, number>;
+  values: Record<string, number>; // entity UUID → value relative to focus
+  norm_min: number;
+  norm_max: number;
+}

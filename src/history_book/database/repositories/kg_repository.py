@@ -111,6 +111,19 @@ class KGEntityRepository(WeaviateRepository["KGEntity"]):
             **kwargs,
         )
 
+    def get_vectors(self, entity_ids: list[str]) -> dict[str, list[float]]:
+        """Fetch raw embedding vectors for a list of entity UUIDs.
+
+        Used for cosine similarity metric computation. Returns a dict mapping
+        entity_id → vector. IDs with no vector are omitted.
+        """
+        result: dict[str, list[float]] = {}
+        for entity_id in entity_ids:
+            vec = self.get_vector(entity_id)
+            if vec is not None:
+                result[entity_id] = vec
+        return result
+
     def delete_by_graph(self, graph_name: str) -> int:
         """Delete all entities for a graph. Returns count deleted."""
         entities = self.find_by_graph(graph_name)

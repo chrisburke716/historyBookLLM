@@ -18,6 +18,7 @@ import {
   Typography,
   Tooltip,
   Slider,
+  ListSubheader,
 } from '@mui/material';
 import {
   ArrowBack,
@@ -34,9 +35,27 @@ import {
   setOccurrenceThreshold,
   setTrimLeaves,
 } from '../../store/graphSlice';
-import { useGraphListQuery, useBooksWithChaptersQuery } from '../../hooks/useKGQueries';
+import {
+  setNodeSizeMetric,
+  setNodeColorMetric,
+  setNodeSizeParams,
+  setNodeColorParams,
+} from '../../store/metricsSlice';
+import {
+  useGraphListQuery,
+  useBooksWithChaptersQuery,
+  useNodeMetricQuery,
+  useNodePairMetricQuery,
+} from '../../hooks/useKGQueries';
 import { kgAPI } from '../../services/kgAPI';
-import { KGGraphMeta, ENTITY_TYPE_COLORS } from '../../types/kg';
+import {
+  KGGraphMeta,
+  ENTITY_TYPE_COLORS,
+  NODE_PAIR_METRICS,
+  NodeSizeMetric,
+  NodeColorMetric,
+  NodePairMetric,
+} from '../../types/kg';
 
 function buildGraphLabel(
   graph: KGGraphMeta,
@@ -61,15 +80,53 @@ function buildGraphLabel(
 
 const KGTopBar: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { graphName, displayMode, hopCount, searchResults, focusHistory, historyIndex, occurrenceThreshold, trimLeaves } =
+  const { graphName, displayMode, hopCount, searchResults, focusHistory, historyIndex, occurrenceThreshold, trimLeaves, focusEntityId } =
     useAppSelector((s) => s.graph);
+  const { nodeSizeMetric, nodeColorMetric, nodeSizeParams, nodeColorParams } =
+    useAppSelector((s) => s.metrics);
 
   const { data: graphList, isLoading: graphsLoading } = useGraphListQuery();
   const { bookTitles, chapterTitles } = useBooksWithChaptersQuery();
 
+  // Size metric query (for loading indicator)
+  const isNodePairColorMetric = NODE_PAIR_METRICS.includes(nodeColorMetric as NodePairMetric);
+  const sizeMetricQuery = useNodeMetricQuery(
+    graphName, nodeSizeMetric, nodeSizeParams,
+    nodeSizeMetric !== 'occurrence_count'
+  );
+  const colorMetricQuery = useNodeMetricQuery(
+    graphName, nodeColorMetric as NodeColorMetric, nodeColorParams,
+    !isNodePairColorMetric && nodeColorMetric !== 'entity_type'
+  );
+  const colorPairMetricQuery = useNodePairMetricQuery(
+    graphName, focusEntityId, nodeColorMetric as NodePairMetric,
+    isNodePairColorMetric && focusEntityId !== null
+  );
+  const sizeLoading = sizeMetricQuery.isFetching || sizeMetricQuery.data?.status === 'computing';
+  const colorLoading = colorMetricQuery.isFetching || colorMetricQuery.data?.status === 'computing'
+    || colorPairMetricQuery.isFetching;
+
+  // Param input local state (committed on enter/blur)
+  const [dampingInput, setDampingInput] = useState(String(nodeSizeParams.damping ?? 0.85));
+  const [kInput, setKInput] = useState(String(nodeColorParams.k ?? 5));
+
   const [searchInput, setSearchInput] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searching, setSearching] = useState(false);
+
+  const commitDamping = useCallback(() => {
+    const val = parseFloat(dampingInput);
+    if (!isNaN(val) && val > 0 && val < 1) {
+      dispatch(setNodeSizeParams({ ...nodeSizeParams, damping: val }));
+    }
+  }, [dampingInput, nodeSizeParams, dispatch]);
+
+  const commitK = useCallback(() => {
+    const val = parseInt(kInput, 10);
+    if (!isNaN(val) && val >= 2) {
+      dispatch(setNodeColorParams({ ...nodeColorParams, k: val }));
+    }
+  }, [kInput, nodeColorParams, dispatch]);
 
   const handleSearch = useCallback(
     async (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -221,6 +278,93 @@ const KGTopBar: React.FC = () => {
           ))}
         </Select>
       </FormControl>
+
+      {/* Node size metric selector */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <FormControl size="small" sx={{ minWidth: 160 }}>
+          <InputLabel>Size</InputLabel>
+          <Select
+            label="Size"
+            value={nodeSizeMetric}
+            onChange={(e) => dispatch(setNodeSizeMetric(e.target.value as NodeSizeMetric))}
+            endAdornment={
+              sizeLoading ? <CircularProgress size={14} sx={{ mr: 2 }} /> : null
+            }
+          >
+            <MenuItem value="occurrence_count">Occurrence count</MenuItem>
+            <MenuItem value="degree_centrality">Degree centrality</MenuItem>
+            <MenuItem value="betweenness_centrality">Betweenness centrality</MenuItem>
+            <MenuItem value="pagerank">PageRank</MenuItem>
+            <MenuItem value="closeness_centrality">Closeness centrality</MenuItem>
+            <MenuItem value="kcore_number">K-core number</MenuItem>
+          </Select>
+        </FormControl>
+        {nodeSizeMetric === 'pagerank' && (
+          <Tooltip title="Damping factor (0–1)">
+            <TextField
+              size="small"
+              label="Damping"
+              type="number"
+              value={dampingInput}
+              onChange={(e) => setDampingInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && commitDamping()}
+              onBlur={commitDamping}
+              inputProps={{ min: 0.01, max: 0.99, step: 0.05 }}
+              sx={{ width: 90 }}
+            />
+          </Tooltip>
+        )}
+      </Box>
+
+      {/* Node color metric selector */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <FormControl size="small" sx={{ minWidth: 180 }}>
+          <InputLabel>Color</InputLabel>
+          <Select
+            label="Color"
+            value={nodeColorMetric}
+            onChange={(e) => dispatch(setNodeColorMetric(e.target.value as NodeColorMetric | NodePairMetric))}
+            endAdornment={
+              colorLoading ? <CircularProgress size={14} sx={{ mr: 2 }} /> : null
+            }
+          >
+            <MenuItem value="entity_type">Entity type</MenuItem>
+            <MenuItem value="community_louvain">Community — Louvain</MenuItem>
+            <MenuItem value="community_girvan_newman">Community — Girvan-Newman</MenuItem>
+            <MenuItem value="community_label_propagation">Community — Label prop.</MenuItem>
+            <MenuItem value="community_spectral">Community — Spectral</MenuItem>
+            <MenuItem value="local_clustering_coefficient">Local clustering coeff.</MenuItem>
+            <MenuItem value="kcore_number">K-core number</MenuItem>
+            <ListSubheader sx={{ fontSize: '0.72rem', lineHeight: '1.6' }}>
+              Focus-relative (select a node first)
+            </ListSubheader>
+            {(NODE_PAIR_METRICS as string[]).filter((m) => m !== 'resistance_distance').map((m) => (
+              <MenuItem
+                key={m}
+                value={m}
+                disabled={focusEntityId === null}
+              >
+                {m.replace(/_/g, ' ')}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        {nodeColorMetric === 'community_spectral' && (
+          <Tooltip title="Number of clusters (k ≥ 2)">
+            <TextField
+              size="small"
+              label="k"
+              type="number"
+              value={kInput}
+              onChange={(e) => setKInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && commitK()}
+              onBlur={commitK}
+              inputProps={{ min: 2, max: 20, step: 1 }}
+              sx={{ width: 70 }}
+            />
+          </Tooltip>
+        )}
+      </Box>
 
       {/* N-hop toggle */}
       <ToggleButtonGroup

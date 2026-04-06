@@ -46,7 +46,7 @@ class KGService:
 
     def get_subgraph(self, entity_id: str, hops: int, graph_name: str) -> GraphResponse:
         """Return an N-hop subgraph centered on entity_id within graph_name."""
-        G = self._get_nx_graph(graph_name)
+        G = self.get_nx_graph(graph_name)
         if entity_id not in G:
             return GraphResponse(
                 nodes=[], links=[], graph_name=graph_name, node_count=0, edge_count=0
@@ -140,11 +140,20 @@ class KGService:
 
         return SearchResponse(results=search_results, query=query)
 
+    def get_entity_vectors(self, graph_name: str) -> dict[str, list[float]]:
+        """Return embedding vectors for all entities in a graph.
+
+        Used by KGMetricsService for cosine similarity computation.
+        """
+        G = self.get_nx_graph(graph_name)
+        entity_ids = list(G.nodes)
+        return self.repo_manager.kg_entities.get_vectors(entity_ids)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _get_nx_graph(self, graph_name: str) -> nx.DiGraph:
+    def get_nx_graph(self, graph_name: str) -> nx.DiGraph:
         """Return cached NX graph, building from DB if not yet cached."""
         if graph_name not in self._nx_cache:
             entities = self.repo_manager.kg_entities.find_by_graph(graph_name)

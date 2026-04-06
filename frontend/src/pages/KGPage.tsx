@@ -4,8 +4,11 @@ import { useAppSelector } from '../store';
 import {
   useGraphQuery,
   useSubgraphQuery,
+  useGraphMetricsQuery,
+  useNodeMetricQuery,
+  useNodePairMetricQuery,
 } from '../hooks/useKGQueries';
-import { GraphResponse } from '../types/kg';
+import { GraphResponse, NODE_PAIR_METRICS, NodeColorMetric, NodePairMetric } from '../types/kg';
 import KGTopBar from '../components/kg/KGTopBar';
 import ForceGraphPanel from '../components/kg/ForceGraphPanel';
 import EntityPanel from '../components/kg/EntityPanel';
@@ -76,6 +79,7 @@ function applyTrim(graph: GraphResponse, focusEntityId: string | null, threshold
 
 const KGPage: React.FC = () => {
   const { graphName, displayMode, hopCount, focusEntityId, occurrenceThreshold, trimLeaves } = useAppSelector((s) => s.graph);
+  const { nodeSizeMetric, nodeColorMetric, nodeSizeParams, nodeColorParams } = useAppSelector((s) => s.metrics);
 
   const {
     data: fullGraph,
@@ -94,6 +98,57 @@ const KGPage: React.FC = () => {
 
   const activeGraph = displayMode === 'nhop' && focusEntityId ? subgraph : fullGraph;
   const isLoading = displayMode === 'nhop' && focusEntityId ? subgraphLoading : fullGraphLoading;
+
+  // --------------- Metric queries ---------------
+
+  // Graph-level metrics (shown in entity panel unfocused state)
+  const graphMetricsQuery = useGraphMetricsQuery(graphName);
+
+  // Node size metric
+  const sizeMetricQuery = useNodeMetricQuery(
+    graphName, nodeSizeMetric, nodeSizeParams,
+    nodeSizeMetric !== 'occurrence_count'
+  );
+
+  // Node color metric (node-level or node-pair)
+  const isNodePairColorMetric = NODE_PAIR_METRICS.includes(nodeColorMetric as NodePairMetric);
+  const colorMetricQuery = useNodeMetricQuery(
+    graphName, nodeColorMetric as NodeColorMetric, nodeColorParams,
+    !isNodePairColorMetric && nodeColorMetric !== 'entity_type'
+  );
+  const colorPairMetricQuery = useNodePairMetricQuery(
+    graphName, focusEntityId, nodeColorMetric as NodePairMetric,
+    isNodePairColorMetric && focusEntityId !== null
+  );
+
+  // Resolved metric values to pass to ForceGraphPanel
+  const sizeMetricData = sizeMetricQuery.data;
+  const sizeReady = sizeMetricData?.status === 'ready' && !('num_communities' in (sizeMetricData ?? {}));
+  const sizeValues = sizeReady ? sizeMetricData!.values : undefined;
+  const sizeNormMin = sizeReady ? (sizeMetricData as { norm_min: number }).norm_min : 0;
+  const sizeNormMax = sizeReady ? (sizeMetricData as { norm_max: number }).norm_max : 1;
+
+  // Determine active color metric data
+  const activeColorData = isNodePairColorMetric
+    ? colorPairMetricQuery.data
+    : colorMetricQuery.data?.status === 'ready' ? colorMetricQuery.data : undefined;
+
+  // Community metrics have a 'num_communities' field; continuous ones have 'norm_min'/'norm_max'
+  const isCommunityMetric = activeColorData != null && 'num_communities' in activeColorData;
+  const communityValues = isCommunityMetric
+    ? (activeColorData as { values: Record<string, number> }).values
+    : undefined;
+  const colorMetricValues = !isCommunityMetric && activeColorData != null
+    ? (activeColorData as { values: Record<string, number> }).values
+    : undefined;
+  const colorNormMin = !isCommunityMetric && activeColorData != null
+    ? (activeColorData as { norm_min: number }).norm_min
+    : 0;
+  const colorNormMax = !isCommunityMetric && activeColorData != null
+    ? (activeColorData as { norm_max: number }).norm_max
+    : 1;
+
+  // --------------- Display graph ---------------
 
   const displayGraph = useMemo(() => {
     if (!activeGraph) return activeGraph;
@@ -114,10 +169,24 @@ const KGPage: React.FC = () => {
     <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)' }}>
       <KGTopBar />
       <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        <ForceGraphPanel graphData={displayGraph} isLoading={isLoading} />
+        <ForceGraphPanel
+          graphData={displayGraph}
+          isLoading={isLoading}
+          sizeMetricValues={sizeValues}
+          sizeNormMin={sizeNormMin}
+          sizeNormMax={sizeNormMax}
+          colorMetricValues={colorMetricValues}
+          colorNormMin={colorNormMin}
+          colorNormMax={colorNormMax}
+          communityValues={communityValues}
+        />
         <Divider orientation="vertical" flexItem />
         <Box sx={{ width: 340, flexShrink: 0, overflow: 'hidden', borderLeft: 0 }}>
-          <EntityPanel activeGraph={activeGraph} />
+          <EntityPanel
+            activeGraph={activeGraph}
+            graphMetrics={graphMetricsQuery.data}
+            graphMetricsLoading={graphMetricsQuery.isLoading || graphMetricsQuery.isFetching}
+          />
         </Box>
       </Box>
     </Box>
