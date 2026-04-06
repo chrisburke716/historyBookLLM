@@ -65,7 +65,9 @@ class KGMetricsService:
         self._kg = kg_service
         self._cache: dict[tuple, Any] = {}
         self._computing: set[tuple] = set()
-        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="kg-metrics")
+        self._executor = ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="kg-metrics"
+        )
 
     # ------------------------------------------------------------------
     # Graph-level metrics
@@ -101,7 +103,8 @@ class KGMetricsService:
     def _compute_graph_metrics(self, graph_name: str, key: tuple) -> None:
         try:
             G = self._kg.get_nx_graph(graph_name)
-            U = G.to_undirected()
+            # Collapse MultiDiGraph → simple Graph for algorithms that don't support multigraphs
+            U = nx.Graph(G)
 
             density = nx.density(G)
             n = len(G.nodes)
@@ -175,7 +178,12 @@ class KGMetricsService:
             self._computing.add(key)
             loop = asyncio.get_event_loop()
             loop.run_in_executor(
-                self._executor, self._compute_node_metric, graph_name, metric, params, key
+                self._executor,
+                self._compute_node_metric,
+                graph_name,
+                metric,
+                params,
+                key,
             )
         return self._computing_node_placeholder(graph_name, metric, params), 202
 
@@ -184,7 +192,7 @@ class KGMetricsService:
     ) -> None:
         try:
             G = self._kg.get_nx_graph(graph_name)
-            U = G.to_undirected()
+            U = nx.Graph(G)  # collapse MultiDiGraph → simple Graph
             result = self._dispatch_node_metric(G, U, graph_name, metric, params)
             self._cache[key] = result
         except Exception:
@@ -311,7 +319,7 @@ class KGMetricsService:
     ) -> NodePairMetricResponse:
         """Compute node-pair metric relative to focus_id. Always returns immediately."""
         G = self._kg.get_nx_graph(graph_name)
-        U = G.to_undirected()
+        U = nx.Graph(G)  # collapse MultiDiGraph → simple Graph
 
         if focus_id not in G:
             return NodePairMetricResponse(
@@ -344,9 +352,7 @@ class KGMetricsService:
                 values[n] = float(len(focus_neighbors & set(U.neighbors(n))))
 
         elif metric == "shortest_path_length":
-            lengths = dict(
-                nx.single_source_shortest_path_length(U, focus_id)
-            )
+            lengths = dict(nx.single_source_shortest_path_length(U, focus_id))
             for n in other_ids:
                 values[n] = float(lengths.get(n, -1))
 
@@ -380,4 +386,3 @@ class KGMetricsService:
             norm_min=min(v_list) if v_list else 0.0,
             norm_max=max(v_list) if v_list else 0.0,
         )
-

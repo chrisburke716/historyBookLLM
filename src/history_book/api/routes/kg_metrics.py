@@ -32,7 +32,9 @@ async def get_graph_metrics(
         return JSONResponse(content=result.model_dump(), status_code=status_code)
     except Exception as e:
         logger.error("Failed to get graph metrics for %s: %s", graph_name, e)
-        raise HTTPException(status_code=500, detail="Failed to compute graph metrics") from e
+        raise HTTPException(
+            status_code=500, detail="Failed to compute graph metrics"
+        ) from e
 
 
 @router.get("/node")
@@ -67,7 +69,9 @@ async def get_node_metric(
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error("Failed to get node metric %s for %s: %s", metric, graph_name, e)
-        raise HTTPException(status_code=500, detail="Failed to compute node metric") from e
+        raise HTTPException(
+            status_code=500, detail="Failed to compute node metric"
+        ) from e
 
 
 @router.get("/node-pair", response_model=NodePairMetricResponse)
@@ -102,5 +106,6 @@ async def get_node_pair_metric(
             graph_name,
             e,
         )
-        raise HTTPException(status_code=500, detail="Failed to compute node-pair metric") from e
-
+        raise HTTPException(
+            status_code=500, detail="Failed to compute node-pair metric"
+        ) from e
