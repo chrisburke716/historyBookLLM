@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routes import agent, books, chat
+from .routes import agent, books, chat, kg
 
 
 def create_app() -> FastAPI:
@@ -27,6 +27,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router, prefix="/api")
     app.include_router(agent.router, prefix="/api")
     app.include_router(books.router, prefix="/api")
+    app.include_router(kg.router, prefix="/api")
 
     return app
 

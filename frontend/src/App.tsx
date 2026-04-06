@@ -2,9 +2,15 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { CssBaseline, AppBar, Toolbar, Typography, Box, Tabs, Tab } from '@mui/material';
-import { Book as BookIcon, Chat as ChatIcon } from '@mui/icons-material';
+import { Book as BookIcon, Chat as ChatIcon, AccountTree as GraphIcon } from '@mui/icons-material';
+import { Provider } from 'react-redux';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { store } from './store';
 import ChatPage from './pages/ChatPage';
 import BookPage from './pages/BookPage';
+import KGPage from './pages/KGPage';
+
+const queryClient = new QueryClient();
 
 // Create MUI theme
 const theme = createTheme({
@@ -34,7 +40,11 @@ function Navigation() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const currentTab = location.pathname.startsWith('/book') ? '/book' : '/chat';
+  const currentTab = location.pathname.startsWith('/book')
+    ? '/book'
+    : location.pathname.startsWith('/kg')
+    ? '/kg'
+    : '/chat';
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: string) => {
     navigate(newValue);
@@ -68,6 +78,13 @@ function Navigation() {
             value="/book"
             sx={{ minHeight: 64, color: 'inherit' }}
           />
+          <Tab
+            icon={<GraphIcon />}
+            iconPosition="start"
+            label="Knowledge Graph"
+            value="/kg"
+            sx={{ minHeight: 64, color: 'inherit' }}
+          />
         </Tabs>
       </Toolbar>
     </AppBar>
@@ -76,7 +93,9 @@ function Navigation() {
 
 function App() {
   return (
-    <ThemeProvider theme={theme}>
+    <Provider store={store}>
+      <QueryClientProvider client={queryClient}>
+      <ThemeProvider theme={theme}>
       <CssBaseline />
       <BrowserRouter>
         <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -90,11 +109,14 @@ function App() {
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/book" element={<BookPage />} />
               <Route path="/book/:bookIndex/:chapterIndex" element={<BookPage />} />
+              <Route path="/kg" element={<KGPage />} />
             </Routes>
           </Box>
         </Box>
       </BrowserRouter>
-    </ThemeProvider>
+      </ThemeProvider>
+      </QueryClientProvider>
+    </Provider>
   );
 }
 

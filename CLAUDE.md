@@ -56,6 +56,7 @@ This is a full-stack RAG-powered chat application with a Python FastAPI backend 
 - `GraphRagService`: LangGraph-based RAG with graph execution and checkpointing
 - `GraphChatService`: Session orchestration for graph-based chat with MemorySaver
 - `KGIngestionService`: Knowledge graph extraction + multi-level merge pipeline
+- `KGService`: Read-only KG queries — full graph, N-hop subgraphs (NetworkX ego_graph), entity detail, hybrid search; caches `nx.MultiDiGraph` per graph_name
 
 **Chain Layer** (`src/history_book/chains/`):
 - LCEL chain factories for KG operations: extraction, merge (LLM + rule-filter), temporal parsing
@@ -140,12 +141,12 @@ See `/src/history_book/services/agents/CLAUDE.md` for implementation details.
 ### Frontend Architecture
 
 - **React 19** with TypeScript and Material-UI
-- **Dual-page interface**: Chat page (RAG conversations) and Book page (browse/read book content)
+- **Three-page interface**: Chat (RAG), Book (browse content), KG Explorer (graph visualization)
 - **Chat Components**: `MessageInput`, `MessageList`, `SessionDropdown`, `ChatPage`
 - **Book Components**: `BookSelector`, `ChapterView`, `BookPage`
-- **Features**: URL-based routing, scroll position persistence, tab navigation
+- **KG Components**: `KGTopBar`, `ForceGraphPanel`, `EntityPanel`, `KGPage`
+- **State management**: React hooks (Chat/Book) + Redux Toolkit + TanStack Query (KG Explorer)
 - API client with Axios for backend communication
-- State management through React hooks
 
 ### Evaluation Framework
 
@@ -193,6 +194,7 @@ OPENAI_API_KEY=your-api-key  # Required for chat functionality
 5. **Access**:
    - Chat interface: http://localhost:3000/chat
    - Book browsing: http://localhost:3000/book
+   - KG Explorer: http://localhost:3000/kg
    - API docs: http://localhost:8000/docs
 
 ## Code Style and Quality
@@ -222,6 +224,10 @@ OPENAI_API_KEY=your-api-key  # Required for chat functionality
 - React 19 with TypeScript
 - Material-UI for component library
 - Axios for HTTP client
+- Redux Toolkit + react-redux (KG Explorer state)
+- TanStack Query (server state / caching for KG data)
+- react-force-graph-2d (force-directed graph canvas rendering)
+- NetworkX (backend, subgraph computation via `nx.MultiDiGraph` + `ego_graph`)
 
 ## Project Documentation
 

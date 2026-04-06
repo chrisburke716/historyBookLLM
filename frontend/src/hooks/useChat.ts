@@ -5,7 +5,7 @@
  * based on the REACT_APP_USE_AGENT_API environment variable.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import {
   SessionResponse,

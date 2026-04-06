@@ -288,6 +288,35 @@ The Mermaid diagram can be visualized at https://mermaid.live
 
 ---
 
+---
+
+### KG Explorer API (`/api/kg/*`)
+
+Read-only endpoints backed by `KGService`. DI via `@lru_cache` on `get_kg_service()`.
+
+| Method | Path | Response |
+|--------|------|----------|
+| `GET` | `/api/kg/graphs` | `GraphListResponse` — all graph metadata |
+| `GET` | `/api/kg/graphs/{graph_name}` | `GraphResponse` — all nodes + links |
+| `GET` | `/api/kg/graphs/{graph_name}/subgraph?entity_id=<uuid>&hops=1\|2\|3` | `GraphResponse` — N-hop subgraph |
+| `GET` | `/api/kg/entities/{entity_id}` | `EntityDetail` — entity + relationships with citations |
+| `POST` | `/api/kg/search` | `SearchResponse` — hybrid entity search |
+
+**DTOs** (`api/models/kg_models.py`): `GraphNode`, `GraphLink`, `GraphResponse`, `EntityDetail`, `RelationshipSummary` (includes `book_index`, `chapter_index`), `SearchResult`, `KGGraphMeta`.
+
+**Quick test**:
+```bash
+curl http://localhost:8000/api/kg/graphs
+curl http://localhost:8000/api/kg/graphs/volume_full
+curl "http://localhost:8000/api/kg/graphs/book3_ch4/subgraph?entity_id=<uuid>&hops=2"
+curl http://localhost:8000/api/kg/entities/<uuid>
+curl -X POST http://localhost:8000/api/kg/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Rome", "graph_name": "volume_full", "limit": 5}'
+```
+
+---
+
 ## Request/Response Models
 
 **File**: `models/api_models.py`
