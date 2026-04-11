@@ -23,6 +23,18 @@ logger = logging.getLogger(__name__)
 _MAX_COMPONENT_FOR_PATH_METRICS = 500
 
 
+def _to_simple_graph(G: nx.DiGraph) -> nx.Graph:
+    """Convert a MultiDiGraph to a simple undirected Graph.
+
+    Collapses parallel edges and removes self-loops, both of which cause
+    NetworkXNotImplemented errors in algorithms like core_number, clustering,
+    and articulation_points.
+    """
+    U = nx.Graph(G)
+    U.remove_edges_from(nx.selfloop_edges(U))
+    return U
+
+
 def _cosine_sim(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
     va = np.array(a, dtype=float)
@@ -103,8 +115,7 @@ class KGMetricsService:
     def _compute_graph_metrics(self, graph_name: str, key: tuple) -> None:
         try:
             G = self._kg.get_nx_graph(graph_name)
-            # Collapse MultiDiGraph → simple Graph for algorithms that don't support multigraphs
-            U = nx.Graph(G)
+            U = _to_simple_graph(G)
 
             density = nx.density(G)
             n = len(G.nodes)
@@ -192,7 +203,7 @@ class KGMetricsService:
     ) -> None:
         try:
             G = self._kg.get_nx_graph(graph_name)
-            U = nx.Graph(G)  # collapse MultiDiGraph → simple Graph
+            U = _to_simple_graph(G)
             result = self._dispatch_node_metric(G, U, graph_name, metric, params)
             self._cache[key] = result
         except Exception:

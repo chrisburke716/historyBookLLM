@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
+import { interpolateViridis } from 'd3-scale-chromatic';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { setFocus, clearFocus } from '../../store/graphSlice';
@@ -28,13 +29,10 @@ function nodeDisplaySize(
   return 4 + t * 16;
 }
 
-// Utility: continuous metric value → hex color (cool blue-purple scale)
+// Utility: continuous metric value → color using viridis (perceptually uniform, colorblind-safe)
 function metricToColor(value: number, normMin: number, normMax: number): string {
   const t = normMax > normMin ? (value - normMin) / (normMax - normMin) : 0.5;
-  const r = Math.round(50 + (1 - t) * 170);
-  const g = Math.round(50 + (1 - t) * 120);
-  const b = Math.round(200 + t * 55);
-  return `rgb(${r},${g},${b})`;
+  return interpolateViridis(Math.max(0, Math.min(1, t)));
 }
 
 // Utility: community ID → hex color (deterministic)
