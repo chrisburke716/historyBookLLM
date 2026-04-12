@@ -84,14 +84,10 @@ async def get_node_pair_metric(
     """Get node-pair metric values relative to a focus entity (always 200).
 
     Supported metrics: cosine_similarity, jaccard_similarity, adamic_adar,
-    common_neighbor_count, shortest_path_length.
-    resistance_distance returns 501.
+    common_neighbor_count, shortest_path_length, resistance_distance.
+    resistance_distance uses Laplacian pseudoinverse (O(n³) — may be slow on large graphs).
+    Nodes in different components than the focus node get value -1.
     """
-    if metric == "resistance_distance":
-        raise HTTPException(
-            status_code=501,
-            detail="Resistance distance is not implemented (computationally infeasible on large graphs)",
-        )
     try:
         return service.get_node_pair_metric(graph_name, focus_entity_id, metric, {})
     except NotImplementedError as e:

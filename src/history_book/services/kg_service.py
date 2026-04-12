@@ -19,6 +19,10 @@ from history_book.database.repositories import BookRepositoryManager
 
 logger = logging.getLogger(__name__)
 
+# Weakly-connected components smaller than this are excluded from the cached NX graph,
+# the serialized GraphResponse, and all metric computations.
+_MIN_COMPONENT_SIZE = 6
+
 
 class KGService:
     """Service for reading knowledge graph data."""
@@ -35,14 +39,24 @@ class KGService:
         return self.repo_manager.kg_graphs.list_all()
 
     def get_graph(self, graph_name: str) -> GraphResponse:
-        """Return all nodes and links for a named graph."""
+        """Return all nodes and links for a named graph.
+
+        Components smaller than _MIN_COMPONENT_SIZE are excluded from both
+        the response and subsequent metric computations (via the NX cache).
+        """
         entities = self.repo_manager.kg_entities.find_by_graph(graph_name)
         relationships = self.repo_manager.kg_relationships.find_by_graph(graph_name)
-        # Build and cache NX graph while we have the data, avoiding a second
-        # DB round-trip when get_subgraph is called subsequently.
         if graph_name not in self._nx_cache:
-            self._nx_cache[graph_name] = self._build_nx_graph(entities, relationships)
-        return self._build_graph_response(entities, relationships, graph_name)
+            raw = self._build_nx_graph(entities, relationships)
+            self._nx_cache[graph_name] = self._filter_small_components(raw)
+        G = self._nx_cache[graph_name]
+        keep_ids = set(G.nodes)
+        filtered_entities = [e for e in entities if e.id in keep_ids]
+        filtered_relationships = [
+            r for r in relationships
+            if r.source_entity_id in keep_ids and r.target_entity_id in keep_ids
+        ]
+        return self._build_graph_response(filtered_entities, filtered_relationships, graph_name)
 
     def get_subgraph(self, entity_id: str, hops: int, graph_name: str) -> GraphResponse:
         """Return an N-hop subgraph centered on entity_id within graph_name."""
@@ -141,10 +155,7 @@ class KGService:
         return SearchResponse(results=search_results, query=query)
 
     def get_entity_vectors(self, graph_name: str) -> dict[str, list[float]]:
-        """Return embedding vectors for all entities in a graph.
-
-        Used by KGMetricsService for cosine similarity computation.
-        """
+        """Return embedding vectors for all entities in a (filtered) graph."""
         G = self.get_nx_graph(graph_name)
         entity_ids = list(G.nodes)
         return self.repo_manager.kg_entities.get_vectors(entity_ids)
@@ -154,12 +165,24 @@ class KGService:
     # ------------------------------------------------------------------
 
     def get_nx_graph(self, graph_name: str) -> nx.DiGraph:
-        """Return cached NX graph, building from DB if not yet cached."""
+        """Return cached NX graph, building and filtering from DB if not yet cached."""
         if graph_name not in self._nx_cache:
             entities = self.repo_manager.kg_entities.find_by_graph(graph_name)
             relationships = self.repo_manager.kg_relationships.find_by_graph(graph_name)
-            self._nx_cache[graph_name] = self._build_nx_graph(entities, relationships)
+            raw = self._build_nx_graph(entities, relationships)
+            self._nx_cache[graph_name] = self._filter_small_components(raw)
         return self._nx_cache[graph_name]
+
+    def _filter_small_components(self, G: nx.DiGraph) -> nx.DiGraph:
+        """Return a subgraph of G with components smaller than _MIN_COMPONENT_SIZE removed."""
+        U = nx.Graph(G)
+        keep_ids: set[str] = {
+            n
+            for component in nx.connected_components(U)
+            if len(component) >= _MIN_COMPONENT_SIZE
+            for n in component
+        }
+        return G.subgraph(keep_ids).copy()
 
     def _build_nx_graph(
         self, entities: list[KGEntity], relationships: list[KGRelationship]

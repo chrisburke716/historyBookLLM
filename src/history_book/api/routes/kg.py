@@ -13,6 +13,7 @@ from history_book.api.models.kg_models import (
     SearchResponse,
 )
 from history_book.api.routes.dependencies import get_kg_metrics_service, get_kg_service
+from history_book.services.kg_metrics_service import KGMetricsService
 from history_book.services.kg_service import KGService
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ async def get_graph(
     graph_name: str,
     background_tasks: BackgroundTasks,
     service: KGService = Depends(get_kg_service),
+    metrics_service: KGMetricsService = Depends(get_kg_metrics_service),
 ):
     """Get all nodes and links for a named graph.
 
@@ -59,7 +61,6 @@ async def get_graph(
     """
     try:
         result = service.get_graph(graph_name)
-        metrics_service = get_kg_metrics_service()
         background_tasks.add_task(metrics_service.trigger_graph_metrics, graph_name)
         return result
     except Exception as e:

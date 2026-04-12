@@ -338,7 +338,7 @@ const KGTopBar: React.FC = () => {
             <ListSubheader sx={{ fontSize: '0.72rem', lineHeight: '1.6' }}>
               Focus-relative (select a node first)
             </ListSubheader>
-            {(NODE_PAIR_METRICS as string[]).filter((m) => m !== 'resistance_distance').map((m) => (
+            {(NODE_PAIR_METRICS as string[]).map((m) => (
               <MenuItem
                 key={m}
                 value={m}

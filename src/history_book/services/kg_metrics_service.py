@@ -103,7 +103,6 @@ class KGMetricsService:
         key = (graph_name, "_graph_metrics")
         if key in self._cache:
             return self._cache[key], 200
-        # Start computation if not already running
         if key not in self._computing:
             self._computing.add(key)
             loop = asyncio.get_event_loop()
@@ -376,16 +375,40 @@ class KGMetricsService:
                         values[n] = _cosine_sim(focus_vec, vectors[n])
 
         elif metric == "resistance_distance":
-            msg = "Resistance distance is not implemented"
-            raise NotImplementedError(msg)
+            # Effective resistance via Laplacian pseudoinverse.
+            # R(i,j) = L⁺[i,i] + L⁺[j,j] - 2·L⁺[i,j]  (O(n³) — slow on large graphs)
+            # Nodes in different components get -1 (unreachable).
+            node_list = list(U.nodes)
+            if focus_id not in U:
+                pass  # values stays empty
+            else:
+                focus_idx = node_list.index(focus_id)
+                focus_component = nx.node_connected_component(U, focus_id)
+                L = nx.laplacian_matrix(U, nodelist=node_list).toarray().astype(float)
+                L_pinv = np.linalg.pinv(L)
+                for i, n in enumerate(node_list):
+                    if n == focus_id:
+                        continue
+                    if n not in focus_component:
+                        values[n] = -1.0
+                    else:
+                        values[n] = float(
+                            L_pinv[focus_idx, focus_idx]
+                            + L_pinv[i, i]
+                            - 2 * L_pinv[focus_idx, i]
+                        )
 
         else:
             msg = f"Unknown node-pair metric: {metric}"
             raise ValueError(msg)
 
-        # Include focus node itself with the maximum value (self-similarity)
-        max_val = max(values.values()) if values else 0.0
-        values[focus_id] = max_val
+        # For distance metrics, self-distance is 0 (not max).
+        # For similarity metrics, self-similarity is the maximum value.
+        _distance_metrics = {"resistance_distance", "shortest_path_length"}
+        if metric in _distance_metrics:
+            values[focus_id] = 0.0
+        else:
+            values[focus_id] = max(values.values()) if values else 0.0
 
         v_list = list(values.values())
         return NodePairMetricResponse(
