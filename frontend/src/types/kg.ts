@@ -97,39 +97,42 @@ export const ENTITY_TYPE_COLORS: Record<string, string> = {
 // Metric enums (mirror backend NodeSizeMetric / NodeColorMetric / NodePairMetric)
 // ---------------------------------------------------------------------------
 
-export type NodeSizeMetric =
-  | 'occurrence_count'
-  | 'degree_centrality'
-  | 'betweenness_centrality'
-  | 'pagerank'
-  | 'closeness_centrality'
-  | 'kcore_number';
+export enum NodeSizeMetric {
+  OccurrenceCount = 'occurrence_count',
+  DegreeCentrality = 'degree_centrality',
+  BetweennessCentrality = 'betweenness_centrality',
+  PageRank = 'pagerank',
+  ClosenessCentrality = 'closeness_centrality',
+  KCoreNumber = 'kcore_number',
+}
 
-export type NodeColorMetric =
-  | 'entity_type'
-  | 'community_louvain'
-  | 'community_girvan_newman'
-  | 'community_label_propagation'
-  | 'community_spectral'
-  | 'local_clustering_coefficient'
-  | 'kcore_number';
+export enum NodeColorMetric {
+  EntityType = 'entity_type',
+  CommunityLouvain = 'community_louvain',
+  CommunityGirvanNewman = 'community_girvan_newman',
+  CommunityLabelPropagation = 'community_label_propagation',
+  CommunitySpectral = 'community_spectral',
+  LocalClusteringCoefficient = 'local_clustering_coefficient',
+  KCoreNumber = 'kcore_number',
+}
 
-export type NodePairMetric =
-  | 'cosine_similarity'
-  | 'jaccard_similarity'
-  | 'adamic_adar'
-  | 'common_neighbor_count'
-  | 'shortest_path_length'
-  | 'resistance_distance';
+export enum NodePairMetric {
+  CosineSimilarity = 'cosine_similarity',
+  JaccardSimilarity = 'jaccard_similarity',
+  AdamicAdar = 'adamic_adar',
+  CommonNeighborCount = 'common_neighbor_count',
+  ShortestPathLength = 'shortest_path_length',
+  ResistanceDistance = 'resistance_distance',
+}
 
-export const NODE_PAIR_METRICS: NodePairMetric[] = [
-  'cosine_similarity',
-  'jaccard_similarity',
-  'adamic_adar',
-  'common_neighbor_count',
-  'shortest_path_length',
-  'resistance_distance',
-];
+export const NODE_PAIR_METRICS: NodePairMetric[] = Object.values(NodePairMetric);
+
+// Metrics where lower value = closer to focus — color scale is inverted so
+// close nodes appear bright and distant nodes appear dark.
+export const DISTANCE_METRICS = new Set<string>([
+  NodePairMetric.ResistanceDistance,
+  NodePairMetric.ShortestPathLength,
+]);
 
 // ---------------------------------------------------------------------------
 // Metric response types (mirror backend Pydantic models)

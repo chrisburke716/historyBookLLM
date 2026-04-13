@@ -9,8 +9,8 @@ interface MetricsState {
 }
 
 const initialState: MetricsState = {
-  nodeSizeMetric: 'occurrence_count',
-  nodeColorMetric: 'entity_type',
+  nodeSizeMetric: NodeSizeMetric.OccurrenceCount,
+  nodeColorMetric: NodeColorMetric.EntityType,
   nodeSizeParams: { damping: 0.85 },
   nodeColorParams: { k: 5 },
 };

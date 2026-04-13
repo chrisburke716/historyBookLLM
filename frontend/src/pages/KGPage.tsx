@@ -8,7 +8,7 @@ import {
   useNodeMetricQuery,
   useNodePairMetricQuery,
 } from '../hooks/useKGQueries';
-import { GraphResponse, NODE_PAIR_METRICS, NodeColorMetric, NodePairMetric } from '../types/kg';
+import { DISTANCE_METRICS, GraphResponse, NODE_PAIR_METRICS, NodeColorMetric, NodePairMetric, NodeSizeMetric } from '../types/kg';
 import KGTopBar from '../components/kg/KGTopBar';
 import ForceGraphPanel from '../components/kg/ForceGraphPanel';
 import EntityPanel from '../components/kg/EntityPanel';
@@ -59,6 +59,20 @@ function trimLeavesRecursive(
   };
 }
 
+// Compute min/max norm bounds from only the currently displayed nodes.
+// Excludes sentinel -1 values (unreachable nodes in node-pair metrics).
+function computeDisplayNorms(
+  values: Record<string, number> | undefined,
+  nodeIds: Set<string>
+): [number, number] {
+  if (!values || nodeIds.size === 0) return [0, 1];
+  const displayed = Array.from(nodeIds)
+    .map((id) => values[id])
+    .filter((v): v is number => v !== undefined && v >= 0);
+  if (displayed.length === 0) return [0, 1];
+  return [Math.min(...displayed), Math.max(...displayed)];
+}
+
 function applyTrim(graph: GraphResponse, focusEntityId: string | null, threshold: number): GraphResponse {
   const keepIds = new Set(
     graph.nodes
@@ -107,26 +121,24 @@ const KGPage: React.FC = () => {
   // Node size metric
   const sizeMetricQuery = useNodeMetricQuery(
     graphName, nodeSizeMetric, nodeSizeParams,
-    nodeSizeMetric !== 'occurrence_count'
+    nodeSizeMetric !== NodeSizeMetric.OccurrenceCount
   );
 
   // Node color metric (node-level or node-pair)
   const isNodePairColorMetric = NODE_PAIR_METRICS.includes(nodeColorMetric as NodePairMetric);
   const colorMetricQuery = useNodeMetricQuery(
     graphName, nodeColorMetric as NodeColorMetric, nodeColorParams,
-    !isNodePairColorMetric && nodeColorMetric !== 'entity_type'
+    !isNodePairColorMetric && nodeColorMetric !== NodeColorMetric.EntityType
   );
   const colorPairMetricQuery = useNodePairMetricQuery(
     graphName, focusEntityId, nodeColorMetric as NodePairMetric,
     isNodePairColorMetric && focusEntityId !== null
   );
 
-  // Resolved metric values to pass to ForceGraphPanel
+  // Resolved metric values (full graph — norms are recomputed per displayed nodes below)
   const sizeMetricData = sizeMetricQuery.data;
   const sizeReady = sizeMetricData?.status === 'ready' && !('num_communities' in (sizeMetricData ?? {}));
   const sizeValues = sizeReady ? sizeMetricData!.values : undefined;
-  const sizeNormMin = sizeReady ? (sizeMetricData as { norm_min: number }).norm_min : 0;
-  const sizeNormMax = sizeReady ? (sizeMetricData as { norm_max: number }).norm_max : 1;
 
   // Determine active color metric data
   const activeColorData = isNodePairColorMetric
@@ -141,12 +153,6 @@ const KGPage: React.FC = () => {
   const colorMetricValues = !isCommunityMetric && activeColorData != null
     ? (activeColorData as { values: Record<string, number> }).values
     : undefined;
-  const colorNormMin = !isCommunityMetric && activeColorData != null
-    ? (activeColorData as { norm_min: number }).norm_min
-    : 0;
-  const colorNormMax = !isCommunityMetric && activeColorData != null
-    ? (activeColorData as { norm_max: number }).norm_max
-    : 1;
 
   // --------------- Display graph ---------------
 
@@ -164,6 +170,23 @@ const KGPage: React.FC = () => {
     );
     return { ...afterThreshold, nodes, links, node_count: nodes.length, edge_count: links.length };
   }, [activeGraph, occurrenceThreshold, trimLeaves, focusEntityId]);
+
+  // Norm bounds recomputed from displayed nodes so trimmed nodes don't skew the color/size scale
+  const displayNodeIds = useMemo(
+    () => new Set((displayGraph?.nodes ?? []).map((n) => n.id)),
+    [displayGraph]
+  );
+  const [sizeNormMin, sizeNormMax] = useMemo(
+    () => computeDisplayNorms(sizeValues, displayNodeIds),
+    [sizeValues, displayNodeIds]
+  );
+  const [colorNormMinRaw, colorNormMaxRaw] = useMemo(
+    () => computeDisplayNorms(colorMetricValues, displayNodeIds),
+    [colorMetricValues, displayNodeIds]
+  );
+  const invertColorScale = DISTANCE_METRICS.has(nodeColorMetric);
+  const colorNormMin = invertColorScale ? colorNormMaxRaw : colorNormMinRaw;
+  const colorNormMax = invertColorScale ? colorNormMinRaw : colorNormMaxRaw;
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)' }}>

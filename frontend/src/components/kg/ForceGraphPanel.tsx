@@ -31,7 +31,7 @@ function nodeDisplaySize(
 
 // Utility: continuous metric value → color using viridis (perceptually uniform, colorblind-safe)
 function metricToColor(value: number, normMin: number, normMax: number): string {
-  const t = normMax > normMin ? (value - normMin) / (normMax - normMin) : 0.5;
+  const t = normMax !== normMin ? (value - normMin) / (normMax - normMin) : 0.5;
   return interpolateViridis(Math.max(0, Math.min(1, t)));
 }
 

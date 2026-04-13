@@ -22,6 +22,12 @@ logger = logging.getLogger(__name__)
 # Maximum size for expensive O(V*E) graph metrics (avg path length, diameter)
 _MAX_COMPONENT_FOR_PATH_METRICS = 500
 
+# Percentile bounds used for node-pair metric color scale normalization.
+# Clipping at these percentiles prevents a single distant outlier node from
+# collapsing all other nodes into a narrow band of the color scale.
+_NORM_PERCENTILE_LOW = 2
+_NORM_PERCENTILE_HIGH = 98
+
 
 def _to_simple_graph(G: nx.DiGraph) -> nx.Graph:
     """Convert a MultiDiGraph to a simple undirected Graph.
@@ -410,13 +416,21 @@ class KGMetricsService:
         else:
             values[focus_id] = max(values.values()) if values else 0.0
 
-        v_list = list(values.values())
+        # Exclude sentinel -1 values (unreachable nodes) from normalization bounds.
+        # Use percentile clipping so a single outlier doesn't collapse the color scale.
+        finite_vals = [v for v in values.values() if v >= 0]
+        if finite_vals:
+            norm_min = float(np.percentile(finite_vals, _NORM_PERCENTILE_LOW))
+            norm_max = float(np.percentile(finite_vals, _NORM_PERCENTILE_HIGH))
+        else:
+            norm_min, norm_max = 0.0, 0.0
+
         return NodePairMetricResponse(
             graph_name=graph_name,
             focus_entity_id=focus_id,
             metric=metric,
             params=params,
             values=values,
-            norm_min=min(v_list) if v_list else 0.0,
-            norm_max=max(v_list) if v_list else 0.0,
+            norm_min=norm_min,
+            norm_max=norm_max,
         )

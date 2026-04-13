@@ -92,11 +92,11 @@ const KGTopBar: React.FC = () => {
   const isNodePairColorMetric = NODE_PAIR_METRICS.includes(nodeColorMetric as NodePairMetric);
   const sizeMetricQuery = useNodeMetricQuery(
     graphName, nodeSizeMetric, nodeSizeParams,
-    nodeSizeMetric !== 'occurrence_count'
+    nodeSizeMetric !== NodeSizeMetric.OccurrenceCount
   );
   const colorMetricQuery = useNodeMetricQuery(
     graphName, nodeColorMetric as NodeColorMetric, nodeColorParams,
-    !isNodePairColorMetric && nodeColorMetric !== 'entity_type'
+    !isNodePairColorMetric && nodeColorMetric !== NodeColorMetric.EntityType
   );
   const colorPairMetricQuery = useNodePairMetricQuery(
     graphName, focusEntityId, nodeColorMetric as NodePairMetric,
@@ -291,15 +291,15 @@ const KGTopBar: React.FC = () => {
               sizeLoading ? <CircularProgress size={14} sx={{ mr: 2 }} /> : null
             }
           >
-            <MenuItem value="occurrence_count">Occurrence count</MenuItem>
-            <MenuItem value="degree_centrality">Degree centrality</MenuItem>
-            <MenuItem value="betweenness_centrality">Betweenness centrality</MenuItem>
-            <MenuItem value="pagerank">PageRank</MenuItem>
-            <MenuItem value="closeness_centrality">Closeness centrality</MenuItem>
-            <MenuItem value="kcore_number">K-core number</MenuItem>
+            <MenuItem value={NodeSizeMetric.OccurrenceCount}>Occurrence count</MenuItem>
+            <MenuItem value={NodeSizeMetric.DegreeCentrality}>Degree centrality</MenuItem>
+            <MenuItem value={NodeSizeMetric.BetweennessCentrality}>Betweenness centrality</MenuItem>
+            <MenuItem value={NodeSizeMetric.PageRank}>PageRank</MenuItem>
+            <MenuItem value={NodeSizeMetric.ClosenessCentrality}>Closeness centrality</MenuItem>
+            <MenuItem value={NodeSizeMetric.KCoreNumber}>K-core number</MenuItem>
           </Select>
         </FormControl>
-        {nodeSizeMetric === 'pagerank' && (
+        {nodeSizeMetric === NodeSizeMetric.PageRank && (
           <Tooltip title="Damping factor (0–1)">
             <TextField
               size="small"
@@ -328,13 +328,13 @@ const KGTopBar: React.FC = () => {
               colorLoading ? <CircularProgress size={14} sx={{ mr: 2 }} /> : null
             }
           >
-            <MenuItem value="entity_type">Entity type</MenuItem>
-            <MenuItem value="community_louvain">Community — Louvain</MenuItem>
-            <MenuItem value="community_girvan_newman">Community — Girvan-Newman</MenuItem>
-            <MenuItem value="community_label_propagation">Community — Label prop.</MenuItem>
-            <MenuItem value="community_spectral">Community — Spectral</MenuItem>
-            <MenuItem value="local_clustering_coefficient">Local clustering coeff.</MenuItem>
-            <MenuItem value="kcore_number">K-core number</MenuItem>
+            <MenuItem value={NodeColorMetric.EntityType}>Entity type</MenuItem>
+            <MenuItem value={NodeColorMetric.CommunityLouvain}>Community — Louvain</MenuItem>
+            <MenuItem value={NodeColorMetric.CommunityGirvanNewman}>Community — Girvan-Newman</MenuItem>
+            <MenuItem value={NodeColorMetric.CommunityLabelPropagation}>Community — Label prop.</MenuItem>
+            <MenuItem value={NodeColorMetric.CommunitySpectral}>Community — Spectral</MenuItem>
+            <MenuItem value={NodeColorMetric.LocalClusteringCoefficient}>Local clustering coeff.</MenuItem>
+            <MenuItem value={NodeColorMetric.KCoreNumber}>K-core number</MenuItem>
             <ListSubheader sx={{ fontSize: '0.72rem', lineHeight: '1.6' }}>
               Focus-relative (select a node first)
             </ListSubheader>
@@ -349,7 +349,7 @@ const KGTopBar: React.FC = () => {
             ))}
           </Select>
         </FormControl>
-        {nodeColorMetric === 'community_spectral' && (
+        {nodeColorMetric === NodeColorMetric.CommunitySpectral && (
           <Tooltip title="Number of clusters (k ≥ 2)">
             <TextField
               size="small"
