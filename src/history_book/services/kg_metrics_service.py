@@ -120,6 +120,21 @@ class KGMetricsService:
     def _compute_graph_metrics(self, graph_name: str, key: tuple) -> None:
         try:
             G = self._kg.get_nx_graph(graph_name)
+            if G.number_of_nodes() == 0:
+                logger.warning("Graph %s has no nodes; storing zero metrics", graph_name)
+                self._cache[key] = GraphMetricsResponse(
+                    graph_name=graph_name,
+                    density=0.0,
+                    giant_component_ratio=0.0,
+                    num_connected_components=0,
+                    avg_shortest_path_length=None,
+                    diameter=None,
+                    global_clustering_coefficient=0.0,
+                    num_communities=0,
+                    articulation_point_count=0,
+                    status="ready",
+                )
+                return
             U = _to_simple_graph(G)
 
             density = nx.density(G)
