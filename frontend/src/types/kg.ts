@@ -144,6 +144,30 @@ export const METRIC_LABELS: Record<NodeColorMetric | NodePairMetric, string> = {
   [NodePairMetric.ResistanceDistance]: 'Resistance distance',
 };
 
+// One-sentence descriptions shown as dropdown tooltips
+// NodeSizeMetric.KCoreNumber and NodeColorMetric.KCoreNumber share the same string value,
+// so only one entry is needed.
+export const METRIC_TOOLTIPS: Record<string, string> = {
+  [NodeSizeMetric.OccurrenceCount]: 'Number of times this entity is mentioned across the source text.',
+  [NodeSizeMetric.DegreeCentrality]: 'Fraction of all entities this one is directly connected to.',
+  [NodeSizeMetric.BetweennessCentrality]: 'How often this entity falls on the shortest path between other pairs; highlights bridges and brokers.',
+  [NodeSizeMetric.PageRank]: 'Recursive importance score: high when connected to other high-scoring entities.',
+  [NodeSizeMetric.ClosenessCentrality]: 'How quickly this entity can reach every other entity via the shortest paths.',
+  [NodeSizeMetric.KCoreNumber]: 'Largest cohesive subgraph this entity belongs to, where every member has at least k connections.',
+  [NodeColorMetric.EntityType]: 'Colors nodes by entity category (person, polity, place, event, concept).',
+  [NodeColorMetric.CommunityLouvain]: 'Partitions the graph by greedily maximizing modularity.',
+  [NodeColorMetric.CommunityGirvanNewman]: 'Partitions by iteratively removing the edge with highest betweenness.',
+  [NodeColorMetric.CommunityLabelPropagation]: 'Partitions by iteratively adopting the most common community label among neighbors.',
+  [NodeColorMetric.CommunitySpectral]: 'Partitions into k clusters using spectral decomposition of the graph Laplacian.',
+  [NodeColorMetric.LocalClusteringCoefficient]: "Fraction of this entity's neighbors that are also connected to each other; high for tightly-knit clusters.",
+  [NodePairMetric.CosineSimilarity]: 'Similarity of learned embedding vectors between this entity and the focus node.',
+  [NodePairMetric.JaccardSimilarity]: 'Shared neighbors as a fraction of all combined neighbors with the focus node.',
+  [NodePairMetric.AdamicAdar]: 'Shared-neighbor score weighted by inverse log degree; down-weights hub nodes.',
+  [NodePairMetric.CommonNeighborCount]: 'Number of entities directly connected to both this node and the focus.',
+  [NodePairMetric.ShortestPathLength]: 'Minimum number of edges between this entity and the focus in the undirected graph.',
+  [NodePairMetric.ResistanceDistance]: 'Effective electrical resistance to the focus; lower means more and shorter connection paths.',
+};
+
 // Metrics where lower value = closer to focus — color scale is inverted so
 // close nodes appear bright and distant nodes appear dark.
 export const DISTANCE_METRICS = new Set<string>([

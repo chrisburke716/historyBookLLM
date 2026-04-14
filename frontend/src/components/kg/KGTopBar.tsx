@@ -52,6 +52,7 @@ import {
   KGGraphMeta,
   ENTITY_TYPE_COLORS,
   METRIC_LABELS,
+  METRIC_TOOLTIPS,
   NODE_PAIR_METRICS,
   NodeSizeMetric,
   NodeColorMetric,
@@ -292,12 +293,12 @@ const KGTopBar: React.FC = () => {
               sizeLoading ? <CircularProgress size={14} sx={{ mr: 2 }} /> : null
             }
           >
-            <MenuItem value={NodeSizeMetric.OccurrenceCount}>Occurrence count</MenuItem>
-            <MenuItem value={NodeSizeMetric.DegreeCentrality}>Degree centrality</MenuItem>
-            <MenuItem value={NodeSizeMetric.BetweennessCentrality}>Betweenness centrality</MenuItem>
-            <MenuItem value={NodeSizeMetric.PageRank}>PageRank</MenuItem>
-            <MenuItem value={NodeSizeMetric.ClosenessCentrality}>Closeness centrality</MenuItem>
-            <MenuItem value={NodeSizeMetric.KCoreNumber}>K-core number</MenuItem>
+            <MenuItem value={NodeSizeMetric.OccurrenceCount}><Tooltip title={METRIC_TOOLTIPS[NodeSizeMetric.OccurrenceCount]} placement="right" enterDelay={500}><span>Occurrence count</span></Tooltip></MenuItem>
+            <MenuItem value={NodeSizeMetric.DegreeCentrality}><Tooltip title={METRIC_TOOLTIPS[NodeSizeMetric.DegreeCentrality]} placement="right" enterDelay={500}><span>Degree centrality</span></Tooltip></MenuItem>
+            <MenuItem value={NodeSizeMetric.BetweennessCentrality}><Tooltip title={METRIC_TOOLTIPS[NodeSizeMetric.BetweennessCentrality]} placement="right" enterDelay={500}><span>Betweenness centrality</span></Tooltip></MenuItem>
+            <MenuItem value={NodeSizeMetric.PageRank}><Tooltip title={METRIC_TOOLTIPS[NodeSizeMetric.PageRank]} placement="right" enterDelay={500}><span>PageRank</span></Tooltip></MenuItem>
+            <MenuItem value={NodeSizeMetric.ClosenessCentrality}><Tooltip title={METRIC_TOOLTIPS[NodeSizeMetric.ClosenessCentrality]} placement="right" enterDelay={500}><span>Closeness centrality</span></Tooltip></MenuItem>
+            <MenuItem value={NodeSizeMetric.KCoreNumber}><Tooltip title={METRIC_TOOLTIPS[NodeSizeMetric.KCoreNumber]} placement="right" enterDelay={500}><span>K-core number</span></Tooltip></MenuItem>
           </Select>
         </FormControl>
         {nodeSizeMetric === NodeSizeMetric.PageRank && (
@@ -329,19 +330,21 @@ const KGTopBar: React.FC = () => {
               colorLoading ? <CircularProgress size={14} sx={{ mr: 2 }} /> : null
             }
           >
-            <MenuItem value={NodeColorMetric.EntityType}>{METRIC_LABELS[NodeColorMetric.EntityType]}</MenuItem>
-            <MenuItem value={NodeColorMetric.CommunityLouvain}>{METRIC_LABELS[NodeColorMetric.CommunityLouvain]}</MenuItem>
-            <MenuItem value={NodeColorMetric.CommunityGirvanNewman}>{METRIC_LABELS[NodeColorMetric.CommunityGirvanNewman]}</MenuItem>
-            <MenuItem value={NodeColorMetric.CommunityLabelPropagation}>{METRIC_LABELS[NodeColorMetric.CommunityLabelPropagation]}</MenuItem>
-            <MenuItem value={NodeColorMetric.CommunitySpectral}>{METRIC_LABELS[NodeColorMetric.CommunitySpectral]}</MenuItem>
-            <MenuItem value={NodeColorMetric.LocalClusteringCoefficient}>{METRIC_LABELS[NodeColorMetric.LocalClusteringCoefficient]}</MenuItem>
-            <MenuItem value={NodeColorMetric.KCoreNumber}>{METRIC_LABELS[NodeColorMetric.KCoreNumber]}</MenuItem>
+            <MenuItem value={NodeColorMetric.EntityType}><Tooltip title={METRIC_TOOLTIPS[NodeColorMetric.EntityType]} placement="right" enterDelay={500}><span>{METRIC_LABELS[NodeColorMetric.EntityType]}</span></Tooltip></MenuItem>
+            <MenuItem value={NodeColorMetric.CommunityLouvain}><Tooltip title={METRIC_TOOLTIPS[NodeColorMetric.CommunityLouvain]} placement="right" enterDelay={500}><span>{METRIC_LABELS[NodeColorMetric.CommunityLouvain]}</span></Tooltip></MenuItem>
+            <MenuItem value={NodeColorMetric.CommunityGirvanNewman}><Tooltip title={METRIC_TOOLTIPS[NodeColorMetric.CommunityGirvanNewman]} placement="right" enterDelay={500}><span>{METRIC_LABELS[NodeColorMetric.CommunityGirvanNewman]}</span></Tooltip></MenuItem>
+            <MenuItem value={NodeColorMetric.CommunityLabelPropagation}><Tooltip title={METRIC_TOOLTIPS[NodeColorMetric.CommunityLabelPropagation]} placement="right" enterDelay={500}><span>{METRIC_LABELS[NodeColorMetric.CommunityLabelPropagation]}</span></Tooltip></MenuItem>
+            <MenuItem value={NodeColorMetric.CommunitySpectral}><Tooltip title={METRIC_TOOLTIPS[NodeColorMetric.CommunitySpectral]} placement="right" enterDelay={500}><span>{METRIC_LABELS[NodeColorMetric.CommunitySpectral]}</span></Tooltip></MenuItem>
+            <MenuItem value={NodeColorMetric.LocalClusteringCoefficient}><Tooltip title={METRIC_TOOLTIPS[NodeColorMetric.LocalClusteringCoefficient]} placement="right" enterDelay={500}><span>{METRIC_LABELS[NodeColorMetric.LocalClusteringCoefficient]}</span></Tooltip></MenuItem>
+            <MenuItem value={NodeColorMetric.KCoreNumber}><Tooltip title={METRIC_TOOLTIPS[NodeColorMetric.KCoreNumber]} placement="right" enterDelay={500}><span>{METRIC_LABELS[NodeColorMetric.KCoreNumber]}</span></Tooltip></MenuItem>
             <ListSubheader sx={{ fontSize: '0.72rem', lineHeight: '1.6' }}>
               Focus-relative (select a node first)
             </ListSubheader>
             {NODE_PAIR_METRICS.map((m) => (
               <MenuItem key={m} value={m} disabled={focusEntityId === null}>
-                {METRIC_LABELS[m]}
+                <Tooltip title={METRIC_TOOLTIPS[m]} placement="right" enterDelay={500}>
+                  <span>{METRIC_LABELS[m]}</span>
+                </Tooltip>
               </MenuItem>
             ))}
           </Select>
