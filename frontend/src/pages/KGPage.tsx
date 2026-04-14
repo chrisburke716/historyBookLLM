@@ -8,7 +8,7 @@ import {
   useNodeMetricQuery,
   useNodePairMetricQuery,
 } from '../hooks/useKGQueries';
-import { DISTANCE_METRICS, GraphResponse, NODE_PAIR_METRICS, NodeColorMetric, NodePairMetric, NodeSizeMetric } from '../types/kg';
+import { DISTANCE_METRICS, GraphResponse, METRIC_LABELS, NODE_PAIR_METRICS, NodeColorMetric, NodePairMetric, NodeSizeMetric } from '../types/kg';
 import KGTopBar from '../components/kg/KGTopBar';
 import ForceGraphPanel from '../components/kg/ForceGraphPanel';
 import EntityPanel from '../components/kg/EntityPanel';
@@ -202,6 +202,7 @@ const KGPage: React.FC = () => {
           colorNormMin={colorNormMin}
           colorNormMax={colorNormMax}
           communityValues={communityValues}
+          colorMetricLabel={METRIC_LABELS[nodeColorMetric as NodeColorMetric | NodePairMetric]}
         />
         <Divider orientation="vertical" flexItem />
         <Box sx={{ width: 340, flexShrink: 0, overflow: 'hidden', borderLeft: 0 }}>

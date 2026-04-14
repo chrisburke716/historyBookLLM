@@ -127,6 +127,23 @@ export enum NodePairMetric {
 
 export const NODE_PAIR_METRICS: NodePairMetric[] = Object.values(NodePairMetric);
 
+// Human-readable labels for color metric selector and legend
+export const METRIC_LABELS: Record<NodeColorMetric | NodePairMetric, string> = {
+  [NodeColorMetric.EntityType]: 'Entity type',
+  [NodeColorMetric.CommunityLouvain]: 'Community — Louvain',
+  [NodeColorMetric.CommunityGirvanNewman]: 'Community — Girvan-Newman',
+  [NodeColorMetric.CommunityLabelPropagation]: 'Community — Label prop.',
+  [NodeColorMetric.CommunitySpectral]: 'Community — Spectral',
+  [NodeColorMetric.LocalClusteringCoefficient]: 'Local clustering coeff.',
+  [NodeColorMetric.KCoreNumber]: 'K-core number',
+  [NodePairMetric.CosineSimilarity]: 'Cosine similarity',
+  [NodePairMetric.JaccardSimilarity]: 'Jaccard similarity',
+  [NodePairMetric.AdamicAdar]: 'Adamic-Adar',
+  [NodePairMetric.CommonNeighborCount]: 'Common neighbors',
+  [NodePairMetric.ShortestPathLength]: 'Shortest path length',
+  [NodePairMetric.ResistanceDistance]: 'Resistance distance',
+};
+
 // Metrics where lower value = closer to focus — color scale is inverted so
 // close nodes appear bright and distant nodes appear dark.
 export const DISTANCE_METRICS = new Set<string>([

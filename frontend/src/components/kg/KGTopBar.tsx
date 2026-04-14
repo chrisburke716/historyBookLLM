@@ -51,6 +51,7 @@ import { kgAPI } from '../../services/kgAPI';
 import {
   KGGraphMeta,
   ENTITY_TYPE_COLORS,
+  METRIC_LABELS,
   NODE_PAIR_METRICS,
   NodeSizeMetric,
   NodeColorMetric,
@@ -328,23 +329,19 @@ const KGTopBar: React.FC = () => {
               colorLoading ? <CircularProgress size={14} sx={{ mr: 2 }} /> : null
             }
           >
-            <MenuItem value={NodeColorMetric.EntityType}>Entity type</MenuItem>
-            <MenuItem value={NodeColorMetric.CommunityLouvain}>Community — Louvain</MenuItem>
-            <MenuItem value={NodeColorMetric.CommunityGirvanNewman}>Community — Girvan-Newman</MenuItem>
-            <MenuItem value={NodeColorMetric.CommunityLabelPropagation}>Community — Label prop.</MenuItem>
-            <MenuItem value={NodeColorMetric.CommunitySpectral}>Community — Spectral</MenuItem>
-            <MenuItem value={NodeColorMetric.LocalClusteringCoefficient}>Local clustering coeff.</MenuItem>
-            <MenuItem value={NodeColorMetric.KCoreNumber}>K-core number</MenuItem>
+            <MenuItem value={NodeColorMetric.EntityType}>{METRIC_LABELS[NodeColorMetric.EntityType]}</MenuItem>
+            <MenuItem value={NodeColorMetric.CommunityLouvain}>{METRIC_LABELS[NodeColorMetric.CommunityLouvain]}</MenuItem>
+            <MenuItem value={NodeColorMetric.CommunityGirvanNewman}>{METRIC_LABELS[NodeColorMetric.CommunityGirvanNewman]}</MenuItem>
+            <MenuItem value={NodeColorMetric.CommunityLabelPropagation}>{METRIC_LABELS[NodeColorMetric.CommunityLabelPropagation]}</MenuItem>
+            <MenuItem value={NodeColorMetric.CommunitySpectral}>{METRIC_LABELS[NodeColorMetric.CommunitySpectral]}</MenuItem>
+            <MenuItem value={NodeColorMetric.LocalClusteringCoefficient}>{METRIC_LABELS[NodeColorMetric.LocalClusteringCoefficient]}</MenuItem>
+            <MenuItem value={NodeColorMetric.KCoreNumber}>{METRIC_LABELS[NodeColorMetric.KCoreNumber]}</MenuItem>
             <ListSubheader sx={{ fontSize: '0.72rem', lineHeight: '1.6' }}>
               Focus-relative (select a node first)
             </ListSubheader>
-            {(NODE_PAIR_METRICS as string[]).map((m) => (
-              <MenuItem
-                key={m}
-                value={m}
-                disabled={focusEntityId === null}
-              >
-                {m.replace(/_/g, ' ')}
+            {NODE_PAIR_METRICS.map((m) => (
+              <MenuItem key={m} value={m} disabled={focusEntityId === null}>
+                {METRIC_LABELS[m]}
               </MenuItem>
             ))}
           </Select>

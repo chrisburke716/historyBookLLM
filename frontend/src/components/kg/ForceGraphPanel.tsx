@@ -5,6 +5,7 @@ import { Box, CircularProgress, Typography } from '@mui/material';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { setFocus, clearFocus } from '../../store/graphSlice';
 import { GraphResponse, GraphNode, ENTITY_TYPE_COLORS } from '../../types/kg';
+import LegendOverlay from './LegendOverlay';
 
 // Deterministic community color palette (sorted community IDs → palette index)
 const COMMUNITY_PALETTE = [
@@ -63,6 +64,8 @@ interface ForceGraphPanelProps {
   colorNormMax?: number;
   // Color metric data — community (categorical)
   communityValues?: Record<string, number>;
+  // Label shown in legend (human-readable metric name)
+  colorMetricLabel?: string;
 }
 
 const ForceGraphPanel: React.FC<ForceGraphPanelProps> = ({
@@ -75,6 +78,7 @@ const ForceGraphPanel: React.FC<ForceGraphPanelProps> = ({
   colorNormMin = 0,
   colorNormMax = 1,
   communityValues,
+  colorMetricLabel,
 }) => {
   const dispatch = useAppDispatch();
   const { focusEntityId, colorMap } = useAppSelector((s) => s.graph);
@@ -220,8 +224,20 @@ const ForceGraphPanel: React.FC<ForceGraphPanelProps> = ({
     );
   }
 
+  const legendMode = communityValues != null
+    ? null
+    : colorMetricValues != null
+      ? 'continuous'
+      : 'entity_type';
+
   return (
     <Box ref={containerRef} sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+      <LegendOverlay
+        mode={legendMode as 'entity_type' | 'continuous' | null}
+        colorNormMin={colorNormMin}
+        colorNormMax={colorNormMax}
+        label={colorMetricLabel}
+      />
       <ForceGraph2D
         ref={graphRef}
         graphData={graphData as any}
