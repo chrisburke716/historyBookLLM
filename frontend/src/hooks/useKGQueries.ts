@@ -1,6 +1,7 @@
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { kgAPI } from '../services/kgAPI';
 import { chatAPI } from '../services/api';
+import { NodeColorMetric, NodePairMetric, NodeSizeMetric } from '../types/kg';
 
 export function useGraphListQuery() {
   return useQuery({
@@ -71,5 +72,46 @@ export function useEntityQuery(entityId: string | null) {
     queryFn: () => kgAPI.getEntity(entityId!),
     enabled: entityId !== null,
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useGraphMetricsQuery(graphName: string) {
+  return useQuery({
+    queryKey: ['kg', 'metrics', 'graph', graphName],
+    queryFn: () => kgAPI.getGraphMetrics(graphName),
+    // Poll every 2s while backend is still computing
+    refetchInterval: (query) =>
+      query.state.data?.status === 'computing' ? 2000 : false,
+    staleTime: Infinity, // server caches indefinitely; no need to re-fetch once ready
+  });
+}
+
+export function useNodeMetricQuery(
+  graphName: string,
+  metric: NodeSizeMetric | NodeColorMetric,
+  params: Record<string, number>,
+  enabled: boolean
+) {
+  return useQuery({
+    queryKey: ['kg', 'metrics', 'node', graphName, metric, params],
+    queryFn: () => kgAPI.getNodeMetric(graphName, metric, params),
+    enabled,
+    refetchInterval: (query) =>
+      query.state.data?.status === 'computing' ? 2000 : false,
+    staleTime: Infinity,
+  });
+}
+
+export function useNodePairMetricQuery(
+  graphName: string,
+  focusId: string | null,
+  metric: NodePairMetric,
+  enabled: boolean
+) {
+  return useQuery({
+    queryKey: ['kg', 'metrics', 'node-pair', graphName, focusId, metric],
+    queryFn: () => kgAPI.getNodePairMetric(graphName, focusId!, metric),
+    enabled: enabled && focusId !== null,
+    staleTime: 0, // always fresh when focus changes
   });
 }

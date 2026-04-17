@@ -18,6 +18,7 @@ import {
   Typography,
   Tooltip,
   Slider,
+  ListSubheader,
 } from '@mui/material';
 import {
   ArrowBack,
@@ -34,9 +35,29 @@ import {
   setOccurrenceThreshold,
   setTrimLeaves,
 } from '../../store/graphSlice';
-import { useGraphListQuery, useBooksWithChaptersQuery } from '../../hooks/useKGQueries';
+import {
+  setNodeSizeMetric,
+  setNodeColorMetric,
+  setNodeSizeParams,
+  setNodeColorParams,
+} from '../../store/metricsSlice';
+import {
+  useGraphListQuery,
+  useBooksWithChaptersQuery,
+  useNodeMetricQuery,
+  useNodePairMetricQuery,
+} from '../../hooks/useKGQueries';
 import { kgAPI } from '../../services/kgAPI';
-import { KGGraphMeta, ENTITY_TYPE_COLORS } from '../../types/kg';
+import {
+  KGGraphMeta,
+  ENTITY_TYPE_COLORS,
+  METRIC_LABELS,
+  METRIC_TOOLTIPS,
+  NODE_PAIR_METRICS,
+  NodeSizeMetric,
+  NodeColorMetric,
+  NodePairMetric,
+} from '../../types/kg';
 
 function buildGraphLabel(
   graph: KGGraphMeta,
@@ -61,15 +82,53 @@ function buildGraphLabel(
 
 const KGTopBar: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { graphName, displayMode, hopCount, searchResults, focusHistory, historyIndex, occurrenceThreshold, trimLeaves } =
+  const { graphName, displayMode, hopCount, searchResults, focusHistory, historyIndex, occurrenceThreshold, trimLeaves, focusEntityId } =
     useAppSelector((s) => s.graph);
+  const { nodeSizeMetric, nodeColorMetric, nodeSizeParams, nodeColorParams } =
+    useAppSelector((s) => s.metrics);
 
   const { data: graphList, isLoading: graphsLoading } = useGraphListQuery();
   const { bookTitles, chapterTitles } = useBooksWithChaptersQuery();
 
+  // Size metric query (for loading indicator)
+  const isNodePairColorMetric = NODE_PAIR_METRICS.includes(nodeColorMetric as NodePairMetric);
+  const sizeMetricQuery = useNodeMetricQuery(
+    graphName, nodeSizeMetric, nodeSizeParams,
+    nodeSizeMetric !== NodeSizeMetric.OccurrenceCount
+  );
+  const colorMetricQuery = useNodeMetricQuery(
+    graphName, nodeColorMetric as NodeColorMetric, nodeColorParams,
+    !isNodePairColorMetric && nodeColorMetric !== NodeColorMetric.EntityType
+  );
+  const colorPairMetricQuery = useNodePairMetricQuery(
+    graphName, focusEntityId, nodeColorMetric as NodePairMetric,
+    isNodePairColorMetric && focusEntityId !== null
+  );
+  const sizeLoading = sizeMetricQuery.isFetching || sizeMetricQuery.data?.status === 'computing';
+  const colorLoading = colorMetricQuery.isFetching || colorMetricQuery.data?.status === 'computing'
+    || colorPairMetricQuery.isFetching;
+
+  // Param input local state (committed on enter/blur)
+  const [dampingInput, setDampingInput] = useState(String(nodeSizeParams.damping ?? 0.85));
+  const [kInput, setKInput] = useState(String(nodeColorParams.k ?? 5));
+
   const [searchInput, setSearchInput] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searching, setSearching] = useState(false);
+
+  const commitDamping = useCallback(() => {
+    const val = parseFloat(dampingInput);
+    if (!isNaN(val) && val > 0 && val < 1) {
+      dispatch(setNodeSizeParams({ ...nodeSizeParams, damping: val }));
+    }
+  }, [dampingInput, nodeSizeParams, dispatch]);
+
+  const commitK = useCallback(() => {
+    const val = parseInt(kInput, 10);
+    if (!isNaN(val) && val >= 2) {
+      dispatch(setNodeColorParams({ ...nodeColorParams, k: val }));
+    }
+  }, [kInput, nodeColorParams, dispatch]);
 
   const handleSearch = useCallback(
     async (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -222,48 +281,139 @@ const KGTopBar: React.FC = () => {
         </Select>
       </FormControl>
 
+      {/* Node size metric selector */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <FormControl size="small" sx={{ minWidth: 160 }}>
+          <InputLabel>Size</InputLabel>
+          <Select
+            label="Size"
+            value={nodeSizeMetric}
+            onChange={(e) => dispatch(setNodeSizeMetric(e.target.value as NodeSizeMetric))}
+            endAdornment={
+              sizeLoading ? <CircularProgress size={14} sx={{ mr: 2 }} /> : null
+            }
+          >
+            <MenuItem value={NodeSizeMetric.OccurrenceCount}><Tooltip title={METRIC_TOOLTIPS[NodeSizeMetric.OccurrenceCount]} placement="right" enterDelay={500}><span>Occurrence count</span></Tooltip></MenuItem>
+            <MenuItem value={NodeSizeMetric.DegreeCentrality}><Tooltip title={METRIC_TOOLTIPS[NodeSizeMetric.DegreeCentrality]} placement="right" enterDelay={500}><span>Degree centrality</span></Tooltip></MenuItem>
+            <MenuItem value={NodeSizeMetric.BetweennessCentrality}><Tooltip title={METRIC_TOOLTIPS[NodeSizeMetric.BetweennessCentrality]} placement="right" enterDelay={500}><span>Betweenness centrality</span></Tooltip></MenuItem>
+            <MenuItem value={NodeSizeMetric.PageRank}><Tooltip title={METRIC_TOOLTIPS[NodeSizeMetric.PageRank]} placement="right" enterDelay={500}><span>PageRank</span></Tooltip></MenuItem>
+            <MenuItem value={NodeSizeMetric.ClosenessCentrality}><Tooltip title={METRIC_TOOLTIPS[NodeSizeMetric.ClosenessCentrality]} placement="right" enterDelay={500}><span>Closeness centrality</span></Tooltip></MenuItem>
+            <MenuItem value={NodeSizeMetric.KCoreNumber}><Tooltip title={METRIC_TOOLTIPS[NodeSizeMetric.KCoreNumber]} placement="right" enterDelay={500}><span>K-core number</span></Tooltip></MenuItem>
+          </Select>
+        </FormControl>
+        {nodeSizeMetric === NodeSizeMetric.PageRank && (
+          <Tooltip title="Damping factor (0–1)">
+            <TextField
+              size="small"
+              label="Damping"
+              type="number"
+              value={dampingInput}
+              onChange={(e) => setDampingInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && commitDamping()}
+              onBlur={commitDamping}
+              inputProps={{ min: 0.01, max: 0.99, step: 0.05 }}
+              sx={{ width: 90 }}
+            />
+          </Tooltip>
+        )}
+      </Box>
+
+      {/* Node color metric selector */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <FormControl size="small" sx={{ minWidth: 180 }}>
+          <InputLabel>Color</InputLabel>
+          <Select
+            label="Color"
+            value={nodeColorMetric}
+            onChange={(e) => dispatch(setNodeColorMetric(e.target.value as NodeColorMetric | NodePairMetric))}
+            endAdornment={
+              colorLoading ? <CircularProgress size={14} sx={{ mr: 2 }} /> : null
+            }
+          >
+            <MenuItem value={NodeColorMetric.EntityType}><Tooltip title={METRIC_TOOLTIPS[NodeColorMetric.EntityType]} placement="right" enterDelay={500}><span>{METRIC_LABELS[NodeColorMetric.EntityType]}</span></Tooltip></MenuItem>
+            <MenuItem value={NodeColorMetric.CommunityLouvain}><Tooltip title={METRIC_TOOLTIPS[NodeColorMetric.CommunityLouvain]} placement="right" enterDelay={500}><span>{METRIC_LABELS[NodeColorMetric.CommunityLouvain]}</span></Tooltip></MenuItem>
+            <MenuItem value={NodeColorMetric.CommunityGirvanNewman}><Tooltip title={METRIC_TOOLTIPS[NodeColorMetric.CommunityGirvanNewman]} placement="right" enterDelay={500}><span>{METRIC_LABELS[NodeColorMetric.CommunityGirvanNewman]}</span></Tooltip></MenuItem>
+            <MenuItem value={NodeColorMetric.CommunityLabelPropagation}><Tooltip title={METRIC_TOOLTIPS[NodeColorMetric.CommunityLabelPropagation]} placement="right" enterDelay={500}><span>{METRIC_LABELS[NodeColorMetric.CommunityLabelPropagation]}</span></Tooltip></MenuItem>
+            <MenuItem value={NodeColorMetric.CommunitySpectral}><Tooltip title={METRIC_TOOLTIPS[NodeColorMetric.CommunitySpectral]} placement="right" enterDelay={500}><span>{METRIC_LABELS[NodeColorMetric.CommunitySpectral]}</span></Tooltip></MenuItem>
+            <MenuItem value={NodeColorMetric.LocalClusteringCoefficient}><Tooltip title={METRIC_TOOLTIPS[NodeColorMetric.LocalClusteringCoefficient]} placement="right" enterDelay={500}><span>{METRIC_LABELS[NodeColorMetric.LocalClusteringCoefficient]}</span></Tooltip></MenuItem>
+            <MenuItem value={NodeColorMetric.KCoreNumber}><Tooltip title={METRIC_TOOLTIPS[NodeColorMetric.KCoreNumber]} placement="right" enterDelay={500}><span>{METRIC_LABELS[NodeColorMetric.KCoreNumber]}</span></Tooltip></MenuItem>
+            <ListSubheader sx={{ fontSize: '0.72rem', lineHeight: '1.6' }}>
+              Focus-relative (select a node first)
+            </ListSubheader>
+            {NODE_PAIR_METRICS.map((m) => (
+              <MenuItem key={m} value={m} disabled={focusEntityId === null}>
+                <Tooltip title={METRIC_TOOLTIPS[m]} placement="right" enterDelay={500}>
+                  <span>{METRIC_LABELS[m]}</span>
+                </Tooltip>
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        {nodeColorMetric === NodeColorMetric.CommunitySpectral && (
+          <Tooltip title="Number of clusters (k ≥ 2)">
+            <TextField
+              size="small"
+              label="k"
+              type="number"
+              value={kInput}
+              onChange={(e) => setKInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && commitK()}
+              onBlur={commitK}
+              inputProps={{ min: 2, max: 20, step: 1 }}
+              sx={{ width: 70 }}
+            />
+          </Tooltip>
+        )}
+      </Box>
+
       {/* N-hop toggle */}
-      <ToggleButtonGroup
-        size="small"
-        exclusive
-        value={displayMode}
-        onChange={(_e, val) => val && dispatch(setDisplayMode(val))}
-      >
-        <ToggleButton value="full">Full</ToggleButton>
-        <ToggleButton value="nhop">N-hop</ToggleButton>
-      </ToggleButtonGroup>
+      <Tooltip title="Full: show the entire graph. N-hop: show only the focused entity and nodes within N edges of it.">
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={displayMode}
+          onChange={(_e, val) => val && dispatch(setDisplayMode(val))}
+        >
+          <ToggleButton value="full">Full</ToggleButton>
+          <ToggleButton value="nhop">N-hop</ToggleButton>
+        </ToggleButtonGroup>
+      </Tooltip>
 
       {/* Hop count */}
-      <FormControl size="small" sx={{ minWidth: 80 }}>
-        <InputLabel>Hops</InputLabel>
-        <Select
-          label="Hops"
-          value={hopCount}
-          onChange={(e) => dispatch(setHopCount(Number(e.target.value) as 1 | 2 | 3))}
-          disabled={displayMode !== 'nhop'}
-        >
-          <MenuItem value={1}>1</MenuItem>
-          <MenuItem value={2}>2</MenuItem>
-          <MenuItem value={3}>3</MenuItem>
-        </Select>
-      </FormControl>
+      <Tooltip title="Maximum number of edges between the focused entity and any displayed node.">
+        <FormControl size="small" sx={{ minWidth: 80 }}>
+          <InputLabel>Hops</InputLabel>
+          <Select
+            label="Hops"
+            value={hopCount}
+            onChange={(e) => dispatch(setHopCount(Number(e.target.value) as 1 | 2 | 3))}
+            disabled={displayMode !== 'nhop'}
+          >
+            <MenuItem value={1}>1</MenuItem>
+            <MenuItem value={2}>2</MenuItem>
+            <MenuItem value={3}>3</MenuItem>
+          </Select>
+        </FormControl>
+      </Tooltip>
 
       {/* Occurrence threshold slider */}
-      <Box sx={{ display: 'flex', flexDirection: 'column', width: 140, px: 1 }}>
-        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1 }}>
-          Min. occurrences: {occurrenceThreshold === 1 ? 'all' : `≥ ${occurrenceThreshold}`}
-        </Typography>
-        <Slider
-          size="small"
-          min={1}
-          max={4}
-          step={1}
-          value={occurrenceThreshold}
-          onChange={(_e, val) => dispatch(setOccurrenceThreshold(val as number))}
-          marks
-          sx={{ py: 0.5 }}
-        />
-      </Box>
+      <Tooltip title="Hide entities mentioned fewer than this many times in the source text.">
+        <Box sx={{ display: 'flex', flexDirection: 'column', width: 140, px: 1 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1 }}>
+            Min. occurrences: {occurrenceThreshold === 1 ? 'all' : `≥ ${occurrenceThreshold}`}
+          </Typography>
+          <Slider
+            size="small"
+            min={1}
+            max={4}
+            step={1}
+            value={occurrenceThreshold}
+            onChange={(_e, val) => dispatch(setOccurrenceThreshold(val as number))}
+            marks
+            sx={{ py: 0.5 }}
+          />
+        </Box>
+      </Tooltip>
 
       {/* Leaf trim toggle */}
       <Tooltip title="Recursively remove nodes with only one connection">

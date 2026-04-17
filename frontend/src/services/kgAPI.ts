@@ -1,8 +1,12 @@
 import axios, { AxiosInstance } from 'axios';
 import {
-  GraphListResponse,
-  GraphResponse,
+  CommunityMetricResponse,
   EntityDetail,
+  GraphListResponse,
+  GraphMetricsResponse,
+  GraphResponse,
+  NodeMetricResponse,
+  NodePairMetricResponse,
   SearchRequest,
   SearchResponse,
 } from '../types/kg';
@@ -47,6 +51,41 @@ class KGAPI {
 
   async search(request: SearchRequest): Promise<SearchResponse> {
     const response = await this.api.post<SearchResponse>('/api/kg/search', request);
+    return response.data;
+  }
+
+  async getGraphMetrics(graphName: string): Promise<GraphMetricsResponse> {
+    const response = await this.api.get<GraphMetricsResponse>('/api/kg/metrics/graph', {
+      params: { graph_name: graphName },
+      validateStatus: (s) => s === 200 || s === 202,
+    });
+    return response.data;
+  }
+
+  async getNodeMetric(
+    graphName: string,
+    metric: string,
+    params: Record<string, number>
+  ): Promise<NodeMetricResponse | CommunityMetricResponse> {
+    const response = await this.api.get<NodeMetricResponse | CommunityMetricResponse>(
+      '/api/kg/metrics/node',
+      {
+        params: { graph_name: graphName, metric, ...params },
+        validateStatus: (s) => s === 200 || s === 202,
+      }
+    );
+    return response.data;
+  }
+
+  async getNodePairMetric(
+    graphName: string,
+    focusId: string,
+    metric: string
+  ): Promise<NodePairMetricResponse> {
+    const response = await this.api.get<NodePairMetricResponse>(
+      '/api/kg/metrics/node-pair',
+      { params: { graph_name: graphName, focus_entity_id: focusId, metric } }
+    );
     return response.data;
   }
 }

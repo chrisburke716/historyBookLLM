@@ -4,8 +4,11 @@ import { useAppSelector } from '../store';
 import {
   useGraphQuery,
   useSubgraphQuery,
+  useGraphMetricsQuery,
+  useNodeMetricQuery,
+  useNodePairMetricQuery,
 } from '../hooks/useKGQueries';
-import { GraphResponse } from '../types/kg';
+import { DISTANCE_METRICS, GraphResponse, METRIC_LABELS, NODE_PAIR_METRICS, NodeColorMetric, NodePairMetric, NodeSizeMetric } from '../types/kg';
 import KGTopBar from '../components/kg/KGTopBar';
 import ForceGraphPanel from '../components/kg/ForceGraphPanel';
 import EntityPanel from '../components/kg/EntityPanel';
@@ -56,6 +59,20 @@ function trimLeavesRecursive(
   };
 }
 
+// Compute min/max norm bounds from only the currently displayed nodes.
+// Excludes sentinel -1 values (unreachable nodes in node-pair metrics).
+function computeDisplayNorms(
+  values: Record<string, number> | undefined,
+  nodeIds: Set<string>
+): [number, number] {
+  if (!values || nodeIds.size === 0) return [0, 1];
+  const displayed = Array.from(nodeIds)
+    .map((id) => values[id])
+    .filter((v): v is number => v !== undefined && v >= 0);
+  if (displayed.length === 0) return [0, 1];
+  return [Math.min(...displayed), Math.max(...displayed)];
+}
+
 function applyTrim(graph: GraphResponse, focusEntityId: string | null, threshold: number): GraphResponse {
   const keepIds = new Set(
     graph.nodes
@@ -76,6 +93,7 @@ function applyTrim(graph: GraphResponse, focusEntityId: string | null, threshold
 
 const KGPage: React.FC = () => {
   const { graphName, displayMode, hopCount, focusEntityId, occurrenceThreshold, trimLeaves } = useAppSelector((s) => s.graph);
+  const { nodeSizeMetric, nodeColorMetric, nodeSizeParams, nodeColorParams } = useAppSelector((s) => s.metrics);
 
   const {
     data: fullGraph,
@@ -95,6 +113,49 @@ const KGPage: React.FC = () => {
   const activeGraph = displayMode === 'nhop' && focusEntityId ? subgraph : fullGraph;
   const isLoading = displayMode === 'nhop' && focusEntityId ? subgraphLoading : fullGraphLoading;
 
+  // --------------- Metric queries ---------------
+
+  // Graph-level metrics (shown in entity panel unfocused state)
+  const graphMetricsQuery = useGraphMetricsQuery(graphName);
+
+  // Node size metric
+  const sizeMetricQuery = useNodeMetricQuery(
+    graphName, nodeSizeMetric, nodeSizeParams,
+    nodeSizeMetric !== NodeSizeMetric.OccurrenceCount
+  );
+
+  // Node color metric (node-level or node-pair)
+  const isNodePairColorMetric = NODE_PAIR_METRICS.includes(nodeColorMetric as NodePairMetric);
+  const colorMetricQuery = useNodeMetricQuery(
+    graphName, nodeColorMetric as NodeColorMetric, nodeColorParams,
+    !isNodePairColorMetric && nodeColorMetric !== NodeColorMetric.EntityType
+  );
+  const colorPairMetricQuery = useNodePairMetricQuery(
+    graphName, focusEntityId, nodeColorMetric as NodePairMetric,
+    isNodePairColorMetric && focusEntityId !== null
+  );
+
+  // Resolved metric values (full graph — norms are recomputed per displayed nodes below)
+  const sizeMetricData = sizeMetricQuery.data;
+  const sizeReady = sizeMetricData?.status === 'ready' && !('num_communities' in (sizeMetricData ?? {}));
+  const sizeValues = sizeReady ? sizeMetricData!.values : undefined;
+
+  // Determine active color metric data
+  const activeColorData = isNodePairColorMetric
+    ? colorPairMetricQuery.data
+    : colorMetricQuery.data?.status === 'ready' ? colorMetricQuery.data : undefined;
+
+  // Community metrics have a 'num_communities' field; continuous ones have 'norm_min'/'norm_max'
+  const isCommunityMetric = activeColorData != null && 'num_communities' in activeColorData;
+  const communityValues = isCommunityMetric
+    ? (activeColorData as { values: Record<string, number> }).values
+    : undefined;
+  const colorMetricValues = !isCommunityMetric && activeColorData != null
+    ? (activeColorData as { values: Record<string, number> }).values
+    : undefined;
+
+  // --------------- Display graph ---------------
+
   const displayGraph = useMemo(() => {
     if (!activeGraph) return activeGraph;
     const afterThreshold =
@@ -110,14 +171,46 @@ const KGPage: React.FC = () => {
     return { ...afterThreshold, nodes, links, node_count: nodes.length, edge_count: links.length };
   }, [activeGraph, occurrenceThreshold, trimLeaves, focusEntityId]);
 
+  // Norm bounds recomputed from displayed nodes so trimmed nodes don't skew the color/size scale
+  const displayNodeIds = useMemo(
+    () => new Set((displayGraph?.nodes ?? []).map((n) => n.id)),
+    [displayGraph]
+  );
+  const [sizeNormMin, sizeNormMax] = useMemo(
+    () => computeDisplayNorms(sizeValues, displayNodeIds),
+    [sizeValues, displayNodeIds]
+  );
+  const [colorNormMinRaw, colorNormMaxRaw] = useMemo(
+    () => computeDisplayNorms(colorMetricValues, displayNodeIds),
+    [colorMetricValues, displayNodeIds]
+  );
+  const invertColorScale = DISTANCE_METRICS.has(nodeColorMetric);
+  const colorNormMin = invertColorScale ? colorNormMaxRaw : colorNormMinRaw;
+  const colorNormMax = invertColorScale ? colorNormMinRaw : colorNormMaxRaw;
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)' }}>
       <KGTopBar />
       <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        <ForceGraphPanel graphData={displayGraph} isLoading={isLoading} />
+        <ForceGraphPanel
+          graphData={displayGraph}
+          isLoading={isLoading}
+          sizeMetricValues={sizeValues}
+          sizeNormMin={sizeNormMin}
+          sizeNormMax={sizeNormMax}
+          colorMetricValues={colorMetricValues}
+          colorNormMin={colorNormMin}
+          colorNormMax={colorNormMax}
+          communityValues={communityValues}
+          colorMetricLabel={METRIC_LABELS[nodeColorMetric as NodeColorMetric | NodePairMetric]}
+        />
         <Divider orientation="vertical" flexItem />
         <Box sx={{ width: 340, flexShrink: 0, overflow: 'hidden', borderLeft: 0 }}>
-          <EntityPanel activeGraph={activeGraph} />
+          <EntityPanel
+            activeGraph={activeGraph}
+            graphMetrics={graphMetricsQuery.data}
+            graphMetricsLoading={graphMetricsQuery.isLoading || graphMetricsQuery.isFetching}
+          />
         </Box>
       </Box>
     </Box>

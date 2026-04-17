@@ -1,9 +1,8 @@
 """Knowledge Graph API routes."""
 
 import logging
-from functools import lru_cache
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from history_book.api.models.kg_models import (
     EntityDetail,
@@ -13,17 +12,13 @@ from history_book.api.models.kg_models import (
     SearchRequest,
     SearchResponse,
 )
+from history_book.api.routes.dependencies import get_kg_metrics_service, get_kg_service
+from history_book.services.kg_metrics_service import KGMetricsService
 from history_book.services.kg_service import KGService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/kg", tags=["kg"])
-
-
-@lru_cache
-def get_kg_service() -> KGService:
-    """Get a cached KGService instance."""
-    return KGService()
 
 
 @router.get("/graphs", response_model=GraphListResponse)
@@ -55,11 +50,19 @@ async def list_graphs(
 @router.get("/graphs/{graph_name}", response_model=GraphResponse)
 async def get_graph(
     graph_name: str,
+    background_tasks: BackgroundTasks,
     service: KGService = Depends(get_kg_service),
+    metrics_service: KGMetricsService = Depends(get_kg_metrics_service),
 ):
-    """Get all nodes and links for a named graph."""
+    """Get all nodes and links for a named graph.
+
+    As a side effect, triggers background computation of graph-level metrics
+    so they are ready by the time the frontend requests them.
+    """
     try:
-        return service.get_graph(graph_name)
+        result = service.get_graph(graph_name)
+        background_tasks.add_task(metrics_service.trigger_graph_metrics, graph_name)
+        return result
     except Exception as e:
         logger.error("Failed to get graph %s: %s", graph_name, e)
         raise HTTPException(status_code=500, detail="Failed to retrieve graph") from e
