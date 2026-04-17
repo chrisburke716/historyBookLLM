@@ -121,7 +121,9 @@ class KGMetricsService:
         try:
             G = self._kg.get_nx_graph(graph_name)
             if G.number_of_nodes() == 0:
-                logger.warning("Graph %s has no nodes; storing zero metrics", graph_name)
+                logger.warning(
+                    "Graph %s has no nodes; storing zero metrics", graph_name
+                )
                 self._cache[key] = GraphMetricsResponse(
                     graph_name=graph_name,
                     density=0.0,

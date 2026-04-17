@@ -53,10 +53,13 @@ class KGService:
         keep_ids = set(G.nodes)
         filtered_entities = [e for e in entities if e.id in keep_ids]
         filtered_relationships = [
-            r for r in relationships
+            r
+            for r in relationships
             if r.source_entity_id in keep_ids and r.target_entity_id in keep_ids
         ]
-        return self._build_graph_response(filtered_entities, filtered_relationships, graph_name)
+        return self._build_graph_response(
+            filtered_entities, filtered_relationships, graph_name
+        )
 
     def get_subgraph(self, entity_id: str, hops: int, graph_name: str) -> GraphResponse:
         """Return an N-hop subgraph centered on entity_id within graph_name."""
