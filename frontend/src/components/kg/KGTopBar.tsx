@@ -367,47 +367,53 @@ const KGTopBar: React.FC = () => {
       </Box>
 
       {/* N-hop toggle */}
-      <ToggleButtonGroup
-        size="small"
-        exclusive
-        value={displayMode}
-        onChange={(_e, val) => val && dispatch(setDisplayMode(val))}
-      >
-        <ToggleButton value="full">Full</ToggleButton>
-        <ToggleButton value="nhop">N-hop</ToggleButton>
-      </ToggleButtonGroup>
+      <Tooltip title="Full: show the entire graph. N-hop: show only the focused entity and nodes within N edges of it.">
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={displayMode}
+          onChange={(_e, val) => val && dispatch(setDisplayMode(val))}
+        >
+          <ToggleButton value="full">Full</ToggleButton>
+          <ToggleButton value="nhop">N-hop</ToggleButton>
+        </ToggleButtonGroup>
+      </Tooltip>
 
       {/* Hop count */}
-      <FormControl size="small" sx={{ minWidth: 80 }}>
-        <InputLabel>Hops</InputLabel>
-        <Select
-          label="Hops"
-          value={hopCount}
-          onChange={(e) => dispatch(setHopCount(Number(e.target.value) as 1 | 2 | 3))}
-          disabled={displayMode !== 'nhop'}
-        >
-          <MenuItem value={1}>1</MenuItem>
-          <MenuItem value={2}>2</MenuItem>
-          <MenuItem value={3}>3</MenuItem>
-        </Select>
-      </FormControl>
+      <Tooltip title="Maximum number of edges between the focused entity and any displayed node.">
+        <FormControl size="small" sx={{ minWidth: 80 }}>
+          <InputLabel>Hops</InputLabel>
+          <Select
+            label="Hops"
+            value={hopCount}
+            onChange={(e) => dispatch(setHopCount(Number(e.target.value) as 1 | 2 | 3))}
+            disabled={displayMode !== 'nhop'}
+          >
+            <MenuItem value={1}>1</MenuItem>
+            <MenuItem value={2}>2</MenuItem>
+            <MenuItem value={3}>3</MenuItem>
+          </Select>
+        </FormControl>
+      </Tooltip>
 
       {/* Occurrence threshold slider */}
-      <Box sx={{ display: 'flex', flexDirection: 'column', width: 140, px: 1 }}>
-        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1 }}>
-          Min. occurrences: {occurrenceThreshold === 1 ? 'all' : `≥ ${occurrenceThreshold}`}
-        </Typography>
-        <Slider
-          size="small"
-          min={1}
-          max={4}
-          step={1}
-          value={occurrenceThreshold}
-          onChange={(_e, val) => dispatch(setOccurrenceThreshold(val as number))}
-          marks
-          sx={{ py: 0.5 }}
-        />
-      </Box>
+      <Tooltip title="Hide entities mentioned fewer than this many times in the source text.">
+        <Box sx={{ display: 'flex', flexDirection: 'column', width: 140, px: 1 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1 }}>
+            Min. occurrences: {occurrenceThreshold === 1 ? 'all' : `≥ ${occurrenceThreshold}`}
+          </Typography>
+          <Slider
+            size="small"
+            min={1}
+            max={4}
+            step={1}
+            value={occurrenceThreshold}
+            onChange={(_e, val) => dispatch(setOccurrenceThreshold(val as number))}
+            marks
+            sx={{ py: 0.5 }}
+          />
+        </Box>
+      </Tooltip>
 
       {/* Leaf trim toggle */}
       <Tooltip title="Recursively remove nodes with only one connection">
