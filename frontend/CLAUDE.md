@@ -32,41 +32,9 @@ cd frontend && npx tsc --noEmit
 - **react-force-graph-2d** - Force-directed graph canvas rendering (KG Explorer)
 - **Jest + React Testing Library** - Testing
 
-## Dual Backend Support
+## API Client
 
-The frontend supports **two backend implementations** via a unified API abstraction:
-
-1. **Agent API** (default) - LangGraph-based RAG (`/api/agent/*`)
-   - Built on LangGraph for future extensibility (tools, planning, reflection)
-   - Graph-based execution with checkpointing
-
-2. **Chat API** (legacy) - LCEL-based RAG (`/api/chat/*`)
-   - Original implementation using LangChain Expression Language
-   - Simpler chain-based execution
-
-### Switching Backends
-
-Controlled by **`.env`** file in `frontend/` directory:
-
-```bash
-# Use Agent API (LangGraph) - default
-REACT_APP_USE_AGENT_API=true
-
-# Use Chat API (LCEL) - legacy
-REACT_APP_USE_AGENT_API=false
-```
-
-The frontend code uses a **unified abstraction** (`api` from `services/api.ts`), so switching backends requires no code changes - just update the environment variable and restart `npm start`.
-
-### Future Agent Features (Phase 7+)
-
-When agent capabilities expand (tools, multi-step reasoning), the UI may expose:
-- Graph visualization panels (Mermaid diagrams)
-- Execution metadata displays (nodes executed, timing)
-- Reasoning step viewers (planning, tool calls, reflection)
-- Advanced settings (configure retrieval, enable tools)
-
-These will be **optional/collapsible** features for power users. For now, the UI remains identical regardless of backend.
+All chat operations go through `services/agentAPI.ts` → `/api/chat/*`. Book browsing uses `services/api.ts` (`booksAPI`) → `/api/books/*`. KG Explorer uses `services/kgAPI.ts` → `/api/kg/*`.
 
 ---
 

@@ -1,15 +1,12 @@
 # CLAUDE.md - Service Layer
 
-Business logic layer for the History Book RAG application. Services orchestrate repositories, LLM calls, and complex workflows.
+Business logic layer for the History Book RAG application.
 
 ## Quick Commands
 
 ```bash
-# Start backend (uses all services)
+# Start backend
 PYTHONPATH=src poetry run uvicorn src.history_book.api.main:app --reload --port 8000
-
-# Test chat interactively
-jupyter notebook notebooks/chat_service_demo.ipynb
 
 # Run ingestion
 poetry run python scripts/run_ingestion.py
@@ -17,7 +14,7 @@ poetry run python scripts/run_ingestion.py
 # Run evaluations
 poetry run python scripts/run_evals.py
 
-# KG pipeline (see run_kg_extraction.py for full CLI)
+# KG pipeline
 PYTHONPATH=src poetry run python scripts/run_kg_extraction.py chapter --book 3 --chapter 4
 PYTHONPATH=src poetry run python scripts/run_kg_extraction.py book --book 3
 PYTHONPATH=src poetry run python scripts/run_kg_extraction.py volume
@@ -26,431 +23,108 @@ PYTHONPATH=src poetry run python scripts/run_kg_extraction.py list
 
 ## Services Overview
 
-### ChatService (`chat_service.py` - 462 lines)
+### ChatService (`chat_service.py`)
 
-**Purpose**: Chat session management and RAG orchestration.
+Session management and LangGraph agent orchestration.
 
 **Key Methods**:
-- `create_session(title)` - Create new chat session
-- `send_message(session_id, message)` - Process message, return `ChatResult` with AI response + retrieved paragraphs
-- `get_session_history(session_id)` - Get all messages for a session
-- `get_eval_metadata()` - Export config for evaluation tracking
+- `create_session(title)` → `ChatSession`
+- `send_message(session_id, user_message)` → `ChatResult(message, retrieved_paragraphs, metadata)`
+- `send_message_stream(session_id, user_message)` → `(AsyncIterator[str], list[Paragraph])`
+- `get_session_messages(session_id)` → `list[ChatMessage]`
+- `get_eval_metadata()` → dict
 
-**Configuration** (module constants):
-```python
-CONTEXT_MIN_RESULTS = 5
-CONTEXT_MAX_RESULTS = 40
-CONTEXT_SIMILARITY_CUTOFF = 0.4
-```
+**Flow**:
+1. Save user message to Weaviate
+2. Load chat history, convert to LangChain messages
+3. `agent.ainvoke(messages, context=AgentContext(...), config={"thread_id": session_id})`
+4. Save AI response + update session timestamp
+5. Regenerate session title (async, via `create_title_generation_chain`)
 
-**ChatResult Dataclass**:
+**Memory strategy**:
+- `MemorySaver` (LangGraph): fast ephemeral state during graph execution
+- Weaviate: durable session + message storage across restarts
+
+**ChatResult**:
 ```python
 @dataclass
 class ChatResult:
     message: ChatMessage
-    retrieved_paragraphs: list[Paragraph]  # For evaluation and citations
+    retrieved_paragraphs: list[Paragraph]
+    metadata: dict | None = None
 ```
 
-**Tuning Retrieval**:
+**Tuning**:
 ```python
-chat_service = ChatService(
+ChatService(
     min_context_results=10,
     max_context_results=50,
-    context_similarity_cutoff=0.5  # Higher = stricter matching
+    context_similarity_cutoff=0.5,
 )
 ```
 
-**Integration**: Called by API layer → calls RagService → uses ChatMessage/ChatSession repositories.
+**Integration**: Called by `api/routes/chat.py` → invokes agent from `services/agents/` → uses `BookRepositoryManager`.
 
 ---
 
-### RagService (`rag_service.py` - 405 lines)
+### IngestionService (`ingestion_service.py`)
 
-**Purpose**: Retrieval-Augmented Generation using LangChain LCEL chains.
-
-**Key Methods**:
-- `generate_response(query, chat_history, min_results, max_results, similarity_cutoff)` - Main RAG execution, returns `RAGResult`
-
-**RAGResult**:
-```python
-class RAGResult(NamedTuple):
-    response: str
-    source_paragraphs: list[Paragraph]
-```
-
-**LCEL Chain Structure**:
-```python
-# RAG chain (uses context + history)
-rag_prompt = ChatPromptTemplate.from_messages([
-    ("system", system_message),
-    MessagesPlaceholder("chat_history"),
-    ("human", "{context}\n\nQuestion: {query}"),
-])
-rag_chain = rag_prompt | chat_model | StrOutputParser()
-```
-
-**Supported LLM Providers**:
-- OpenAI: `ChatOpenAI` (GPT-4, GPT-3.5, etc.)
-- Anthropic: `ChatAnthropic` (Claude models)
-
-**Retrieval**: Uses `ParagraphRepository.hybrid_search()` (vector + BM25).
-
-**Context Formatting**: `format_context_for_llm()` from `llm.utils` formats paragraphs with book/chapter/page metadata.
-
-**Integration**: Called by ChatService → uses LLMConfig and ParagraphRepository.
-
----
-
-### IngestionService (`ingestion_service.py` - 627 lines)
-
-**Purpose**: PDF processing pipeline - extract, chunk, and store in vector DB.
+PDF processing pipeline: extract, chunk, store in Weaviate.
 
 **Key Methods**:
-- `ingest_pdf(pdf_path, book_title, author, clear_existing)` - Main ingestion entry point
-- `clear_all_data()` - Delete all books/chapters/paragraphs
-- `check_existing_data()` - Get counts of existing entities
+- `ingest_pdf(pdf_path, book_title, author, clear_existing)` → stats dict
+- `clear_all_data()` — delete all books/chapters/paragraphs
+- `check_existing_data()` — get counts
 
-**Pipeline Flow**:
+**Pipeline**:
 ```
 PDF → PyMuPDF extraction → Text cleaning → Chapter detection →
-Paragraph chunking → Entity creation → Batch storage → Weaviate (auto-generates embeddings)
+Paragraph chunking → Entity creation → Batch storage → Weaviate (auto-embeddings)
 ```
-
-**Example**:
-```python
-from pathlib import Path
-
-service = IngestionService()
-result = service.ingest_pdf(
-    pdf_path=Path("data/book.pdf"),
-    book_title="History Book",
-    author="Author Name",
-    clear_existing=True  # Fresh start
-)
-# Returns: {"book_id": "uuid", "chapters_created": 15, "paragraphs_created": 342, ...}
-```
-
-**Integration**: Used by `scripts/run_ingestion.py` → uses BookRepositoryManager and text_processing module.
 
 ---
 
 ### KGIngestionService (`kg_ingestion_service.py`)
 
-**Purpose**: Multi-stage knowledge graph extraction and merging pipeline for historical text.
+Multi-stage knowledge graph extraction and merge pipeline.
 
-**CLI**: `scripts/run_kg_extraction.py` — thin wrapper; use this for all KG operations.
-
-**DEFAULT_CONFIG** (override via `pipeline_config` dict):
-```python
-extraction_model = "gpt-4.1"        # Per-paragraph entity/relationship extraction
-merge_model = "o4-mini"             # LLM similarity merge decisions
-rule_filter_model = "gpt-4.1-mini"  # Validate rule-based (name/alias) merge candidates
-similarity_threshold = 0.65         # Cosine similarity cutoff for merge candidates
-max_concurrency = 5                 # Max parallel LLM calls per batch
-```
-
-**Key Methods**:
-- `extract_chapter(book, chapter, force, ...)` — Run per-paragraph extraction + rule + LLM merge for one chapter; stores `KGGraph` in DB
-- `merge_book(book, chapters, force, ...)` — Cross-chapter merge of all chapter graphs into `book{N}` graph; auto-extracts missing chapters
-- `merge_volume(book_indices, graph_name, force, ...)` — Cross-book merge; `book_indices=None` auto-discovers all books from DB
-- `merge_custom(chapters_spec, graph_name, ...)` — Arbitrary `{book: [chapters]}` merge for custom subsets
-- `list_graphs()` — Return all `KGGraph` records from DB
-
-**Pipeline Flow** (per chapter):
-```
-Paragraphs → LLM extract entities+rels → Rule merge (name/alias exact match, LLM-filtered)
-           → Embed new entities → Find similarity candidates vs master
-           → LLM merge filter → Update master graph → Store to Weaviate
-```
-
-**Merge Types** (stored in `KGMergeDecision.merge_type`):
-- `"root"` — Entity first encountered; becomes master
-- `"rule"` — Exact name/alias match confirmed by rule-filter LLM
-- `"llm"` — Cosine similarity candidate confirmed by merge LLM
-
-**`merge_rule_based` internals** (critical to understand for debugging):
-- `name_to_masters: dict[str, list[NormalizedEntity]]` — Multi-value dict; shared aliases (e.g., "Caesar" for both Julius Caesar and Augustus) map to all candidates
-- Candidates sorted by `occurrence_count` desc; LLM filter run on all candidates; first accepted per entity wins
-- No post-merge dict mutation — safe because within one paragraph/chapter there are no duplicate real-world entities
-
-**Audit trail**: Every merge decision written to `KGMergeDecisions` collection with `occurrence_count_after` (sequence number enabling merge tree reconstruction) and `reasoning`.
-
-**Log format** (per paragraph):
-```
-rule: {N} merged, {N} rejected, {N} new | llm: {N} cand, {N} checked, {N} rejected, {N} merged
-```
-
-**`--force` semantics**: Without `--force`, existing graphs are skipped and missing ones are built. `--force` rebuilds existing graphs (deletes and re-creates).
-
-**Integration**: Uses `BookRepositoryManager` for KG collections + `chains/` for LLM calls.
+See root `CLAUDE.md` for CLI usage and pipeline details.
 
 ---
 
 ### KGService (`kg_service.py`)
 
-**Purpose**: Read-only queries against ingested knowledge graphs for the KG Explorer frontend.
+Read-only KG queries for the KG Explorer frontend.
 
 **Key Methods**:
-- `list_graphs()` → list of `KGGraph` metadata objects
+- `list_graphs()` → `list[KGGraph]`
 - `get_graph(graph_name)` → all nodes + links; builds & caches `nx.MultiDiGraph`
-- `get_subgraph(entity_id, hops, graph_name)` → N-hop ego subgraph via `nx.ego_graph`
-- `get_entity(entity_id)` → `EntityDetail` with denormalized relationship summaries (includes `book_index`, `chapter_index` for citations)
-- `search(query, graph_name, entity_types, limit)` → hybrid search via `KGEntityRepository.search_entities_hybrid`
-
-**Caching**: `nx.MultiDiGraph` cached per `graph_name` in `_nx_cache`. `get_graph()` populates cache; `get_subgraph()` reuses it.
-
-**`MultiDiGraph` rationale**: KG has parallel edges (multiple relationships between the same entity pair) — `DiGraph` would silently drop them.
-
-**Integration**: Called by `api/routes/kg.py` via `@lru_cache`-injected dependency.
+- `get_subgraph(entity_id, hops, graph_name)` → N-hop ego subgraph
+- `get_entity(entity_id)` → `EntityDetail` with relationship summaries
+- `search(query, graph_name, entity_types, limit)` → hybrid entity search
 
 ---
 
-### ParagraphService (`paragraph_service.py` - 220 lines)
+### ParagraphService (`paragraph_service.py`)
 
-**Purpose**: High-level paragraph operations and vector search.
+High-level paragraph operations.
 
-**Key Methods**:
-- `create_paragraph(paragraph)` - Create paragraph and fetch generated embedding
-- `search_similar_paragraphs(query_text, limit, book_index, threshold)` - Vector search with business logic
-
-**Note**: RagService typically uses `ParagraphRepository` directly, not ParagraphService.
-
----
-
-## Common Tasks
-
-### Tuning RAG Parameters
-
-**Similarity Cutoff**: Lower = more results, less strict matching.
-```python
-# Recommended: Use notebooks/investigate_vector_search_cutoff.ipynb to analyze
-# Then adjust in ChatService initialization
-```
-
-**Test Changes**: Run evals before/after tuning.
-```bash
-poetry run python scripts/run_evals.py
-# View results in LangSmith
-```
-
-### Changing LLM Provider
-
-```python
-from history_book.llm.config import LLMConfig
-
-llm_config = LLMConfig(
-    provider="anthropic",
-    model_name="claude-3-5-sonnet-20241022",
-    temperature=0.5
-)
-chat_service = ChatService(llm_config=llm_config)
-```
-
-See `/src/history_book/llm/` for details.
-
-### Modifying Prompts
-
-Edit `RagService._build_rag_chain()`:
-```python
-rag_prompt = ChatPromptTemplate.from_messages([
-    ("system", "Custom system message"),
-    MessagesPlaceholder("chat_history"),
-    ("human", "Context: {context}\n\nQuestion: {query}"),
-])
-```
-
-### Adding New PDF
-
-```bash
-poetry run python scripts/run_ingestion.py
-# Or programmatically via IngestionService.ingest_pdf()
-```
-
----
-
-## Agent Services (LangGraph-based)
-
-### GraphRagService (`graph_rag_service.py` - 308 lines)
-
-**Purpose**: Executes RAG using a LangGraph state machine with retrieve → generate nodes.
-
-**Key Features**:
-- **Graph Structure**: Simple RAG graph: `START → retrieve → generate → END`
-- **Checkpointing**: Uses MemorySaver to maintain state across executions
-- **Streaming**: Token-by-token output via `stream_mode="messages"`
-- **Tracing**: Automatic LangSmith tracing with tags `["agent", "langgraph", "simple_rag"]`
-- **Composition**: Reuses RagService methods (DRY principle)
-
-**Graph State** (`AgentState` TypedDict):
-```python
-class AgentState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], add_messages]  # Chat history
-    question: str  # Current user query
-    retrieved_paragraphs: list[Paragraph]  # Retrieved context
-    generation: str  # Generated response
-    session_id: str  # Maps to thread_id for checkpointing
-    metadata: dict  # Execution metadata
-```
-
-**Graph Nodes**:
-1. **retrieve_node**: Fetches relevant paragraphs using ParagraphRepository
-2. **generate_node**: Creates response using LLM + context
-
-**Key Methods**:
-```python
-# Execute graph (non-streaming)
-result = await service.invoke(
-    question="What is history?",
-    messages=[],  # LangChain message history
-    session_id="session-123"
-)
-
-# Stream graph execution (token-by-token)
-async for chunk in service.stream(
-    question="What is history?",
-    messages=[],
-    session_id="session-123"
-):
-    print(chunk)  # Token chunks
-```
-
-**Comparison with RagService**:
-| Feature | RagService (LCEL) | GraphRagService (LangGraph) |
-|---------|-------------------|----------------------------|
-| Execution | LCEL chains | LangGraph state machine |
-| Checkpointing | None | MemorySaver (in-memory) |
-| Visualization | None | Mermaid diagrams |
-| Tracing | LangSmith (@traceable) | Automatic (built-in) |
-| Extensibility | Limited | Easy (add nodes/edges) |
-| Performance | 9.50s avg | 8.97s avg (5.6% faster) |
-
-**When to Use**:
-- Multi-step reasoning (future)
-- Tool calling (future)
-- Need checkpointing or graph visualization
-- Want better performance
-
-**Title Generation**:
-- `generate_title(messages, session_id)` - Generate descriptive title from conversation
-- Uses most recent 20 messages with recency weighting
-- Max 100 characters, LLM-generated based on conversation topics
-- Falls back to timestamp-based title on error
-
-Example:
-```python
-title = await service.generate_title(
-    messages=chat_history,
-    session_id="session-123"
-)
-# Returns: "Ancient Rome and Julius Caesar's Assassination"
-```
-
----
-
-### GraphChatService (`graph_chat_service.py` - 381 lines)
-
-**Purpose**: Orchestrates chat sessions using GraphRagService, with hybrid memory strategy.
-
-**Hybrid Memory Strategy**:
-- **LangGraph MemorySaver**: In-memory state during graph execution (keyed by session_id)
-- **Weaviate**: Long-term persistence of sessions and messages
-
-**Key Methods**:
-```python
-# Send message
-result = await service.send_message(
-    session_id="session-123",
-    user_message="Tell me about Julius Caesar"
-)
-# Returns: GraphChatResult(message, retrieved_paragraphs)
-
-# Session management
-session = await service.create_session(title="My Chat")
-sessions = await service.list_recent_sessions(limit=10)
-await service.delete_session(session_id)
-
-# Title generation (backwards compatibility)
-await service.generate_title_if_needed(session_id)
-```
-
-**GraphChatResult**:
-```python
-@dataclass
-class GraphChatResult:
-    message: ChatMessage
-    retrieved_paragraphs: list[Paragraph]
-```
-
-**Data Flow**:
-1. Save user message to Weaviate
-2. Load chat history from Weaviate
-3. Execute graph with history (MemorySaver maintains state)
-4. Save AI response to Weaviate
-5. Generate session title if needed (≥2 messages triggers title generation)
-6. Return result
-
-**Integration**: Called by Agent API layer → calls GraphRagService → uses ChatMessage/ChatSession repositories.
-
-**Checkpointing Benefits**:
-- Maintains conversation context automatically
-- Supports multi-turn dialogues (e.g., "Who was he?" after asking about Julius Caesar)
-- State isolated per session_id (maps to thread_id)
-
-**Future Extensibility**:
-The graph architecture supports easy addition of:
-- **Tool calling**: Add tools_node for search, calculations, APIs
-- **Planning**: Add plan_node for complex query decomposition
-- **Reflection**: Add reflect_node for self-critique
-- **Adaptive RAG**: Add routing nodes for dynamic strategy selection
-
-Example - Adding a tool node:
-```python
-def tools_node(state: AgentState) -> dict:
-    """Execute requested tools"""
-    # Tool execution logic
-    return {"tool_results": results}
-
-# Add to graph
-workflow.add_node("tools", tools_node)
-workflow.add_edge("retrieve", "tools")
-workflow.add_edge("tools", "generate")
-```
-
-**When to Use Agent vs Chat Services**:
-
-**Use ChatService (LCEL) when**:
-- Simple RAG queries without conversation context
-- Existing integrations depend on it
-- Don't need checkpointing or graph visualization
-
-**Use GraphChatService (LangGraph) when**:
-- Multi-turn conversations requiring context
-- Need to visualize execution flow
-- Want LangSmith tracing with graph structure
-- Planning to add tools or multi-step reasoning
-- Better performance is desired (5.6% faster)
+**Note**: `ChatService` uses `BookRepositoryManager.paragraphs` directly (via agent tools), not this service.
 
 ---
 
 ## Architecture Notes
 
-**Clean Architecture Pattern**:
-```
-API Layer → Service Layer → Repository Layer → Database
-```
+**Async patterns**: All I/O uses `async def`. Repository calls are synchronous Weaviate I/O (wrapped as needed).
 
-**Services are stateless**: State stored in database via repositories.
+**LangSmith tracing**: `@traceable` on `ChatService.send_message()` + automatic LangGraph tracing.
 
-**Async patterns**: All I/O operations use `async def` for performance.
-
-**LangSmith tracing**: `@traceable` decorator on `send_message()` and automatic LCEL chain tracing.
-
----
+**Context flow**: `LLMConfig` + `BookRepositoryManager` built once in `ChatService.__init__`, passed to agent via `AgentContext` on each invocation.
 
 ## Related Files
 
-- API Layer: `/src/history_book/api/` - REST endpoints
-- Database Layer: `/src/history_book/database/` - Repositories
-- LLM Config: `/src/history_book/llm/` - LLM providers and configuration
-- Evaluations: `/src/history_book/evals/` - Quality measurement
-- Entity Models: `/src/history_book/data_models/entities.py` - Data classes
+- Agent system: `services/agents/CLAUDE.md`
+- API layer: `api/CLAUDE.md`
+- Database layer: `database/CLAUDE.md`
+- LLM config: `llm/CLAUDE.md`
+- Evaluations: `evals/CLAUDE.md`
