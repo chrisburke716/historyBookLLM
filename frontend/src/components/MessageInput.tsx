@@ -8,17 +8,12 @@ import {
   TextField,
   IconButton,
   Paper,
-  FormControlLabel,
-  Switch,
   Tooltip,
 } from '@mui/material';
-import {
-  Send as SendIcon,
-  Search as SearchIcon,
-} from '@mui/icons-material';
+import { Send as SendIcon } from '@mui/icons-material';
 
 interface MessageInputProps {
-  onSendMessage: (message: string, enableRetrieval: boolean) => void;
+  onSendMessage: (message: string) => void;
   disabled?: boolean;
   placeholder?: string;
 }
@@ -29,12 +24,11 @@ const MessageInput: React.FC<MessageInputProps> = ({
   placeholder = "Ask a question about history...",
 }) => {
   const [message, setMessage] = useState('');
-  const [enableRetrieval, setEnableRetrieval] = useState(true);
 
   const handleSend = () => {
     const trimmed = message.trim();
     if (trimmed && !disabled) {
-      onSendMessage(trimmed, enableRetrieval);
+      onSendMessage(trimmed);
       setMessage('');
     }
   };
@@ -47,10 +41,10 @@ const MessageInput: React.FC<MessageInputProps> = ({
   };
 
   return (
-    <Paper 
-      elevation={2} 
-      sx={{ 
-        p: 2, 
+    <Paper
+      elevation={2}
+      sx={{
+        p: 2,
         borderRadius: 2,
         bgcolor: 'background.paper',
       }}
@@ -73,7 +67,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
             },
           }}
         />
-        
+
         <Tooltip title="Send message">
           <IconButton
             onClick={handleSend}
@@ -97,47 +91,19 @@ const MessageInput: React.FC<MessageInputProps> = ({
         </Tooltip>
       </Box>
 
-      {/* RAG Toggle */}
-      <Box sx={{ mt: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <FormControlLabel
-          control={
-            <Switch
-              checked={enableRetrieval}
-              onChange={(e) => setEnableRetrieval(e.target.checked)}
-              color="primary"
-              size="small"
-            />
-          }
-          label={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <SearchIcon fontSize="small" color={enableRetrieval ? 'primary' : 'disabled'} />
-              <span style={{ fontSize: '0.875rem' }}>
-                Search documents
-              </span>
-            </Box>
-          }
-          sx={{ 
-            m: 0,
-            '& .MuiFormControlLabel-label': {
-              color: enableRetrieval ? 'text.primary' : 'text.secondary',
-            },
-          }}
-        />
-        
-        {/* Character count hint */}
-        {message.length > 0 && (
-          <Box sx={{ 
-            color: message.length > 500 ? 'warning.main' : 'text.secondary',
-            fontSize: '0.75rem',
-          }}>
-            {message.length} characters
-          </Box>
-        )}
-      </Box>
-      
-      {/* Hints */}
+      {message.length > 0 && (
+        <Box sx={{
+          mt: 0.5,
+          color: message.length > 500 ? 'warning.main' : 'text.secondary',
+          fontSize: '0.75rem',
+          textAlign: 'right',
+        }}>
+          {message.length} characters
+        </Box>
+      )}
+
       <Box sx={{ mt: 1, fontSize: '0.75rem', color: 'text.secondary' }}>
-        💡 Press Enter to send • Shift+Enter for new line • Toggle search to use RAG
+        💡 Press Enter to send • Shift+Enter for new line
       </Box>
     </Paper>
   );

@@ -7,7 +7,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Container, Box, Alert, Snackbar } from '@mui/material';
 import BookSelector from '../components/BookSelector';
 import ChapterView from '../components/ChapterView';
-import { chatAPI } from '../services/api';
+import { booksAPI } from '../services/api';
 import { ChapterContentResponse } from '../types';
 
 // Maximum number of scroll positions to keep in localStorage
@@ -96,7 +96,7 @@ const BookPage: React.FC = () => {
       setIsLoadingContent(true);
       setError(null);
       try {
-        const content = await chatAPI.getChapterContent(selectedBookIndex, selectedChapterIndex);
+        const content = await booksAPI.getChapterContent(selectedBookIndex, selectedChapterIndex);
         setChapterContent(content);
       } catch (err) {
         setError('Failed to load chapter content');

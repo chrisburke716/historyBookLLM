@@ -1,6 +1,6 @@
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { kgAPI } from '../services/kgAPI';
-import { chatAPI } from '../services/api';
+import { booksAPI } from '../services/api';
 import { NodeColorMetric, NodePairMetric, NodeSizeMetric } from '../types/kg';
 
 export function useGraphListQuery() {
@@ -39,7 +39,7 @@ export function useSubgraphQuery(
 export function useBooksWithChaptersQuery() {
   const booksQuery = useQuery({
     queryKey: ['books'],
-    queryFn: () => chatAPI.getBooks(),
+    queryFn: () => booksAPI.getBooks(),
     staleTime: Infinity,
   });
 
@@ -48,7 +48,7 @@ export function useBooksWithChaptersQuery() {
   const chaptersQueries = useQueries({
     queries: books.map((book) => ({
       queryKey: ['chapters', book.book_index],
-      queryFn: () => chatAPI.getChapters(book.book_index),
+      queryFn: () => booksAPI.getChapters(book.book_index),
       staleTime: Infinity,
     })),
   });
