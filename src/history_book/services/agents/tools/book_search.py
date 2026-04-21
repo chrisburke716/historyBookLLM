@@ -25,7 +25,7 @@ def search_book(
     the book to answer the user's question. Returns relevant passages with
     chapter and page metadata for inline citations.
     """
-    logger.info("Book search: %s", query[:100])
+    logger.info(f"Book search: {query[:100]}")
 
     if not query or len(query.strip()) < 3:
         return Command(
@@ -63,7 +63,7 @@ def search_book(
 
         paragraphs = [p for p, _ in results]
         formatted = format_excerpts_for_llm(paragraphs)
-        logger.info("Book search returned %d passages", len(paragraphs))
+        logger.info(f"Book search returned {len(paragraphs)} passages")
 
         return Command(
             update={
@@ -78,7 +78,7 @@ def search_book(
         )
 
     except Exception as e:
-        logger.error("Book search failed: %s", e, exc_info=True)
+        logger.error(f"Book search failed: {e}", exc_info=True)
         return Command(
             update={
                 "messages": [

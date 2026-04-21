@@ -101,15 +101,13 @@ async def agent_node(
 
     if response.tool_calls and not is_final:
         logger.info(
-            "Agent calling %d tool(s) (iteration %d/%d)",
-            len(response.tool_calls),
-            iterations + 1,
-            ctx.max_tool_iterations,
+            f"Agent calling {len(response.tool_calls)} tool(s) "
+            f"(iteration {iterations + 1}/{ctx.max_tool_iterations})"
         )
         goto = "tools"
     else:
         logger.info(
-            "Agent providing final answer after %d tool iteration(s)", iterations
+            f"Agent providing final answer after {iterations} tool iteration(s)"
         )
         goto = END
 

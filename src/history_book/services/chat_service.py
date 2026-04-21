@@ -1,12 +1,15 @@
-"""Chat service for handling conversational interactions with historical documents."""
+"""Chat service — session orchestration for the RAG agent."""
 
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from langchain.chat_models import init_chat_model
+from langchain_core.messages import AIMessage, HumanMessage
 from langsmith import traceable
 
+from history_book.chains.title_generation_chain import create_title_generation_chain
 from history_book.data_models.entities import (
     ChatMessage,
     ChatSession,
@@ -17,7 +20,9 @@ from history_book.database.config import WeaviateConfig
 from history_book.database.repositories import BookRepositoryManager
 from history_book.llm.config import LLMConfig
 from history_book.llm.exceptions import LLMError
-from history_book.services.rag_service import RagService
+from history_book.llm.utils import format_messages_for_llm
+from history_book.services.agents.context import AgentContext
+from history_book.services.agents.rag_agent import build_rag_agent
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +33,24 @@ CONTEXT_SIMILARITY_CUTOFF = 0.4
 
 @dataclass
 class ChatResult:
-    """Result from chat service containing message and retrieved context."""
+    """Result from a send_message call."""
 
     message: ChatMessage
     retrieved_paragraphs: list[Paragraph]
+    metadata: dict | None = None
 
 
 class ChatService:
-    """Service for chat operations with retrieval-augmented generation."""
+    """
+    Orchestrates chat sessions using the RAG agent.
+
+    Responsible for Weaviate persistence (sessions + messages) and
+    delegating generation to the compiled LangGraph agent.
+
+    Memory strategy:
+    - MemorySaver (in-graph): fast ephemeral state during execution
+    - Weaviate: durable session + message storage across restarts
+    """
 
     def __init__(
         self,
@@ -44,73 +59,33 @@ class ChatService:
         min_context_results: int = CONTEXT_MIN_RESULTS,
         max_context_results: int = CONTEXT_MAX_RESULTS,
         context_similarity_cutoff: float = CONTEXT_SIMILARITY_CUTOFF,
-        retrieval_strategy: str = "similarity_search",
     ):
-        """
-        Initialize the chat service.
-
-        Args:
-            config: Database configuration. If None, loads from environment.
-            llm_config: LLM configuration. If None, loads from environment.
-            min_context_results: Minimum number of context documents to retrieve.
-            max_context_results: Maximum number of context documents to retrieve.
-            context_similarity_cutoff: Similarity threshold for context retrieval.
-            retrieval_strategy: Strategy for document retrieval.
-        """
         if config is None:
             config = WeaviateConfig.from_environment()
-        self.config = config
         self.repository_manager = BookRepositoryManager(config)
 
-        # Initialize LLM configuration
         self.llm_config = llm_config or LLMConfig.from_environment()
         self.llm_config.validate()
-        logger.info(
-            f"Using LLM provider: {self.llm_config.provider}/{self.llm_config.model_name}"
-        )
+        logger.info(f"LLM: {self.llm_config.provider}/{self.llm_config.model_name}")
 
-        # Store retrieval configuration
         self.min_context_results = min_context_results
         self.max_context_results = max_context_results
         self.context_similarity_cutoff = context_similarity_cutoff
-        self.retrieval_strategy = retrieval_strategy
 
-        # Initialize RAG service
-        self.rag_service = RagService(self.llm_config, self.repository_manager)
+        self.agent = build_rag_agent()
+
+    # -------------------------------------------------------------------------
+    # Session management
+    # -------------------------------------------------------------------------
 
     async def create_session(self, title: str | None = None) -> ChatSession:
-        """
-        Create a new chat session.
-
-        Args:
-            title: Optional title for the session
-
-        Returns:
-            Created chat session
-
-        Raises:
-            DatabaseError: If session creation fails
-        """
-        try:
-            session = ChatSession(title=title)
-            session_id = self.repository_manager.chat_sessions.create(session)
-            session.id = session_id
-            logger.info(f"Created chat session {session_id}")
-            return session
-        except Exception as e:
-            logger.error(f"Failed to create chat session: {e}")
-            raise
+        session = ChatSession(title=title)
+        session_id = self.repository_manager.chat_sessions.create(session)
+        session.id = session_id
+        logger.info(f"Created session {session_id}")
+        return session
 
     async def get_session(self, session_id: str) -> ChatSession | None:
-        """
-        Retrieve a chat session by ID.
-
-        Args:
-            session_id: Session ID
-
-        Returns:
-            Chat session or None if not found
-        """
         try:
             return self.repository_manager.chat_sessions.get_by_id(session_id)
         except Exception as e:
@@ -118,308 +93,240 @@ class ChatService:
             return None
 
     async def list_recent_sessions(self, limit: int = 10) -> list[ChatSession]:
-        """
-        List recent chat sessions.
-
-        Args:
-            limit: Maximum number of sessions to return
-
-        Returns:
-            List of recent chat sessions
-        """
         try:
             return self.repository_manager.chat_sessions.find_recent_sessions(limit)
         except Exception as e:
-            logger.error(f"Failed to list recent sessions: {e}")
+            logger.error(f"Failed to list sessions: {e}")
             return []
 
     async def get_session_messages(self, session_id: str) -> list[ChatMessage]:
-        """
-        Get all messages for a session.
-
-        Args:
-            session_id: Session ID
-
-        Returns:
-            List of messages ordered by timestamp
-        """
         try:
             return self.repository_manager.chat_messages.find_by_session(session_id)
         except Exception as e:
-            logger.error(f"Failed to get messages for session {session_id}: {e}")
+            logger.error(f"Failed to get messages for {session_id}: {e}")
             return []
 
+    async def delete_session(self, session_id: str) -> bool:
+        try:
+            messages = await self.get_session_messages(session_id)
+            for msg in messages:
+                if msg.id:
+                    self.repository_manager.chat_messages.delete(msg.id)
+            self.repository_manager.chat_sessions.delete(session_id)
+            logger.info(f"Deleted session {session_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete session {session_id}: {e}")
+            return False
+
+    # -------------------------------------------------------------------------
+    # Messaging
+    # -------------------------------------------------------------------------
+
     @traceable(name="Chat Service: Send Message")
-    async def send_message(
-        self,
-        session_id: str,
-        user_message: str,
-        enable_retrieval: bool = True,
-    ) -> ChatResult:
+    async def send_message(self, session_id: str, user_message: str) -> ChatResult:
         """
-        Send a message and get AI response with optional retrieval.
+        Send a message and return the AI response.
 
-        Args:
-            session_id: Session ID
-            user_message: User's message content
-            enable_retrieval: Whether to enable retrieval augmentation
-
-        Returns:
-            ChatResult containing AI response message and retrieved paragraphs
-
-        Raises:
-            LLMError: If LLM generation fails
-            DatabaseError: If database operations fail
+        Flow:
+        1. Save user message to Weaviate
+        2. Load chat history, convert to LangChain messages
+        3. Invoke agent with history + new message
+        4. Save AI response to Weaviate
+        5. Regenerate session title
         """
         try:
-            # Prepare user message and chat history
-            user_msg, chat_history = await self._prepare_message_and_history(
-                session_id, user_message
+            user_msg, lc_history = await self._prepare_message(session_id, user_message)
+
+            ctx = self._build_context()
+            result = await self.agent.ainvoke(
+                {"messages": lc_history + [HumanMessage(content=user_message)]},
+                context=ctx,
+                config=self._agent_config(session_id),
             )
 
-            # Generate response using RAG service
-            rag_result = await self.rag_service.generate_response(
-                query=user_message,
-                messages=chat_history,
-                min_results=self.min_context_results,
-                max_results=self.max_context_results,
-                similarity_cutoff=self.context_similarity_cutoff,
-                retrieval_strategy=self.retrieval_strategy,
-                enable_retrieval=enable_retrieval,
-            )
+            generation = self._extract_generation(result)
+            retrieved = result.get("retrieved_paragraphs", [])
 
-            # Save AI message and update session
-            ai_message = await self._save_ai_message_and_update_session(
-                session_id, rag_result.response, rag_result.source_paragraphs
-            )
+            ai_msg = await self._save_ai_message(session_id, generation, retrieved)
+            await self._maybe_regenerate_title(session_id)
 
-            # Return ChatResult with both message and retrieved paragraphs
             return ChatResult(
-                message=ai_message, retrieved_paragraphs=rag_result.source_paragraphs
+                message=ai_msg,
+                retrieved_paragraphs=retrieved,
+                metadata={
+                    "num_retrieved_paragraphs": len(retrieved),
+                    "tool_iterations": self._count_tool_iterations(result["messages"]),
+                },
             )
 
         except LLMError:
-            # Re-raise LLM errors as-is
             raise
         except Exception as e:
-            logger.error(f"Failed to send message: {e}")
+            logger.error(f"send_message failed: {e}")
             raise
 
     async def send_message_stream(
-        self,
-        session_id: str,
-        user_message: str,
-        enable_retrieval: bool = True,
+        self, session_id: str, user_message: str
     ) -> tuple[AsyncIterator[str], list[Paragraph]]:
         """
-        Send a message and get streaming AI response with optional retrieval.
+        Send a message with token-by-token streaming.
 
-        Args:
-            session_id: Session ID
-            user_message: User's message content
-            enable_retrieval: Whether to enable retrieval augmentation
-
-        Returns:
-            Tuple of (response_stream, retrieved_paragraphs)
-
-        Note:
-            The final complete response is saved to the database after streaming completes.
+        Returns (token_stream, retrieved_paragraphs). retrieved_paragraphs is
+        populated incrementally as tool nodes complete; it is fully populated
+        once the stream is exhausted.
         """
-        try:
-            # Prepare user message and chat history
-            user_msg, chat_history = await self._prepare_message_and_history(
-                session_id, user_message
-            )
+        user_msg, lc_history = await self._prepare_message(session_id, user_message)
+        ctx = self._build_context()
+        retrieved: list[Paragraph] = []
+        full_response = ""
 
-            # Get streaming response from RAG service
-            stream, context_paragraphs = await self.rag_service.stream_response(
-                query=user_message,
-                messages=chat_history,
-                min_results=self.min_context_results,
-                max_results=self.max_context_results,
-                similarity_cutoff=self.context_similarity_cutoff,
-                retrieval_strategy=self.retrieval_strategy,
-                enable_retrieval=enable_retrieval,
-            )
+        async def _stream():
+            nonlocal full_response
+            async for mode, data in self.agent.astream(
+                {"messages": lc_history + [HumanMessage(content=user_message)]},
+                context=ctx,
+                config=self._agent_config(session_id, streaming=True),
+                stream_mode=["updates", "messages"],
+            ):
+                if mode == "messages":
+                    token_chunk, _meta = data
+                    if token_chunk.content:
+                        full_response += token_chunk.content
+                        yield token_chunk.content
+                elif mode == "updates" and "tools" in data:
+                    tool_paragraphs = data["tools"].get("retrieved_paragraphs", [])
+                    retrieved.extend(tool_paragraphs)
 
-            # Create a wrapper that handles saving after streaming
-            async def stream_and_save():
-                response_chunks = []
-                async for chunk in stream:
-                    response_chunks.append(chunk)
-                    yield chunk
+            await self._save_ai_message(session_id, full_response, retrieved)
+            await self._maybe_regenerate_title(session_id)
 
-                # Save complete AI response after streaming
-                complete_response = "".join(response_chunks)
-                await self._save_ai_message_and_update_session(
-                    session_id, complete_response, context_paragraphs
-                )
+        return _stream(), retrieved
 
-            return stream_and_save(), context_paragraphs
+    # -------------------------------------------------------------------------
+    # Eval support
+    # -------------------------------------------------------------------------
 
-        except Exception as e:
-            logger.error(f"Failed to stream message: {e}")
-            raise
+    def get_eval_metadata(self) -> dict:
+        return {
+            "llm_provider": self.llm_config.provider,
+            "llm_model": self.llm_config.model_name,
+            "llm_temperature": self.llm_config.temperature,
+            "llm_max_tokens": self.llm_config.max_tokens,
+            "max_context_results": self.max_context_results,
+            "context_similarity_cutoff": self.context_similarity_cutoff,
+        }
 
-    async def _prepare_message_and_history(
+    # -------------------------------------------------------------------------
+    # Internal helpers
+    # -------------------------------------------------------------------------
+
+    def _build_context(self) -> AgentContext:
+        return AgentContext(
+            llm_config=self.llm_config,
+            repository_manager=self.repository_manager,
+            tool_max_results=self.max_context_results,
+            tool_min_similarity=self.context_similarity_cutoff,
+        )
+
+    def _agent_config(self, session_id: str, streaming: bool = False) -> dict:
+        tags = ["agent", "langgraph", "rag"]
+        if streaming:
+            tags.append("streaming")
+        return {
+            "configurable": {"thread_id": session_id},
+            "tags": tags,
+        }
+
+    async def _prepare_message(
         self, session_id: str, user_message: str
-    ) -> tuple[ChatMessage, list[ChatMessage]]:
-        """
-        Create user message and get chat history.
-
-        Args:
-            session_id: Session ID
-            user_message: User's message content
-
-        Returns:
-            Tuple of (user_message, chat_history)
-        """
-        # 1. Create and save user message
+    ) -> tuple[ChatMessage, list]:
+        """Save user message and return (saved_msg, lc_history_excluding_new_msg)."""
         user_msg = ChatMessage(
             content=user_message, role=MessageRole.USER, session_id=session_id
         )
         user_msg_id = self.repository_manager.chat_messages.create(user_msg)
         user_msg.id = user_msg_id
-        logger.info(f"Saved user message {user_msg_id} to session {session_id}")
 
-        # 2. Get recent chat history
-        chat_history = await self.get_session_messages(session_id)
+        all_messages = await self.get_session_messages(session_id)
+        history = [m for m in all_messages if m.id != user_msg_id]
+        lc_history = self._to_lc_messages(history)
+        return user_msg, lc_history
 
-        # Include the new user message in history for LLM
-        if user_msg not in chat_history:
-            chat_history.append(user_msg)
+    def _to_lc_messages(self, messages: list[ChatMessage]) -> list:
+        """Convert persisted ChatMessages to LangChain message objects."""
+        formatted = format_messages_for_llm(
+            messages,
+            system_message=None,
+            max_messages=self.llm_config.max_conversation_length,
+        )
+        result = []
+        for msg in formatted:
+            if msg.role == MessageRole.USER:
+                result.append(HumanMessage(content=msg.content))
+            elif msg.role == MessageRole.ASSISTANT:
+                result.append(AIMessage(content=msg.content))
+        return result
 
-        return user_msg, chat_history
+    def _extract_generation(self, result: dict) -> str:
+        """Pull the final AI response text from graph result messages."""
+        for msg in reversed(result["messages"]):
+            if isinstance(msg, AIMessage) and msg.content:
+                return msg.content
+        return ""
 
-    async def _save_ai_message_and_update_session(
-        self, session_id: str, ai_response: str, context_paragraphs: list
+    def _count_tool_iterations(self, messages: list) -> int:
+        return sum(1 for m in messages if isinstance(m, AIMessage) and m.tool_calls)
+
+    async def _save_ai_message(
+        self, session_id: str, content: str, retrieved: list[Paragraph]
     ) -> ChatMessage:
-        """
-        Save AI message and update session timestamp.
-
-        Args:
-            session_id: Session ID
-            ai_response: AI response text
-            context_paragraphs: Retrieved context paragraphs
-
-        Returns:
-            Created AI message
-        """
-        # Create and save AI message
         ai_msg = ChatMessage(
-            content=ai_response,
+            content=content,
             role=MessageRole.ASSISTANT,
             session_id=session_id,
-            retrieved_paragraphs=[p.id for p in context_paragraphs]
-            if context_paragraphs
-            else None,
+            retrieved_paragraphs=[p.id for p in retrieved] if retrieved else None,
         )
         ai_msg_id = self.repository_manager.chat_messages.create(ai_msg)
         ai_msg.id = ai_msg_id
-
-        # Update session timestamp
         await self._update_session_timestamp(session_id)
-
-        logger.info(f"Generated AI response {ai_msg_id} for session {session_id}")
         return ai_msg
 
     async def _update_session_timestamp(self, session_id: str) -> None:
-        """
-        Update the session's updated_at timestamp.
-
-        Args:
-            session_id: Session ID
-        """
         try:
-            session = await self.get_session(session_id)
-            if session:
-                # Update using dictionary format that the repository expects
-                updates = {"updated_at": datetime.now(UTC)}
-                self.repository_manager.chat_sessions.update(session_id, updates)
+            self.repository_manager.chat_sessions.update(
+                session_id, {"updated_at": datetime.now(UTC)}
+            )
         except Exception as e:
             logger.warning(f"Failed to update session timestamp: {e}")
 
-    async def delete_session(self, session_id: str) -> bool:
-        """
-        Delete a chat session and all its messages.
-
-        Args:
-            session_id: Session ID
-
-        Returns:
-            True if deleted successfully, False otherwise
-        """
+    async def _maybe_regenerate_title(self, session_id: str) -> None:
+        messages = await self.get_session_messages(session_id)
+        if len(messages) < 2:
+            return
         try:
-            # Delete all messages first
-            messages = await self.get_session_messages(session_id)
-            for message in messages:
-                if message.id:
-                    self.repository_manager.chat_messages.delete(message.id)
+            model_id = f"{self.llm_config.provider}:{self.llm_config.model_name}"
+            kwargs = {}
+            if self.llm_config.api_key:
+                kwargs["api_key"] = self.llm_config.api_key
+            chat_model = init_chat_model(model_id, temperature=0.3, **kwargs)
+            chain = create_title_generation_chain(chat_model)
 
-            # Delete the session
-            self.repository_manager.chat_sessions.delete(session_id)
-            logger.info(f"Deleted session {session_id} and {len(messages)} messages")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to delete session {session_id}: {e}")
-            return False
-
-    async def search_messages(
-        self, query: str, session_id: str | None = None, limit: int = 10
-    ) -> list[ChatMessage]:
-        """
-        Search for messages by content.
-
-        Args:
-            query: Search query
-            session_id: Optional session to limit search to
-            limit: Maximum number of results
-
-        Returns:
-            List of matching messages
-        """
-        try:
-            return self.repository_manager.chat_messages.search_message_content(
-                query_text=query, session_id=session_id, limit=limit
+            conversation = "\n\n".join(
+                f"{'User' if m.role == MessageRole.USER else 'Assistant'}: {m.content}"
+                for m in messages[-20:]
             )
+            title = await chain.ainvoke(
+                {"conversation": conversation},
+                config={
+                    "tags": ["title_generation"],
+                    "metadata": {"session_id": session_id},
+                },
+            )
+            self.repository_manager.chat_sessions.update(
+                session_id,
+                {"title": title.strip()[:100], "updated_at": datetime.now(UTC)},
+            )
+            logger.info(f"Title for {session_id}: '{title.strip()[:100]}'")
         except Exception as e:
-            logger.error(f"Failed to search messages: {e}")
-            return []
-
-    def get_eval_metadata(self) -> dict[str, any]:
-        """
-        Extract metadata about the chat service configuration for evaluation tracking.
-
-        Returns:
-            Dictionary containing LLM and RAG configuration settings
-        """
-        metadata = {}
-
-        # LLM Configuration
-        metadata["llm_provider"] = self.llm_config.provider
-        metadata["llm_model"] = self.llm_config.model_name
-        metadata["llm_temperature"] = self.llm_config.temperature
-        metadata["llm_max_tokens"] = self.llm_config.max_tokens
-
-        # Truncate system message for readability
-        system_msg = self.llm_config.system_message
-        metadata["llm_system_message"] = (
-            system_msg[:100] + "..." if len(system_msg) > 100 else system_msg
-        )
-
-        # RAG Configuration
-        metadata["min_context_results"] = self.min_context_results
-        metadata["max_context_results"] = self.max_context_results
-        metadata["context_similarity_cutoff"] = self.context_similarity_cutoff
-        metadata["retrieval_strategy"] = self.retrieval_strategy
-
-        return metadata
-
-    def close(self) -> None:
-        """Close all repository connections."""
-        try:
-            self.repository_manager.close_all()
-            logger.info("Chat service closed successfully")
-        except Exception as e:
-            logger.error(f"Error closing chat service: {e}")
+            logger.warning(f"Title generation failed for {session_id}: {e}")
