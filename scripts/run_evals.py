@@ -12,18 +12,12 @@ from history_book.evals import (
     get_function_evaluators,
     get_prompt_evaluators,
 )
-from history_book.services import ChatService, GraphChatService
+from history_book.services import ChatService
 
 
 async def main():
     # Parse CLI arguments
     parser = argparse.ArgumentParser(description="Run evaluations on RAG system")
-    parser.add_argument(
-        "--mode",
-        choices=["agent", "legacy"],
-        default="agent",
-        help="Which system to evaluate: 'agent' (LangGraph) or 'legacy' (LCEL)",
-    )
     parser.add_argument(
         "--subset",
         action="store_true",
@@ -106,20 +100,14 @@ async def main():
         dataset_mode = "subset (3 queries, default)"
 
     # Set up description
-    system_type = "LangGraph agent" if args.mode == "agent" else "Legacy RAG (LCEL)"
-    eval_run_description = f"{system_type} with book search prompt - {dataset_mode}"
+    eval_run_description = f"RAG agent with book search prompt - {dataset_mode}"
 
     print(f"Running evaluation: {eval_run_description}")
-    print(f"Mode: {args.mode}")
     print(f"Dataset: {dataset_mode}")
 
     ls_client = Client()
 
-    # Choose service based on mode
-    if args.mode == "agent":
-        chat_service = GraphChatService()
-    else:
-        chat_service = ChatService()
+    chat_service = ChatService()
 
     async def target_wrapper(inputs):
         session = await chat_service.create_session()
@@ -185,7 +173,6 @@ async def main():
     # Add evaluator metadata
     metadata["evaluator_llm_model"] = llm.model_name
     metadata["evaluator_llm_temperature"] = llm.temperature
-    metadata["eval_mode"] = args.mode
     metadata["eval_dataset_mode"] = "subset" if args.subset else "full"
 
     print(f"Evaluation metadata: {metadata}")
@@ -200,7 +187,6 @@ async def main():
     )
 
     print("\n✅ Evaluation complete!")
-    print(f"Mode: {args.mode}")
     print(f"Dataset: {dataset_mode}")
     print("View results in LangSmith")
 
