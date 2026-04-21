@@ -3,9 +3,9 @@
 import logging
 from typing import Annotated
 
-from langchain.tools import ToolRuntime
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool
+from langgraph.prebuilt import ToolRuntime
 from langgraph.types import Command
 
 from history_book.services.agents.context import AgentContext
