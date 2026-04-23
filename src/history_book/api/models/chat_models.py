@@ -1,6 +1,7 @@
 """Pydantic models for the Chat API."""
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -20,7 +21,7 @@ class MessageResponse(BaseModel):
     timestamp: datetime
     session_id: str
     citations: list[str] | None = None
-    metadata: dict = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class SessionResponse(BaseModel):

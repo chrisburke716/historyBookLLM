@@ -4,13 +4,17 @@ import logging
 from typing import Literal
 
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
+from history_book.llm.config import LLMConfig
 from history_book.llm.exceptions import LLMError
 from history_book.services.agents.context import AgentContext
 from history_book.services.agents.prompts import (
@@ -23,7 +27,7 @@ from history_book.services.agents.tools import TOOLS
 logger = logging.getLogger(__name__)
 
 
-def _build_llm(llm_config):
+def _build_llm(llm_config: LLMConfig) -> BaseChatModel:
     """Construct a chat model from LLMConfig using init_chat_model."""
     model_id = f"{llm_config.provider}:{llm_config.model_name}"
     kwargs = dict(temperature=llm_config.temperature)
@@ -37,12 +41,12 @@ def _build_llm(llm_config):
     return init_chat_model(model_id, **kwargs)
 
 
-def _count_tool_iterations(messages: list) -> int:
+def _count_tool_iterations(messages: list[BaseMessage]) -> int:
     """Count how many times the LLM has called tools so far in this turn."""
     return sum(1 for m in messages if isinstance(m, AIMessage) and m.tool_calls)
 
 
-def _previous_queries(messages: list) -> list[str]:
+def _previous_queries(messages: list[BaseMessage]) -> list[str]:
     """Extract search queries from previous tool calls to avoid repeats."""
     queries = []
     for msg in messages:
@@ -58,7 +62,7 @@ def _previous_queries(messages: list) -> list[str]:
     return queries
 
 
-def _build_system_message(messages: list, is_final: bool) -> SystemMessage:
+def _build_system_message(messages: list[BaseMessage], is_final: bool) -> SystemMessage:
     content = AGENT_SYSTEM_PROMPT
     prev = _previous_queries(messages)
     if prev:
@@ -114,7 +118,9 @@ async def agent_node(
     return Command(update={"messages": [response]}, goto=goto)
 
 
-def build_rag_agent(checkpointer=None):
+def build_rag_agent(
+    checkpointer: BaseCheckpointSaver | None = None,
+) -> CompiledStateGraph:
     """
     Compile and return the RAG agent graph.
 

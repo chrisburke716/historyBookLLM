@@ -1,6 +1,8 @@
 """Chat API routes."""
 
 import logging
+from collections.abc import AsyncIterator
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -39,7 +41,7 @@ def _session_response(session: ChatSession) -> SessionResponse:
 def _message_response(
     message: ChatMessage,
     retrieved_paragraphs: list[Paragraph] | None = None,
-    metadata: dict | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> MessageResponse:
     citations = None
     if retrieved_paragraphs:
@@ -68,7 +70,7 @@ def _message_response(
 async def create_session(
     request: SessionCreateRequest,
     service: ChatService = Depends(get_chat_service),
-):
+) -> SessionResponse:
     try:
         session = await service.create_session(request.title)
         return _session_response(session)
@@ -81,7 +83,7 @@ async def create_session(
 async def list_sessions(
     limit: int = 10,
     service: ChatService = Depends(get_chat_service),
-):
+) -> SessionListResponse:
     try:
         sessions = await service.list_recent_sessions(limit)
         return SessionListResponse(sessions=[_session_response(s) for s in sessions])
@@ -96,7 +98,7 @@ async def list_sessions(
 async def delete_session(
     session_id: str,
     service: ChatService = Depends(get_chat_service),
-):
+) -> dict[str, str]:
     try:
         success = await service.delete_session(session_id)
         if not success:
@@ -113,7 +115,7 @@ async def delete_session(
 async def get_messages(
     session_id: str,
     service: ChatService = Depends(get_chat_service),
-):
+) -> MessageListResponse:
     try:
         messages = await service.get_session_messages(session_id)
         return MessageListResponse(messages=[_message_response(m) for m in messages])
@@ -129,7 +131,7 @@ async def send_message(
     session_id: str,
     request: MessageRequest,
     service: ChatService = Depends(get_chat_service),
-):
+) -> ChatResponse:
     try:
         session = await service.get_session(session_id)
         if not session:
@@ -166,14 +168,14 @@ async def stream_message(
     session_id: str,
     request: MessageRequest,
     service: ChatService = Depends(get_chat_service),
-):
+) -> StreamingResponse:
     """Send a message with token-by-token streaming (Server-Sent Events)."""
     try:
         session = await service.get_session(session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        async def event_generator():
+        async def event_generator() -> AsyncIterator[str]:
             try:
                 stream_gen, _ = await service.send_message_stream(
                     session_id=session_id,
@@ -201,7 +203,7 @@ async def stream_message(
 async def get_graph_visualization(
     session_id: str,
     service: ChatService = Depends(get_chat_service),
-):
+) -> GraphVisualization:
     """Get the agent graph structure as a Mermaid diagram."""
     try:
         session = await service.get_session(session_id)

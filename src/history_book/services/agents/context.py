@@ -1,6 +1,10 @@
 """Runtime context for the RAG agent graph."""
 
 from dataclasses import dataclass, field
+from typing import Any
+
+from history_book.database.repositories import BookRepositoryManager
+from history_book.llm.config import LLMConfig
 
 
 @dataclass
@@ -12,9 +16,9 @@ class AgentContext:
     Not persisted in checkpoints — reconstruct each call from service-level config.
     """
 
-    llm_config: object  # LLMConfig — typed as object to avoid circular import
-    repository_manager: object  # BookRepositoryManager
+    llm_config: LLMConfig
+    repository_manager: BookRepositoryManager
     max_tool_iterations: int = 3
     tool_max_results: int = 40
     tool_min_similarity: float = 0.4
-    extra_tool_kwargs: dict = field(default_factory=dict)
+    extra_tool_kwargs: dict[str, Any] = field(default_factory=dict)

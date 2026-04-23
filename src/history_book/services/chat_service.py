@@ -4,9 +4,10 @@ import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langsmith import traceable
 
 from history_book.chains.title_generation_chain import create_title_generation_chain
@@ -37,7 +38,7 @@ class ChatResult:
 
     message: ChatMessage
     retrieved_paragraphs: list[Paragraph]
-    metadata: dict | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class ChatService:
@@ -207,7 +208,7 @@ class ChatService:
     # Eval support
     # -------------------------------------------------------------------------
 
-    def get_eval_metadata(self) -> dict:
+    def get_eval_metadata(self) -> dict[str, Any]:
         return {
             "llm_provider": self.llm_config.provider,
             "llm_model": self.llm_config.model_name,
@@ -229,7 +230,7 @@ class ChatService:
             tool_min_similarity=self.context_similarity_cutoff,
         )
 
-    def _agent_config(self, session_id: str, streaming: bool = False) -> dict:
+    def _agent_config(self, session_id: str, streaming: bool = False) -> dict[str, Any]:
         tags = ["agent", "langgraph", "rag"]
         if streaming:
             tags.append("streaming")
@@ -240,7 +241,7 @@ class ChatService:
 
     async def _prepare_message(
         self, session_id: str, user_message: str
-    ) -> tuple[ChatMessage, list]:
+    ) -> tuple[ChatMessage, list[BaseMessage]]:
         """Save user message and return (saved_msg, lc_history_excluding_new_msg)."""
         user_msg = ChatMessage(
             content=user_message, role=MessageRole.USER, session_id=session_id
@@ -253,7 +254,7 @@ class ChatService:
         lc_history = self._to_lc_messages(history)
         return user_msg, lc_history
 
-    def _to_lc_messages(self, messages: list[ChatMessage]) -> list:
+    def _to_lc_messages(self, messages: list[ChatMessage]) -> list[BaseMessage]:
         """Convert persisted ChatMessages to LangChain message objects."""
         formatted = format_messages_for_llm(
             messages,
@@ -268,14 +269,14 @@ class ChatService:
                 result.append(AIMessage(content=msg.content))
         return result
 
-    def _extract_generation(self, result: dict) -> str:
+    def _extract_generation(self, result: dict[str, Any]) -> str:
         """Pull the final AI response text from graph result messages."""
         for msg in reversed(result["messages"]):
             if isinstance(msg, AIMessage) and msg.content:
                 return msg.content
         return ""
 
-    def _count_tool_iterations(self, messages: list) -> int:
+    def _count_tool_iterations(self, messages: list[BaseMessage]) -> int:
         return sum(1 for m in messages if isinstance(m, AIMessage) and m.tool_calls)
 
     async def _save_ai_message(
