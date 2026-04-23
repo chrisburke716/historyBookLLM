@@ -235,8 +235,8 @@ class ChatService:
         if streaming:
             tags.append("streaming")
         return {
-            "configurable": {"thread_id": session_id},
             "tags": tags,
+            "metadata": {"session_id": session_id},
         }
 
     async def _prepare_message(
