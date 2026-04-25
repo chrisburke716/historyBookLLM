@@ -21,7 +21,6 @@ from history_book.database.config import WeaviateConfig
 from history_book.database.repositories import BookRepositoryManager
 from history_book.llm.config import LLMConfig
 from history_book.llm.exceptions import LLMError
-from history_book.llm.utils import format_messages_for_llm
 from history_book.services.agents.context import AgentContext
 from history_book.services.agents.rag_agent import build_rag_agent
 
@@ -49,8 +48,8 @@ class ChatService:
     delegating generation to the compiled LangGraph agent.
 
     Memory strategy:
-    - MemorySaver (in-graph): fast ephemeral state during execution
-    - Weaviate: durable session + message storage across restarts
+    - MemorySaver (in-graph): full message history including tool calls/results, lost on restart
+    - Weaviate: session + USER/ASSISTANT message storage for the UI and evals
     """
 
     def __init__(
@@ -131,17 +130,16 @@ class ChatService:
 
         Flow:
         1. Save user message to Weaviate
-        2. Load chat history, convert to LangChain messages
-        3. Invoke agent with history + new message
-        4. Save AI response to Weaviate
-        5. Regenerate session title
+        2. Invoke agent (MemorySaver provides full history including tool messages)
+        3. Save AI response to Weaviate
+        4. Regenerate session title
         """
         try:
-            user_msg, lc_history = await self._prepare_message(session_id, user_message)
+            await self._save_user_message(session_id, user_message)
 
             ctx = self._build_context()
             result = await self.agent.ainvoke(
-                {"messages": lc_history + [HumanMessage(content=user_message)]},
+                {"messages": [HumanMessage(content=user_message)]},
                 context=ctx,
                 config=self._agent_config(session_id),
             )
@@ -177,7 +175,7 @@ class ChatService:
         populated incrementally as tool nodes complete; it is fully populated
         once the stream is exhausted.
         """
-        user_msg, lc_history = await self._prepare_message(session_id, user_message)
+        await self._save_user_message(session_id, user_message)
         ctx = self._build_context()
         retrieved: list[Paragraph] = []
         full_response = ""
@@ -185,7 +183,7 @@ class ChatService:
         async def _stream():
             nonlocal full_response
             async for mode, data in self.agent.astream(
-                {"messages": lc_history + [HumanMessage(content=user_message)]},
+                {"messages": [HumanMessage(content=user_message)]},
                 context=ctx,
                 config=self._agent_config(session_id, streaming=True),
                 stream_mode=["updates", "messages"],
@@ -235,39 +233,20 @@ class ChatService:
         if streaming:
             tags.append("streaming")
         return {
+            "configurable": {"thread_id": session_id},
             "tags": tags,
-            "metadata": {"session_id": session_id},
         }
 
-    async def _prepare_message(
+    async def _save_user_message(
         self, session_id: str, user_message: str
-    ) -> tuple[ChatMessage, list[BaseMessage]]:
-        """Save user message and return (saved_msg, lc_history_excluding_new_msg)."""
+    ) -> ChatMessage:
+        """Persist the user message to Weaviate."""
         user_msg = ChatMessage(
             content=user_message, role=MessageRole.USER, session_id=session_id
         )
         user_msg_id = self.repository_manager.chat_messages.create(user_msg)
         user_msg.id = user_msg_id
-
-        all_messages = await self.get_session_messages(session_id)
-        history = [m for m in all_messages if m.id != user_msg_id]
-        lc_history = self._to_lc_messages(history)
-        return user_msg, lc_history
-
-    def _to_lc_messages(self, messages: list[ChatMessage]) -> list[BaseMessage]:
-        """Convert persisted ChatMessages to LangChain message objects."""
-        formatted = format_messages_for_llm(
-            messages,
-            system_message=None,
-            max_messages=self.llm_config.max_conversation_length,
-        )
-        result = []
-        for msg in formatted:
-            if msg.role == MessageRole.USER:
-                result.append(HumanMessage(content=msg.content))
-            elif msg.role == MessageRole.ASSISTANT:
-                result.append(AIMessage(content=msg.content))
-        return result
+        return user_msg
 
     def _extract_generation(self, result: dict[str, Any]) -> str:
         """Pull the final AI response text from graph result messages."""

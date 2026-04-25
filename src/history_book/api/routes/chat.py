@@ -24,9 +24,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
+_chat_service: ChatService = ChatService()
+
 
 def get_chat_service() -> ChatService:
-    return ChatService()
+    return _chat_service
 
 
 def _session_response(session: ChatSession) -> SessionResponse:

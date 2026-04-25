@@ -6,6 +6,7 @@ from typing import Literal
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
@@ -124,13 +125,13 @@ def build_rag_agent() -> CompiledStateGraph:
         START → agent → tools → agent → ... → END
                       ↘ END (when no tool calls or iteration cap reached)
 
-    No checkpointer — history is passed explicitly from Weaviate on each invocation.
-    MemorySaver would duplicate messages since lc_history already contains the full
-    conversation; Weaviate is the durable store.
+    MemorySaver checkpointer persists the full message list (including tool calls
+    and tool results) across turns within a session. History is lost on restart;
+    Weaviate stores USER/ASSISTANT messages for the UI and evals.
     """
     g = StateGraph(AgentState, context_schema=AgentContext)
     g.add_node("agent", agent_node)
     g.add_node("tools", ToolNode(TOOLS))
     g.add_edge(START, "agent")
     g.add_edge("tools", "agent")
-    return g.compile()
+    return g.compile(checkpointer=MemorySaver())
