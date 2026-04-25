@@ -115,9 +115,13 @@ class ChatResponse(BaseModel):
 
 ## Dependency Injection
 
+`ChatService` is a module-level singleton in `routes/chat.py` — this preserves the `MemorySaver` checkpointer across requests so conversation history survives between turns.
+
 ```python
+_chat_service: ChatService = ChatService()
+
 def get_chat_service() -> ChatService:
-    return ChatService()
+    return _chat_service
 
 @router.post("/sessions/{session_id}/messages")
 async def send_message(
