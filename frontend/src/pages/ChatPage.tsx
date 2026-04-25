@@ -49,14 +49,13 @@ const ChatPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSession, sessions.length, isLoading]);
 
-  const handleSendMessage = useCallback(async (content: string, enableRetrieval: boolean) => {
+  const handleSendMessage = useCallback(async (content: string) => {
     if (!currentSession) {
-      // Create a new session if none exists
       const newSession = await createSession();
       if (!newSession) return;
     }
 
-    await sendMessage(content, enableRetrieval);
+    await sendMessage(content);
   }, [currentSession, createSession, sendMessage]);
 
   const handleNewSession = useCallback(async () => {

@@ -13,7 +13,7 @@ import {
   Alert,
   SelectChangeEvent,
 } from '@mui/material';
-import { chatAPI } from '../services/api';
+import { booksAPI } from '../services/api';
 import { BookResponse, ChapterResponse } from '../types';
 
 interface BookSelectorProps {
@@ -41,7 +41,7 @@ const BookSelector: React.FC<BookSelectorProps> = ({
       setIsLoadingBooks(true);
       setError(null);
       try {
-        const response = await chatAPI.getBooks();
+        const response = await booksAPI.getBooks();
         setBooks(response.books);
       } catch (err) {
         setError('Failed to load books');
@@ -65,7 +65,7 @@ const BookSelector: React.FC<BookSelectorProps> = ({
       setIsLoadingChapters(true);
       setError(null);
       try {
-        const response = await chatAPI.getChapters(selectedBookIndex);
+        const response = await booksAPI.getChapters(selectedBookIndex);
         setChapters(response.chapters);
       } catch (err) {
         setError('Failed to load chapters');

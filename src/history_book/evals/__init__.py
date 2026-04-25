@@ -1,51 +1,31 @@
-"""
-Evaluation framework for the History Book application.
+"""Evaluation framework for the History Book RAG system.
 
-This module provides a standardized way to define, register, and run evaluations
-on the RAG system's performance.
+Each evaluator owns a single prompt + LLM call (or a direct computation).
+`as_langsmith()` wraps an evaluator for use with `langsmith.evaluation`.
 """
 
-from history_book.evals.base import BaseEvaluator, FunctionEvaluator
+from history_book.evals.base import (
+    EvalResult,
+    Evaluator,
+    FunctionEvaluator,
+    LLMEvaluator,
+    PairwiseEvaluator,
+    PairwiseResult,
+)
 from history_book.evals.evaluators import (
-    CoherenceEvaluator,
-    DocumentCountEvaluator,
-    FactualAccuracyEvaluator,
-    HallucinationEvaluator,
-    HelpfulnessEvaluator,
-    IdkAppropriateEvaluator,
-    IdkEvaluator,
-    RelevanceEvaluator,
-)
-from history_book.evals.pairwise_evaluators import (
-    get_all_pairwise_evaluators,
-    get_pairwise_evaluator,
-)
-from history_book.evals.registry import (
-    get_all_evaluators,
-    get_evaluator,
-    get_function_evaluators,
-    get_prompt_evaluators,
-    list_evaluators,
-    register_evaluator,
+    build_function_evaluators,
+    build_llm_evaluators,
+    build_pairwise_evaluators,
 )
 
 __all__ = [
-    "BaseEvaluator",
+    "EvalResult",
+    "Evaluator",
     "FunctionEvaluator",
-    "register_evaluator",
-    "get_evaluator",
-    "list_evaluators",
-    "get_all_evaluators",
-    "get_prompt_evaluators",
-    "get_function_evaluators",
-    "CoherenceEvaluator",
-    "DocumentCountEvaluator",
-    "FactualAccuracyEvaluator",
-    "HallucinationEvaluator",
-    "HelpfulnessEvaluator",
-    "IdkAppropriateEvaluator",
-    "IdkEvaluator",
-    "RelevanceEvaluator",
-    "get_all_pairwise_evaluators",
-    "get_pairwise_evaluator",
+    "LLMEvaluator",
+    "PairwiseEvaluator",
+    "PairwiseResult",
+    "build_function_evaluators",
+    "build_llm_evaluators",
+    "build_pairwise_evaluators",
 ]

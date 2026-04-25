@@ -1,4 +1,4 @@
-# use langsmith 'evaluate' method
+"""Run RAG evaluations via LangSmith."""
 
 import argparse
 import asyncio
@@ -8,22 +8,18 @@ from langsmith import Client
 from langsmith.evaluation import evaluate_comparative
 
 from history_book.evals import (
-    get_all_pairwise_evaluators,
-    get_function_evaluators,
-    get_prompt_evaluators,
+    build_function_evaluators,
+    build_llm_evaluators,
+    build_pairwise_evaluators,
 )
-from history_book.services import ChatService, GraphChatService
+from history_book.services import ChatService
+
+EVAL_LLM_MODEL = "gpt-5-mini-2025-08-07"
+EVAL_LLM_TEMPERATURE = 1.0  # gpt-5 mini doesn't support other values
 
 
-async def main():
-    # Parse CLI arguments
+async def main() -> None:
     parser = argparse.ArgumentParser(description="Run evaluations on RAG system")
-    parser.add_argument(
-        "--mode",
-        choices=["agent", "legacy"],
-        default="agent",
-        help="Which system to evaluate: 'agent' (LangGraph) or 'legacy' (LCEL)",
-    )
     parser.add_argument(
         "--subset",
         action="store_true",
@@ -45,7 +41,6 @@ async def main():
     )
     args = parser.parse_args()
 
-    # Validate arguments
     if args.subset and args.full:
         parser.error("Cannot specify both --subset and --full")
     if args.pairwise and not args.experiments:
@@ -53,155 +48,101 @@ async def main():
     if args.experiments and not args.pairwise:
         parser.error("--experiments can only be used with --pairwise")
 
-    # Handle pairwise evaluation mode
+    ls_client = Client()
+    llm = ChatOpenAI(model=EVAL_LLM_MODEL, temperature=EVAL_LLM_TEMPERATURE)
+
     if args.pairwise:
-        exp1, exp2 = args.experiments
-
-        print("Running pairwise evaluation")
-        print(f"Experiment 1: {exp1}")
-        print(f"Experiment 2: {exp2}")
-
-        ls_client = Client()
-
-        # Create LLM for pairwise evaluations
-        llm = ChatOpenAI(model="gpt-5-mini-2025-08-07", temperature=1.0)
-
-        # Get pairwise evaluators with LLM bound via closure
-        pairwise_evaluators = get_all_pairwise_evaluators(llm=llm)
-        evaluator_names = [e.evaluator_name for e in pairwise_evaluators]
-
-        print(f"Pairwise evaluators: {evaluator_names}")
-
-        description = f"Pairwise comparison: {exp1} vs {exp2}"
-        metadata = {
-            "comparison_type": "pairwise",
-            "experiment_1": exp1,
-            "experiment_2": exp2,
-            "evaluator_count": len(pairwise_evaluators),
-        }
-
-        _results = evaluate_comparative(
-            (exp1, exp2),  # positional-only argument
-            evaluators=pairwise_evaluators,
-            description=description,
-            metadata=metadata,
-            max_concurrency=5,
-            client=ls_client,
-        )
-
-        print("\n✅ Pairwise evaluation complete!")
-        print(f"Compared: {exp1} vs {exp2}")
-        print("View results in LangSmith")
-
+        await _run_pairwise(ls_client, llm, args.experiments)
         return
 
-    # Determine dataset mode
-    if args.subset:
-        dataset_mode = "subset (3 queries)"
-    elif args.full:
-        dataset_mode = "full (100 queries)"
-    else:
-        # Default to subset for safety
-        args.subset = True
-        dataset_mode = "subset (3 queries, default)"
+    await _run_single(ls_client, llm, subset=args.subset or not args.full)
 
-    # Set up description
-    system_type = "LangGraph agent" if args.mode == "agent" else "Legacy RAG (LCEL)"
-    eval_run_description = f"{system_type} with book search prompt - {dataset_mode}"
 
-    print(f"Running evaluation: {eval_run_description}")
-    print(f"Mode: {args.mode}")
-    print(f"Dataset: {dataset_mode}")
+async def _run_single(ls_client: Client, llm: ChatOpenAI, subset: bool) -> None:
+    dataset_mode = "subset (3 queries)" if subset else "full (100 queries)"
+    description = f"RAG agent with book search prompt - {dataset_mode}"
 
-    ls_client = Client()
+    print(f"Running evaluation: {description}")
 
-    # Choose service based on mode
-    if args.mode == "agent":
-        chat_service = GraphChatService()
-    else:
-        chat_service = ChatService()
+    chat_service = ChatService()
 
-    async def target_wrapper(inputs):
+    async def target_wrapper(inputs: dict) -> dict:
         session = await chat_service.create_session()
-        session_id = session.id
-        user_message = inputs["question"]
         result = await chat_service.send_message(
-            session_id=session_id, user_message=user_message
+            session_id=session.id, user_message=inputs["question"]
         )
-
-        # Return both the message content and retrieved context for evaluation
-        # Include metadata that the AI had access to during generation
         return {
             "content": result.message.content,
             "retrieved_context": [
-                f"[Book {para.book_index}, Chapter {para.chapter_index}, Page {para.page}]\n{para.text}"
-                for para in result.retrieved_paragraphs
+                f"[Book {p.book_index}, Chapter {p.chapter_index}, Page {p.page}]\n{p.text}"
+                for p in result.retrieved_paragraphs
             ],
         }
 
     dataset_name = "History Book Eval Queries"
-
-    # Create LLM for evaluations
-    llm = ChatOpenAI(
-        model="gpt-5-mini-2025-08-07", temperature=1.0
-    )  # gpt-5 models don't support temp != 1.0
-
-    # Determine dataset to use
-    if args.subset:
-        # Get subset of dataset with metadata source = user (3 queries for quick testing)
-        data_subset = ls_client.list_examples(
+    if subset:
+        examples = ls_client.list_examples(
             dataset_name=dataset_name, metadata={"source": "user"}
         )
-        data = list(data_subset)[:3]
+        data = list(examples)[:3]
         print(f"Using {len(data)} queries from subset")
     else:
-        # Use full dataset
         data = dataset_name
         print("Using full dataset")
 
-    # Create evaluators using the registry
-    prompt_evaluators = get_prompt_evaluators(llm=llm)
-    function_evaluators = get_function_evaluators()
+    llm_evals = build_llm_evaluators(llm)
+    fn_evals = build_function_evaluators()
+    all_evals = [e.as_langsmith() for e in llm_evals + fn_evals]
 
-    # Create LangSmith evaluators
-    prompt_evals = [
-        evaluator.create_langchain_evaluator() for evaluator in prompt_evaluators
-    ]
-    function_evals = [
-        evaluator.create_langsmith_evaluator() for evaluator in function_evaluators
-    ]
+    print(f"Running evaluations with: {[e.name for e in llm_evals + fn_evals]}")
 
-    # Combine all evaluators
-    all_evals = prompt_evals + function_evals
-
-    all_evaluator_names = [e.name for e in prompt_evaluators] + [
-        e.name for e in function_evaluators
-    ]
-    print(f"Running evaluations with: {all_evaluator_names}")
-
-    # Extract metadata for evaluation tracking
-    metadata = chat_service.get_eval_metadata()
-
-    # Add evaluator metadata
-    metadata["evaluator_llm_model"] = llm.model_name
-    metadata["evaluator_llm_temperature"] = llm.temperature
-    metadata["eval_mode"] = args.mode
-    metadata["eval_dataset_mode"] = "subset" if args.subset else "full"
-
+    metadata = chat_service.get_eval_metadata() | {
+        "evaluator_llm_model": llm.model_name,
+        "evaluator_llm_temperature": llm.temperature,
+        "eval_dataset_mode": "subset" if subset else "full",
+    }
     print(f"Evaluation metadata: {metadata}")
 
-    _eval = await ls_client.aevaluate(
+    await ls_client.aevaluate(
         target_wrapper,
         data=data,
         evaluators=all_evals,
-        description=eval_run_description,
+        description=description,
         metadata=metadata,
         max_concurrency=5,
     )
 
     print("\n✅ Evaluation complete!")
-    print(f"Mode: {args.mode}")
     print(f"Dataset: {dataset_mode}")
+    print("View results in LangSmith")
+
+
+async def _run_pairwise(
+    ls_client: Client, llm: ChatOpenAI, experiments: list[str]
+) -> None:
+    exp1, exp2 = experiments
+    print(f"Running pairwise evaluation: {exp1} vs {exp2}")
+
+    pairwise_evals = build_pairwise_evaluators(llm)
+    wrapped = [e.as_langsmith() for e in pairwise_evals]
+
+    print(f"Pairwise evaluators: {[e.name for e in pairwise_evals]}")
+
+    evaluate_comparative(
+        (exp1, exp2),
+        evaluators=wrapped,
+        description=f"Pairwise comparison: {exp1} vs {exp2}",
+        metadata={
+            "comparison_type": "pairwise",
+            "experiment_1": exp1,
+            "experiment_2": exp2,
+            "evaluator_count": len(pairwise_evals),
+        },
+        max_concurrency=5,
+        client=ls_client,
+    )
+
+    print(f"\n✅ Pairwise evaluation complete: {exp1} vs {exp2}")
     print("View results in LangSmith")
 
 
