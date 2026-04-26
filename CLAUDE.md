@@ -49,12 +49,9 @@ This is a full-stack RAG-powered chat application with a Python FastAPI backend 
 ### Backend Architecture (Clean Architecture Pattern)
 
 **Service Layer** (`src/history_book/services/`):
+- `ChatService`: Session management + LangGraph agent orchestration for RAG responses
 - `IngestionService`: Orchestrates PDF processing and data storage
-- `ChatService`: Manages chat sessions and coordinates RAG responses (LCEL-based)
-- `RagService`: Direct LangChain integration with LCEL chains (PromptTemplate | ChatModel | OutputParser)
 - `ParagraphService`: High-level paragraph query operations
-- `GraphRagService`: LangGraph-based RAG with graph execution and checkpointing
-- `GraphChatService`: Session orchestration for graph-based chat with MemorySaver
 - `KGIngestionService`: Knowledge graph extraction + multi-level merge pipeline
 - `KGService`: Read-only KG queries — full graph, N-hop subgraphs (NetworkX ego_graph), entity detail, hybrid search; caches `nx.MultiDiGraph` per graph_name
 
@@ -78,15 +75,10 @@ This is a full-stack RAG-powered chat application with a Python FastAPI backend 
 PDF Input → Text Processing → Entity Creation → Repository Storage → Vector Indexing
 ```
 
-**Chat Pipeline** (LCEL):
+**Chat Pipeline** (LangGraph):
 ```
-User Message → ChatService → RagService → [Retrieval → LCEL Chain → LLM] → AI Response
-```
-
-**Agent Pipeline** (LangGraph):
-```
-User Message → GraphChatService → GraphRagService → [Graph: retrieve_node → generate_node] → AI Response
-                                                     ↓ (MemorySaver checkpointing)
+User Message → ChatService → agent.ainvoke → [agent_node ↔ tools_node loop] → AI Response
+                                               ↓ MemorySaver checkpointing
 ```
 
 **KG Pipeline**:
@@ -96,45 +88,36 @@ Chapter paragraphs → LLM extraction → Rule merge (name/alias, LLM-filtered)
                    → Chapter KGGraph → Cross-chapter merge → Book KGGraph → Cross-book merge → Volume KGGraph
 ```
 
-### Agent API (LangGraph-based)
+### Chat API (LangGraph-based)
 
-The `/api/agent/*` endpoints provide LangGraph-based chat with enhanced capabilities:
+The `/api/chat/*` endpoints provide RAG chat with LangGraph tooling:
 
 **Key Features**:
 - **Auto-generated Titles**: Sessions get descriptive titles based on conversation content
 - **Checkpointing**: Maintains conversation context across messages using LangGraph MemorySaver
-- **Graph Visualization**: View execution flow via Mermaid diagrams
+- **Graph Visualization**: View agent execution flow via Mermaid diagrams
 - **LangSmith Tracing**: Full observability of graph execution, timing, and state transitions
-- **Better Performance**: 5.6% faster than LCEL implementation (8.97s vs 9.50s average)
-- **Extensibility**: Easy to add tools, planning, reflection, and multi-step reasoning
+- **Extensible**: Easy to add tools (KG search, paragraph lookup) via `ToolRuntime[AgentContext]`
 
 **Endpoints**:
-- `POST /api/agent/sessions` - Create new agent session
-- `GET /api/agent/sessions` - List recent sessions
-- `POST /api/agent/sessions/{id}/messages` - Send message (non-streaming)
-- `GET /api/agent/sessions/{id}/messages` - Get conversation history
-- `GET /api/agent/sessions/{id}/graph` - Get graph visualization (Mermaid)
-- `DELETE /api/agent/sessions/{id}` - Delete session
+- `POST /api/chat/sessions` - Create session
+- `GET /api/chat/sessions` - List recent sessions
+- `POST /api/chat/sessions/{id}/messages` - Send message (non-streaming)
+- `POST /api/chat/sessions/{id}/stream` - Send message (token streaming)
+- `GET /api/chat/sessions/{id}/messages` - Get conversation history
+- `GET /api/chat/sessions/{id}/graph` - Get graph visualization (Mermaid)
+- `DELETE /api/chat/sessions/{id}` - Delete session
 
 **Quick Start**:
 ```bash
-# Create session
-SESSION_ID=$(curl -s -X POST http://localhost:8000/api/agent/sessions \
+SESSION_ID=$(curl -s -X POST http://localhost:8000/api/chat/sessions \
   -H "Content-Type: application/json" \
   -d '{"title": "History Chat"}' | jq -r '.id')
 
-# Send message
-curl -X POST http://localhost:8000/api/agent/sessions/$SESSION_ID/messages \
+curl -X POST http://localhost:8000/api/chat/sessions/$SESSION_ID/messages \
   -H "Content-Type: application/json" \
   -d '{"content": "What is the history of Ancient Rome?"}'
-
-# Get graph visualization
-curl http://localhost:8000/api/agent/sessions/$SESSION_ID/graph
 ```
-
-**When to Use Agent vs Chat API**:
-- Use **Agent API** for multi-turn conversations, graph visualization, or when planning to add tools
-- Use **Chat API** for simple one-off queries or existing integrations
 
 See `/src/history_book/services/agents/CLAUDE.md` for implementation details.
 
@@ -161,9 +144,9 @@ See `/src/history_book/services/agents/CLAUDE.md` for implementation details.
 
 For in-depth information about specific subsystems, see:
 
-- **[Services](/src/history_book/services/CLAUDE.md)** - Business logic layer (ChatService, RagService, IngestionService, KGIngestionService)
+- **[Services](/src/history_book/services/CLAUDE.md)** - Business logic layer (ChatService, IngestionService, KGIngestionService)
 - **[Chains](/src/history_book/chains/CLAUDE.md)** - LLM chain factories for KG extraction, merge, temporal parsing
-- **[Agent System](/src/history_book/services/agents/CLAUDE.md)** - LangGraph-based agent implementation (GraphRagService, GraphChatService)
+- **[Agent System](/src/history_book/services/agents/CLAUDE.md)** - LangGraph agent: graph, state, context, tools
 - **[Database](/src/history_book/database/CLAUDE.md)** - Repository pattern, Weaviate integration, KG repositories
 - **[API](/src/history_book/api/CLAUDE.md)** - FastAPI REST endpoints
 - **[LLM Configuration](/src/history_book/llm/CLAUDE.md)** - LLM provider setup (OpenAI, Anthropic)

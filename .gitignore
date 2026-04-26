@@ -7,9 +7,6 @@ __pycache__/
 .env
 *.env
 
-# Poetry
-poetry.lock
-
 # Notebooks
 .ipynb_checkpoints/
 

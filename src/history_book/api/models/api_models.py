@@ -1,61 +1,6 @@
-"""Pydantic models for API requests and responses."""
-
-from datetime import datetime
+"""Pydantic models for the Book API."""
 
 from pydantic import BaseModel
-
-
-class SessionCreateRequest(BaseModel):
-    """Request to create a new chat session."""
-
-    title: str | None = None
-
-
-class MessageRequest(BaseModel):
-    """Request to send a message in a chat session."""
-
-    content: str
-    enable_retrieval: bool = True
-    max_context_paragraphs: int = 5
-
-
-class SessionResponse(BaseModel):
-    """Response containing chat session information."""
-
-    id: str
-    title: str | None
-    created_at: datetime
-    updated_at: datetime
-
-
-class MessageResponse(BaseModel):
-    """Response containing a chat message."""
-
-    id: str
-    content: str
-    role: str  # "user" or "assistant"
-    timestamp: datetime
-    session_id: str
-    citations: list[str] | None = None  # Simple page references like "Page 123"
-
-
-class SessionListResponse(BaseModel):
-    """Response containing a list of recent sessions."""
-
-    sessions: list[SessionResponse]
-
-
-class MessageListResponse(BaseModel):
-    """Response containing a list of messages for a session."""
-
-    messages: list[MessageResponse]
-
-
-class ChatResponse(BaseModel):
-    """Response after sending a message - includes the AI's reply."""
-
-    message: MessageResponse
-
 
 # Book reading API models
 

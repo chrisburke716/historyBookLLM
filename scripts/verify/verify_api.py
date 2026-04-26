@@ -1,21 +1,9 @@
 """Comprehensive test suite for the History Book Chat API."""
 
-import asyncio
-import os
 import sys
 import time
 
 import requests
-
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
-
-from src.history_book.api.models.api_models import (
-    MessageRequest,
-    SessionCreateRequest,
-)
-from src.history_book.llm import LLMConfig, MockLLMProvider
-from src.history_book.services.chat_service import ChatService
 
 
 class APITester:
@@ -228,75 +216,10 @@ class APITester:
             return False
 
 
-async def test_chat_service_direct():
-    """Test ChatService directly to ensure backend is working."""
-    print("\n🧪 Testing ChatService directly (backend verification)...")
-
-    # Test with Mock LLM to ensure reliability
-    llm_config = LLMConfig()
-    mock_provider = MockLLMProvider(llm_config)
-    chat_service = ChatService(llm_provider=mock_provider)
-
-    try:
-        # Quick test
-        session = await chat_service.create_session("Backend Test Session")
-        response = await chat_service.send_message(
-            session_id=session.id,
-            user_message="Test backend",
-            enable_retrieval=True,
-        )
-
-        print("   ✅ Backend ChatService working")
-        print(f"   📝 Mock response length: {len(response.content)} chars")
-        print(f"   📚 Retrieved {len(response.retrieved_paragraphs or [])} paragraphs")
-
-        return True
-
-    except Exception as e:
-        print(f"   ❌ Backend ChatService failed: {e}")
-        return False
-    finally:
-        chat_service.close()
-
-
-def test_api_models():
-    """Test that API models can be created and validated."""
-    print("\n🧪 Testing API model validation...")
-
-    try:
-        # Test SessionCreateRequest
-        _session_req = SessionCreateRequest(title="Test Session")
-        print("   ✅ SessionCreateRequest validates correctly")
-
-        # Test MessageRequest
-        _message_req = MessageRequest(
-            content="Test message", enable_retrieval=True, max_context_paragraphs=5
-        )
-        print("   ✅ MessageRequest validates correctly")
-
-        # Test default values
-        message_req_minimal = MessageRequest(content="Minimal test")
-        assert message_req_minimal.enable_retrieval  # Default
-        assert message_req_minimal.max_context_paragraphs == 5  # Default
-        print("   ✅ Default values work correctly")
-
-        return True
-
-    except Exception as e:
-        print(f"   ❌ API model validation failed: {e}")
-        return False
-
-
 def run_full_test_suite():
     """Run the complete test suite."""
     print("🚀 Starting History Book Chat API Test Suite")
     print("=" * 55)
-
-    # Test models first (no server required)
-    models_ok = test_api_models()
-
-    # Test backend service directly
-    backend_ok = asyncio.run(test_chat_service_direct())
 
     # Test API endpoints (requires server)
     print("\n🌐 Testing API endpoints (requires server at http://localhost:8000)...")
@@ -330,9 +253,6 @@ def run_full_test_suite():
     print("📊 TEST RESULTS SUMMARY")
     print("=" * 55)
 
-    print(f"🧪 API Models:        {'✅ PASS' if models_ok else '❌ FAIL'}")
-    print(f"⚙️  Backend Service:   {'✅ PASS' if backend_ok else '❌ FAIL'}")
-
     if server_available:
         passed_count = sum(api_tests_passed)
         total_count = len(api_tests_passed)
@@ -342,9 +262,7 @@ def run_full_test_suite():
     else:
         print("🌐 API Endpoints:     ⏸️  SKIPPED (server not running)")
 
-    overall_success = (
-        models_ok and backend_ok and (not server_available or all(api_tests_passed))
-    )
+    overall_success = not server_available or all(api_tests_passed)
 
     if overall_success:
         print("\n🎉 ALL TESTS PASSED! API is ready for frontend development.")

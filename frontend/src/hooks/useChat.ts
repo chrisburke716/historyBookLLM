@@ -1,8 +1,5 @@
 /**
  * Custom hook for managing chat state and API interactions.
- *
- * Uses the unified API abstraction which switches between Chat and Agent backends
- * based on the REACT_APP_USE_AGENT_API environment variable.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -107,7 +104,7 @@ export const useChat = () => {
   /**
    * Send a message in the current session
    */
-  const sendMessage = useCallback(async (content: string, enableRetrieval: boolean = true): Promise<boolean> => {
+  const sendMessage = useCallback(async (content: string): Promise<boolean> => {
     if (!state.currentSession) {
       setError('No active session');
       return false;
@@ -117,10 +114,7 @@ export const useChat = () => {
       setLoading(true);
       setError(null);
       
-      const request: MessageRequest = {
-        content,
-        enable_retrieval: enableRetrieval,
-      };
+      const request: MessageRequest = { content };
 
       // Add user message optimistically
       const userMessage: MessageResponse = {
