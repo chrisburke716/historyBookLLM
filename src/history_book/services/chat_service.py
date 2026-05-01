@@ -23,6 +23,7 @@ from history_book.llm.config import LLMConfig
 from history_book.llm.exceptions import LLMError
 from history_book.services.agents.context import AgentContext
 from history_book.services.agents.rag_agent import build_rag_agent
+from history_book.services.kg_service import KGService
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +60,13 @@ class ChatService:
         min_context_results: int = CONTEXT_MIN_RESULTS,
         max_context_results: int = CONTEXT_MAX_RESULTS,
         context_similarity_cutoff: float = CONTEXT_SIMILARITY_CUTOFF,
+        enabled_tools: list[str] | None = None,
     ):
         if config is None:
             config = WeaviateConfig.from_environment()
         self.repository_manager = BookRepositoryManager(config)
+        self.kg_service = KGService(repo_manager=self.repository_manager)
+        self.volume_graph_name = self._resolve_volume_graph_name()
 
         self.llm_config = llm_config or LLMConfig.from_environment()
         self.llm_config.validate()
@@ -71,8 +75,47 @@ class ChatService:
         self.min_context_results = min_context_results
         self.max_context_results = max_context_results
         self.context_similarity_cutoff = context_similarity_cutoff
+        self.enabled_tools = enabled_tools
 
-        self.agent = build_rag_agent()
+        self.agent = build_rag_agent(enabled_tools=enabled_tools)
+
+    def _resolve_volume_graph_name(self) -> str | None:
+        """Find a graph_name to use for KG tools.
+
+        Prefers the volume graph; falls back to the largest book graph; logs a
+        warning if no graph exists.
+        """
+        try:
+            graphs = self.kg_service.list_graphs()
+        except Exception as e:
+            logger.warning(f"Failed to list KG graphs: {e}")
+            return None
+        if not graphs:
+            logger.warning("No KG graphs found — KG tools will be unavailable")
+            return None
+        volume = [g for g in graphs if g.graph_type == "volume"]
+        if volume:
+            chosen = volume[0]
+        else:
+            books = sorted(
+                [g for g in graphs if g.graph_type == "book"],
+                key=lambda g: g.entity_count,
+                reverse=True,
+            )
+            if not books:
+                logger.warning(
+                    "No volume or book graphs found — KG tools will be unavailable"
+                )
+                return None
+            chosen = books[0]
+            logger.warning(
+                f"No volume graph; falling back to largest book graph '{chosen.name}'"
+            )
+        logger.info(
+            f"KG graph for chat tools: {chosen.name} "
+            f"({chosen.entity_count} entities, {chosen.relationship_count} rels)"
+        )
+        return chosen.name
 
     # -------------------------------------------------------------------------
     # Session management
@@ -224,6 +267,8 @@ class ChatService:
         return AgentContext(
             llm_config=self.llm_config,
             repository_manager=self.repository_manager,
+            kg_service=self.kg_service,
+            volume_graph_name=self.volume_graph_name,
             tool_max_results=self.max_context_results,
             tool_min_similarity=self.context_similarity_cutoff,
         )
