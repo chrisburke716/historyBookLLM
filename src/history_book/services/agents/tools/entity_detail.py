@@ -98,8 +98,10 @@ def get_entity_detail(
             )
         header += "):"
         parts.append(header)
+        parts.append("")
         for r in shown:
             parts.append(format_relationship_summary(r))
+            parts.append("")
 
     logger.info(f"get_entity_detail: {detail.name} — {total} rels ({len(shown)} shown)")
     return Command(

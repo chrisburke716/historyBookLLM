@@ -18,24 +18,29 @@ def format_year_range(start_year: int | None, end_year: int | None) -> str:
 
 
 def format_relationship_summary(r: RelationshipSummary) -> str:
-    """Render a 1-hop RelationshipSummary as a single LLM-readable line."""
+    """Render a 1-hop RelationshipSummary as a compact two-line block."""
     arrow = "→" if r.direction == "outgoing" else "←"
-    desc = f" — {r.description}" if r.description else ""
-    cite = f" (Ch {r.chapter_index}, p. ?)" if r.chapter_index is not None else ""
-    return (
-        f"{arrow} [{r.relation_type}] {r.other_entity_name} "
-        f"(id={r.other_entity_id}){desc}{cite}"
+    head = f"{arrow} [{r.relation_type}] {r.other_entity_name}"
+    meta = (
+        f"id={r.other_entity_id} · Bk {r.book_index}, Ch {r.chapter_index}, p. {r.page}"
     )
+    if r.description:
+        return f"{head}\n    {r.description}\n    ({meta})"
+    return f"{head}\n    ({meta})"
 
 
 def format_relationship(r: KGRelationship) -> str:
-    """Render a full KGRelationship row (used by neighborhood + period queries)."""
+    """Render a full KGRelationship row as a compact two-line block."""
     years = format_year_range(r.start_year, r.end_year)
     years_part = f"{years} " if years else ""
-    desc = f" — {r.description}" if r.description else ""
-    cite = f" (Ch {r.chapter_index}, p. {r.page})"
-    return (
-        f"{years_part}{r.source_entity_name} (id={r.source_entity_id}) "
-        f"—[{r.relation_type}]→ "
-        f"{r.target_entity_name} (id={r.target_entity_id}){desc}{cite}"
+    head = (
+        f"{years_part}{r.source_entity_name} —[{r.relation_type}]→ "
+        f"{r.target_entity_name}"
     )
+    meta = (
+        f"src={r.source_entity_id} · tgt={r.target_entity_id} · "
+        f"Bk {r.book_index}, Ch {r.chapter_index}, p. {r.page}"
+    )
+    if r.description:
+        return f"{head}\n    {r.description}\n    ({meta})"
+    return f"{head}\n    ({meta})"

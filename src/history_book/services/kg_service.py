@@ -126,6 +126,7 @@ class KGService:
                     other_entity_occurrence_count=other_counts.get(other_id, 0),
                     book_index=r.book_index,
                     chapter_index=r.chapter_index,
+                    page=r.page,
                 )
             )
 

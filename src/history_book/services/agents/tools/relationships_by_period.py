@@ -127,9 +127,10 @@ def query_relationships_by_period(
     if total > len(shown):
         header += ", narrow with entity_types/relation_types"
     header += "):"
-    lines = [header]
+    lines = [header, ""]
     for r in shown:
         lines.append(format_relationship(r))
+        lines.append("")
 
     logger.info(
         f"query_relationships_by_period [{start_year},{end_year}]: "

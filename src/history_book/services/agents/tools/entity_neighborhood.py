@@ -107,7 +107,9 @@ def get_entity_neighborhood(
         marker = " (center)" if n.id == entity_id else ""
         parts.append(f"- id={n.id} | {n.name} [{n.entity_type}]{marker}")
 
+    parts.append("")
     parts.append("Relationships:")
+    parts.append("")
     rel_lines: list[str] = []
     for u, v, k in G.edges(keys=True):
         if u in kept_node_ids and v in kept_node_ids:
@@ -115,7 +117,9 @@ def get_entity_neighborhood(
             if rel is not None:
                 rel_lines.append(format_relationship(rel))
     if rel_lines:
-        parts.extend(rel_lines)
+        for line in rel_lines:
+            parts.append(line)
+            parts.append("")
     else:
         parts.append("(no relationships among kept nodes)")
 

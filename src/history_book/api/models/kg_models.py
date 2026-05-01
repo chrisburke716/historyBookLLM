@@ -39,6 +39,7 @@ class RelationshipSummary(BaseModel):
     other_entity_occurrence_count: int = 0
     book_index: int
     chapter_index: int
+    page: int = 0
 
 
 class EntityDetail(BaseModel):
