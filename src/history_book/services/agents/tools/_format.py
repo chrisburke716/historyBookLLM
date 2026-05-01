@@ -22,7 +22,10 @@ def format_relationship_summary(r: RelationshipSummary) -> str:
     arrow = "→" if r.direction == "outgoing" else "←"
     desc = f" — {r.description}" if r.description else ""
     cite = f" (Ch {r.chapter_index}, p. ?)" if r.chapter_index is not None else ""
-    return f"{arrow} [{r.relation_type}] {r.other_entity_name}{desc}{cite}"
+    return (
+        f"{arrow} [{r.relation_type}] {r.other_entity_name} "
+        f"(id={r.other_entity_id}){desc}{cite}"
+    )
 
 
 def format_relationship(r: KGRelationship) -> str:
@@ -32,6 +35,7 @@ def format_relationship(r: KGRelationship) -> str:
     desc = f" — {r.description}" if r.description else ""
     cite = f" (Ch {r.chapter_index}, p. {r.page})"
     return (
-        f"{years_part}{r.source_entity_name} —[{r.relation_type}]→ "
-        f"{r.target_entity_name}{desc}{cite}"
+        f"{years_part}{r.source_entity_name} (id={r.source_entity_id}) "
+        f"—[{r.relation_type}]→ "
+        f"{r.target_entity_name} (id={r.target_entity_id}){desc}{cite}"
     )
