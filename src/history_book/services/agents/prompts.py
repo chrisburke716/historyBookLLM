@@ -48,11 +48,6 @@ CROSS_TOOL_NOTES: list[tuple[set[str], str]] = [
         "- Use query_relationships_by_period for era-scoped questions; follow up "
         "with get_entity_detail on entities that look interesting.",
     ),
-    (
-        {"get_entity_detail", "get_entity_neighborhood"},
-        "- get_entity_detail covers 1-hop relationships; use get_entity_neighborhood "
-        "to explore 2-hop context around a central entity.",
-    ),
 ]
 
 
@@ -73,7 +68,6 @@ AGENT_SYSTEM_PROMPT = build_system_prompt(
         "search_book",
         "search_entities",
         "get_entity_detail",
-        "get_entity_neighborhood",
         "get_paragraphs",
         "query_relationships_by_period",
     }

@@ -4,9 +4,6 @@ from langchain_core.tools import BaseTool
 
 from history_book.services.agents.tools.book_search import search_book
 from history_book.services.agents.tools.entity_detail import get_entity_detail
-from history_book.services.agents.tools.entity_neighborhood import (
-    get_entity_neighborhood,
-)
 from history_book.services.agents.tools.get_paragraphs import get_paragraphs
 from history_book.services.agents.tools.relationships_by_period import (
     query_relationships_by_period,
@@ -17,7 +14,6 @@ TOOL_REGISTRY: dict[str, BaseTool] = {
     "search_book": search_book,
     "search_entities": search_entities,
     "get_entity_detail": get_entity_detail,
-    "get_entity_neighborhood": get_entity_neighborhood,
     "get_paragraphs": get_paragraphs,
     "query_relationships_by_period": query_relationships_by_period,
 }

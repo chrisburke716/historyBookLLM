@@ -2,9 +2,6 @@
 
 from history_book.services.agents.tools.book_search import search_book
 from history_book.services.agents.tools.entity_detail import get_entity_detail
-from history_book.services.agents.tools.entity_neighborhood import (
-    get_entity_neighborhood,
-)
 from history_book.services.agents.tools.get_paragraphs import get_paragraphs
 from history_book.services.agents.tools.registry import (
     TOOL_REGISTRY,
@@ -23,7 +20,6 @@ __all__ = [
     "search_book",
     "search_entities",
     "get_entity_detail",
-    "get_entity_neighborhood",
     "get_paragraphs",
     "query_relationships_by_period",
 ]

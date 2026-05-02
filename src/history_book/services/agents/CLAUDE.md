@@ -22,7 +22,6 @@ START → agent_node → tools_node → agent_node → ... → END
 | `tools/book_search.py` | `search_book` — vector text search |
 | `tools/search_entities.py` | `search_entities` — KG entity hybrid search |
 | `tools/entity_detail.py` | `get_entity_detail` — entity + 1-hop relationships, prominence-sorted |
-| `tools/entity_neighborhood.py` | `get_entity_neighborhood` — N-hop ego subgraph |
 | `tools/get_paragraphs.py` | `get_paragraphs` — batch paragraph lookup by ID |
 | `tools/relationships_by_period.py` | `query_relationships_by_period` — temporal slice |
 
@@ -121,7 +120,7 @@ The expected agent flow for entity-grounded questions:
 
 1. `search_entities("Charlemagne")` → list of candidate entity IDs
 2. `get_entity_detail(<id>)` → descriptions, relationships, `source_paragraph_ids`
-3. (optional) `get_entity_neighborhood(<id>, hops=2)` → cluster context
+3. (optional) chain `get_entity_detail` on top neighbors to widen context
 4. `get_paragraphs([...source_paragraph_ids])` → original passages for citations
 
 For era-scoped questions:
@@ -129,6 +128,30 @@ For era-scoped questions:
   pick interesting entities and follow up with `get_entity_detail`.
 
 All KG tools are pinned to `ctx.volume_graph_name` (resolved once per service).
+
+## Removed: `get_entity_neighborhood` (and future ideas)
+
+An N-hop neighborhood tool was originally built but removed after evaluation.
+Two-hop ego subgraphs grew very fast (337 nodes for Augustus vs. a 30-node cap),
+so the tool truncated ~90% of the graph silently and emitted ~120k-char tool
+messages, which the LLM compressed back into generic narrative prose. Chaining
+`get_entity_detail` on top neighbors covers the same descriptive use cases at a
+fraction of the token cost.
+
+If we revisit graph-structure tooling, the candidate use cases — and what would
+make them genuinely distinct from `get_entity_detail` chaining — are:
+
+- **`find_clusters_around(entity)`** — Louvain communities in the ego graph,
+  returning 3–5 clusters with their characteristic members and a one-line
+  theme each. Answers "what schools/factions/circles does X belong to?"
+- **`find_connection_between(entity_a, entity_b)`** — shortest path(s) plus
+  high-betweenness intermediaries between two entities. Answers "who or what
+  bridges X's world and Y's world?"
+
+Both should return small, interpretable aggregates (a few names + numeric
+stats), not flat lists of entities. The original neighborhood tool's failure
+mode was returning the raw graph and asking the LLM to summarize structure
+from a list — these would compute the structural summary up front.
 
 ## Future: create_agent Migration
 

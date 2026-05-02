@@ -93,8 +93,7 @@ def get_entity_detail(
         header = f"Relationships ({len(shown)} shown"
         if total > len(shown):
             header += (
-                f" of {total}, sorted by prominence — narrow with search_entities or "
-                f"get_entity_neighborhood"
+                f" of {total}, sorted by prominence — increase `limit` to see more"
             )
         header += "):"
         parts.append(header)
