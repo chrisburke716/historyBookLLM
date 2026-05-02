@@ -34,9 +34,10 @@ class AgentContext:
     repository_manager: BookRepositoryManager
     kg_service: KGService
     volume_graph_name: str | None = None     # resolved at ChatService init
-    max_tool_iterations: int = 3
+    max_tool_iterations: int = 6
     tool_max_results: int = 40
     tool_min_similarity: float = 0.4
+    extra_tool_kwargs: dict[str, Any] = field(default_factory=dict)
 ```
 
 `volume_graph_name` is resolved once in `ChatService._resolve_volume_graph_name()`:

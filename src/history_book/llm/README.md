@@ -32,7 +32,7 @@ chat_model = ChatOpenAI(
 
 ```bash
 LLM_PROVIDER=openai                    # openai, anthropic
-LLM_MODEL_NAME=gpt-4o-mini            # model to use
+LLM_MODEL_NAME=gpt-5.4-mini           # model to use
 LLM_API_KEY=your-key                  # provider API key
 LLM_TEMPERATURE=0.7                   # response randomness
 LLM_SYSTEM_MESSAGE="You are..."       # system prompt
@@ -42,13 +42,18 @@ LLM_MAX_CONVERSATION_LENGTH=20        # max messages in history
 
 ## Integration
 
-RagService creates LangChain models and LCEL chains directly:
+The agent graph and the title-generation chain both go through one canonical
+factory:
 
 ```python
-# In RagService.__init__()
-self.chat_model = self._create_chat_model()  # Direct LangChain model
-self.rag_chain = prompt | self.chat_model | StrOutputParser()  # LCEL chain
+from history_book.llm.factory import build_chat_model
+from history_book.llm.config import LLMConfig
+
+llm = build_chat_model(LLMConfig.from_environment())
 ```
+
+`build_chat_model` handles the gpt-5 / o1 / o3 conditional (reasoning_effort +
+Responses API ↔ temperature) so callers don't repeat it.
 
 ## Migration Notes
 

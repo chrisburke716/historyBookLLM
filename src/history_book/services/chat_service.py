@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from langchain.chat_models import init_chat_model
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langsmith import traceable
 
@@ -21,6 +20,7 @@ from history_book.database.config import WeaviateConfig
 from history_book.database.repositories import BookRepositoryManager
 from history_book.llm.config import LLMConfig
 from history_book.llm.exceptions import LLMError
+from history_book.llm.factory import build_chat_model
 from history_book.services.agents.context import AgentContext
 from history_book.services.agents.rag_agent import build_rag_agent
 from history_book.services.kg_service import KGService
@@ -330,11 +330,7 @@ class ChatService:
         if len(messages) < 2:
             return
         try:
-            model_id = f"{self.llm_config.provider}:{self.llm_config.model_name}"
-            kwargs = {}
-            if self.llm_config.api_key:
-                kwargs["api_key"] = self.llm_config.api_key
-            chat_model = init_chat_model(model_id, temperature=0.3, **kwargs)
+            chat_model = build_chat_model(self.llm_config, temperature_override=0.3)
             chain = create_title_generation_chain(chat_model)
 
             conversation = "\n\n".join(

@@ -54,16 +54,22 @@ class ChatResult:
     metadata: dict | None = None
 ```
 
-**Tuning**:
+**Init / tuning**:
 ```python
 ChatService(
     min_context_results=10,
     max_context_results=50,
     context_similarity_cutoff=0.5,
+    enabled_tools=None,                  # None = all tools; pass list for A/B
 )
 ```
 
-**Integration**: Called by `api/routes/chat.py` → invokes agent from `services/agents/` → uses `BookRepositoryManager`.
+`__init__` instantiates one `KGService` (sharing the repo manager so its NX
+cache stays warm across requests) and resolves `volume_graph_name` once via
+`_resolve_volume_graph_name()` (volume → largest book → None with warning).
+Both flow into `AgentContext` on every invocation.
+
+**Integration**: Called by `api/routes/chat.py` → invokes agent from `services/agents/` → uses `BookRepositoryManager` and `KGService`.
 
 ---
 
@@ -94,13 +100,16 @@ See root `CLAUDE.md` for CLI usage and pipeline details.
 
 ### KGService (`kg_service.py`)
 
-Read-only KG queries for the KG Explorer frontend.
+Read-only KG queries. Used by both the KG Explorer frontend and the chat
+agent's KG tools (via `AgentContext.kg_service`).
 
 **Key Methods**:
 - `list_graphs()` → `list[KGGraph]`
 - `get_graph(graph_name)` → all nodes + links; builds & caches `nx.MultiDiGraph`
 - `get_subgraph(entity_id, hops, graph_name)` → N-hop ego subgraph
 - `get_entity(entity_id)` → `EntityDetail` with relationship summaries
+  (each summary includes `other_entity_occurrence_count` and `page` for
+  prominence sorting and citations); also populates `source_paragraph_ids`
 - `search(query, graph_name, entity_types, limit)` → hybrid entity search
 
 ---

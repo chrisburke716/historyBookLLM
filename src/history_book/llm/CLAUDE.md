@@ -23,7 +23,7 @@ Provider-agnostic LLM configuration for OpenAI and Anthropic models. Used by Rag
 class LLMConfig:
     # Provider settings
     provider: str = "openai"  # "openai" or "anthropic"
-    model_name: str = "gpt-4o-mini"
+    model_name: str = "gpt-5.4-mini"
     api_key: str | None = None
     api_base: str | None = None  # Optional custom endpoint
 
@@ -33,6 +33,7 @@ class LLMConfig:
     top_p: float = 1.0  # Nucleus sampling
     frequency_penalty: float = 0.0  # OpenAI only
     presence_penalty: float = 0.0  # OpenAI only
+    reasoning_effort: str | None = "low"  # gpt-5 / o1 / o3: "none" | "low" | "medium" | "high"
 
     # Chat settings
     system_message: str = "You are a helpful AI assistant..."
@@ -61,14 +62,15 @@ config = LLMConfig.from_environment(provider="anthropic")
 ```bash
 # Provider and model
 LLM_PROVIDER=openai                    # openai, anthropic
-LLM_MODEL_NAME=gpt-4o-mini            # Model to use
+LLM_MODEL_NAME=gpt-5.4-mini           # Model to use
 LLM_API_KEY=sk-...                    # API key (or OPENAI_API_KEY)
 LLM_API_BASE=https://...              # Optional custom endpoint
 
 # Generation parameters
-LLM_TEMPERATURE=0.7                   # 0.0-2.0
+LLM_TEMPERATURE=0.7                   # 0.0-2.0 (ignored when LLM_REASONING_EFFORT is set)
 LLM_MAX_TOKENS=1000                   # Optional limit
 LLM_TOP_P=1.0                         # 0.0-1.0
+LLM_REASONING_EFFORT=low              # gpt-5 / o1 / o3 only: none | low | medium | high
 
 # Chat settings
 LLM_SYSTEM_MESSAGE="You are..."       # System prompt
@@ -81,7 +83,7 @@ LLM_MAX_CONVERSATION_LENGTH=20        # Max messages
 **OpenAI**:
 ```bash
 export LLM_PROVIDER=openai
-export LLM_MODEL_NAME=gpt-4o-mini  # or gpt-4, gpt-3.5-turbo
+export LLM_MODEL_NAME=gpt-5.4-mini  # or gpt-4o, gpt-4o-mini, etc.
 export LLM_API_KEY=sk-...
 ```
 
@@ -177,53 +179,38 @@ class LLMResponseError(LLMError):             # Malformed response
 from history_book.llm.exceptions import LLMConnectionError
 
 try:
-    model = create_chat_model()
+    model = build_chat_model(LLMConfig.from_environment())
 except LLMConnectionError as e:
     logger.error(f"Failed to connect: {e}")
 ```
 
-## Integration with RagService
+## Factory: `build_chat_model`
 
-**File**: `/src/history_book/services/rag_service.py`
-
-### Creating LangChain Models
+**File**: `factory.py`
 
 ```python
-# RagService.__init__()
-self.config = llm_config or LLMConfig.from_environment()
-self.chat_model = self._create_chat_model()
-
-# RagService._create_chat_model()
-if self.config.provider == "openai":
-    from langchain_openai import ChatOpenAI
-    return ChatOpenAI(
-        model=self.config.model_name,
-        api_key=self.config.api_key,
-        temperature=self.config.temperature,
-        max_tokens=self.config.max_tokens,
-        # ... other params from config
-    )
-elif self.config.provider == "anthropic":
-    from langchain_anthropic import ChatAnthropic
-    return ChatAnthropic(
-        model=self.config.model_name,
-        api_key=self.config.api_key,
-        temperature=self.config.temperature,
-        # ... other params from config
-    )
+def build_chat_model(
+    config: LLMConfig, *, temperature_override: float | None = None
+) -> BaseChatModel
 ```
 
-### Building LCEL Chains
+Single canonical builder used by the agent graph and the title-generation
+chain. Wraps `langchain.chat_models.init_chat_model("provider:model", ...)` and
+handles the gpt-5 / o1 / o3 reasoning-model conditional:
 
-```python
-# RagService._build_rag_chain()
-rag_prompt = ChatPromptTemplate.from_messages([
-    ("system", self.config.system_message),  # From LLMConfig
-    MessagesPlaceholder("chat_history"),
-    ("human", "{context}\n\nQuestion: {query}"),
-])
-rag_chain = rag_prompt | self.chat_model | StrOutputParser()
-```
+- When `config.reasoning_effort` is set: passes `reasoning_effort=` and
+  `use_responses_api=True` (Chat Completions rejects reasoning + bound tools);
+  omits `temperature` (reasoning models require the default 1.0).
+- Otherwise: passes `temperature_override` if provided, else
+  `config.temperature`.
+
+Always forwards `api_key`, `base_url`, `max_tokens` (when set), and
+`provider_kwargs`.
+
+**Call sites**:
+- `services/agents/rag_agent.py` — agent's per-turn LLM
+- `services/chat_service.py:_maybe_regenerate_title` — title generation
+  (passes `temperature_override=0.3` for the non-reasoning path)
 
 ## Common Tasks
 
@@ -293,7 +280,7 @@ chat_service = ChatService(llm_config=custom_config)
 {
     "llm": {
         "provider": "openai",
-        "model": "gpt-4o-mini",
+        "model": "gpt-5.4-mini",
         "temperature": 0.7,
         "max_tokens": None,
         "system_message": "..."

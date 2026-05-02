@@ -3,8 +3,6 @@
 import logging
 from typing import Literal
 
-from langchain.chat_models import init_chat_model
-from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.memory import MemorySaver
@@ -14,8 +12,8 @@ from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
-from history_book.llm.config import LLMConfig
 from history_book.llm.exceptions import LLMError
+from history_book.llm.factory import build_chat_model
 from history_book.services.agents.context import AgentContext
 from history_book.services.agents.prompts import (
     FINAL_ITERATION_SUFFIX,
@@ -25,20 +23,6 @@ from history_book.services.agents.state import AgentState
 from history_book.services.agents.tools import resolve_tools
 
 logger = logging.getLogger(__name__)
-
-
-def _build_llm(llm_config: LLMConfig) -> BaseChatModel:
-    """Construct a chat model from LLMConfig using init_chat_model."""
-    model_id = f"{llm_config.provider}:{llm_config.model_name}"
-    kwargs = dict(temperature=llm_config.temperature)
-    if llm_config.api_key:
-        kwargs["api_key"] = llm_config.api_key
-    if llm_config.max_tokens:
-        kwargs["max_tokens"] = llm_config.max_tokens
-    if llm_config.api_base:
-        kwargs["base_url"] = llm_config.api_base
-    kwargs.update(llm_config.provider_kwargs)
-    return init_chat_model(model_id, **kwargs)
 
 
 def _count_tool_iterations(messages: list[BaseMessage]) -> int:
@@ -97,7 +81,7 @@ def _make_agent_node(tools: list[BaseTool]):
         iterations = _count_tool_iterations(messages)
         is_final = iterations >= ctx.max_tool_iterations
 
-        llm = _build_llm(ctx.llm_config)
+        llm = build_chat_model(ctx.llm_config)
         llm_to_use = llm if is_final else llm.bind_tools(tools)
 
         system = _build_system_message(messages, is_final, enabled_names)

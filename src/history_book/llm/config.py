@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
-DEFAULT_MODEL_NAME = "gpt-4o-mini"
+DEFAULT_MODEL_NAME = "gpt-5.4-mini"
 
 
 @dataclass
@@ -23,6 +23,9 @@ class LLMConfig:
     top_p: float = 1.0
     frequency_penalty: float = 0.0
     presence_penalty: float = 0.0
+    # Reasoning models (gpt-5 family, o1/o3): "none" | "low" | "medium" | "high".
+    # When set, callers omit `temperature` (reasoning models require default 1.0).
+    reasoning_effort: str | None = "low"
 
     # Chat-specific settings
     system_message: str = """You are a history expert assistant with access to "The Penguin History of the World" by J.M. Roberts and Odd Arne Westad.
@@ -72,6 +75,8 @@ IMPORTANT INSTRUCTIONS:
             config.max_tokens = int(max_tokens)
         if top_p := os.getenv("LLM_TOP_P"):
             config.top_p = float(top_p)
+        if reasoning := os.getenv("LLM_REASONING_EFFORT"):
+            config.reasoning_effort = reasoning or None
 
         # Chat settings
         if system_msg := os.getenv("LLM_SYSTEM_MESSAGE"):
