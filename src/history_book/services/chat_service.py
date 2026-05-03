@@ -208,6 +208,7 @@ class ChatService:
             logger.error(f"send_message failed: {e}")
             raise
 
+    @traceable(name="Chat Service: Send Message (stream)")
     async def send_message_stream(
         self, session_id: str, user_message: str
     ) -> AsyncIterator[dict[str, Any]]:
