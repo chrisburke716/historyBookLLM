@@ -1,6 +1,6 @@
 # CLAUDE.md - LLM Configuration
 
-Provider-agnostic LLM configuration for OpenAI and Anthropic models. Used by RagService for direct LangChain integration.
+Provider-agnostic LLM configuration for OpenAI and Anthropic models. Consumed by `ChatService` and the LangGraph agent via the `build_chat_model` factory.
 
 ## Quick Reference
 
@@ -10,7 +10,7 @@ Provider-agnostic LLM configuration for OpenAI and Anthropic models. Used by Rag
 - `exceptions.py` - Typed LLM error handling
 - `README.md` - Overview and migration notes
 
-**Architecture**: No abstraction layer - RagService creates LangChain models directly using LLMConfig settings.
+**Architecture**: No provider-abstraction layer — `build_chat_model(LLMConfig)` constructs a LangChain chat model via `init_chat_model` and is the single call site for both the agent's per-turn LLM and the title-generation chain.
 
 ## LLMConfig
 
@@ -124,7 +124,7 @@ def format_messages_for_llm(
 - Sorts by timestamp
 - Limits to most recent N messages
 
-**Used by**: RagService to prepare conversation history.
+**Used by**: `ChatService` to prepare conversation history.
 
 ### format_context_for_llm()
 
@@ -229,11 +229,13 @@ PYTHONPATH=src poetry run uvicorn src.history_book.api.main:app --reload
 ### Changing Models
 
 ```bash
-# Use GPT-4 instead of GPT-4o-mini
-export LLM_MODEL_NAME=gpt-4
+# Switch to a non-reasoning OpenAI model
+export LLM_MODEL_NAME=gpt-4o
+export LLM_REASONING_EFFORT=                  # unset to honor LLM_TEMPERATURE
 
-# Use different Claude model
+# Use a Claude model
 export LLM_MODEL_NAME=claude-3-opus-20240229
+export LLM_REASONING_EFFORT=                  # Anthropic ignores this
 ```
 
 ### Adjusting Temperature
@@ -294,9 +296,9 @@ Used by evaluation scripts to track configuration across runs.
 ## Design Philosophy
 
 **No Abstraction Layer**: Previous versions had `LLMInterface`, custom provider classes, etc. Now:
-- RagService creates LangChain models directly
+- `build_chat_model(LLMConfig)` returns a LangChain chat model directly
 - LLMConfig provides settings only
-- Direct LCEL chain usage
+- The agent and chains consume the chat model directly (no service-level wrapper)
 - Simpler, more maintainable
 
 **What Remains**:
@@ -306,7 +308,6 @@ Used by evaluation scripts to track configuration across runs.
 
 ## Related Files
 
-- RagService: `/src/history_book/services/CLAUDE.md` - Uses LLMConfig to create models
-- ChatService: `/src/history_book/services/CLAUDE.md` - Exports config for evals
-- Evaluations: `/src/history_book/evals/CLAUDE.md` - Tracks LLM configuration
-- Entity Models: `/src/history_book/data_models/entities.py` - ChatMessage for history formatting
+- ChatService / agent: `/src/history_book/services/CLAUDE.md` and `/src/history_book/services/agents/CLAUDE.md` — call `build_chat_model(LLMConfig)`
+- Evaluations: `/src/history_book/evals/CLAUDE.md` — tracks LLM configuration via `ChatService.get_eval_metadata()`
+- Entity Models: `/src/history_book/data_models/entities.py` — `ChatMessage` for history formatting

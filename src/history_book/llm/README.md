@@ -2,7 +2,7 @@
 
 ## Overview
 
-Simplified LLM module providing configuration and utilities for direct LangChain integration. No abstraction layers - RagService uses LangChain models directly.
+Simplified LLM module providing configuration and utilities for direct LangChain integration. No provider-abstraction layers — `ChatService` and the LangGraph agent consume LangChain chat models directly via the `build_chat_model` factory.
 
 ## Components
 
@@ -19,13 +19,9 @@ from history_book.llm.config import LLMConfig
 config = LLMConfig.from_environment()
 config.validate()
 
-# Used by RagService to create LangChain models directly
-from langchain_openai import ChatOpenAI
-chat_model = ChatOpenAI(
-    model=config.model_name,
-    api_key=config.api_key,
-    temperature=config.temperature
-)
+# Build a LangChain chat model via the canonical factory
+from history_book.llm.factory import build_chat_model
+chat_model = build_chat_model(config)
 ```
 
 ## Environment Variables
@@ -57,5 +53,5 @@ Responses API ↔ temperature) so callers don't repeat it.
 
 ## Migration Notes
 
-**Removed**: LLMInterface, providers, ResponseChain - all replaced with direct LangChain usage in RagService.
-**Kept**: Configuration, utilities, exceptions - still needed for LLM operations.
+**Removed**: LLMInterface, custom provider classes, ResponseChain — replaced with the single `build_chat_model(LLMConfig)` factory and direct LangChain consumption.
+**Kept**: Configuration, utilities, exceptions — still needed for LLM operations.

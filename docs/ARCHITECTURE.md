@@ -20,15 +20,15 @@ The History Book application follows a clean architecture pattern with clear sep
   - Provides high-level paragraph query methods
   - Abstracts complex repository interactions
 
-- `ChatService`: Orchestrates conversational AI with RAG
+- `ChatService`: Orchestrates conversational AI via a LangGraph agent
   - Manages chat sessions and message history
-  - Coordinates with RagService for AI responses
+  - Invokes the compiled agent (built once at init) on each turn
   - Handles streaming and non-streaming interactions
+  - Builds the LLM via `build_chat_model(LLMConfig)` (handles gpt-5 reasoning + Responses API conditionally)
 
-- `RagService`: Direct LangChain integration for RAG operations
-  - Creates LangChain models directly (ChatOpenAI, ChatAnthropic)
-  - Builds LCEL chains: PromptTemplate | ChatModel | OutputParser
-  - Handles retrieval, context formatting, and response generation
+- `KGService`: Read-only KG queries used by both the KG Explorer frontend and the chat agent's KG tools
+
+- LangGraph agent (`services/agents/`): tool-calling RAG loop with `search_book`, `search_entities`, `get_entity_detail`, `get_paragraphs`, `query_relationships_by_period`
 
 ### 2. Repository Layer (`src/history_book/database/repositories/`)
 
@@ -102,13 +102,13 @@ Search Query → Repository Interface → Weaviate Vector Search → Entity Mapp
 ### Chat Pipeline
 
 ```
-User Message → ChatService → RagService → [Retrieval → LCEL Chain → LLM] → AI Response
+User Message → ChatService → LangGraph agent → [agent_node ↔ tools_node loop] → AI Response
+                                                      ↓ MemorySaver checkpointing
 ```
 
-1. **Message Processing**: ChatService saves user message and retrieves history
-2. **RAG Execution**: RagService retrieves context and formats for LLM
-3. **LCEL Chain**: PromptTemplate | ChatModel | StrOutputParser generates response
-4. **Response Storage**: ChatService saves AI response with retrieved paragraph citations
+1. **Message Processing**: ChatService saves the user message, loads chat history, and invokes the compiled agent
+2. **Agent Loop**: `agent_node` plans tool calls; `tools_node` executes them (book search, KG lookups, paragraph retrieval) and returns results into state; the loop repeats until the LLM emits a final answer or hits `max_tool_iterations`
+3. **Response Storage**: ChatService extracts the final assistant text (`AIMessage.text` — handles both Chat Completions strings and Responses API typed-block lists) and saves it with retrieved-paragraph citations
 
 ## Design Patterns
 
