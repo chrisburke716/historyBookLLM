@@ -210,21 +210,25 @@ class ChatService:
 
     async def send_message_stream(
         self, session_id: str, user_message: str
-    ) -> tuple[AsyncIterator[str], list[Paragraph]]:
+    ) -> AsyncIterator[dict[str, Any]]:
         """
         Send a message with token-by-token streaming.
 
-        Returns (token_stream, retrieved_paragraphs). retrieved_paragraphs is
-        populated incrementally as tool nodes complete; it is fully populated
-        once the stream is exhausted.
+        Yields typed events:
+          - {"type": "token", "text": "..."}              — incremental text
+          - {"type": "reset"}                             — drop buffered text
+            (an intermediate-turn boundary; everything streamed before this
+            was preamble before a tool call, not part of the final answer)
+          - {"type": "done", "message": {...},
+             "session": {...}}                            — terminal event
+          - {"type": "error", "message": "..."}           — on failure
         """
         await self._save_user_message(session_id, user_message)
         ctx = self._build_context()
         retrieved: list[Paragraph] = []
         full_response = ""
 
-        async def _stream():
-            nonlocal full_response
+        try:
             async for mode, data in self.agent.astream(
                 {"messages": [HumanMessage(content=user_message)]},
                 context=ctx,
@@ -238,15 +242,74 @@ class ChatService:
                     chunk_text = token_chunk.text
                     if chunk_text:
                         full_response += chunk_text
-                        yield chunk_text
+                        yield {"type": "token", "text": chunk_text}
                 elif mode == "updates" and "tools" in data:
-                    tool_paragraphs = data["tools"].get("retrieved_paragraphs", [])
-                    retrieved.extend(tool_paragraphs)
+                    # `data["tools"]` is either a dict (single Command) or a
+                    # list of dicts (parallel tool calls — one Command each).
+                    tools_update = data["tools"]
+                    updates = (
+                        tools_update
+                        if isinstance(tools_update, list)
+                        else [tools_update]
+                    )
+                    for upd in updates:
+                        retrieved.extend(upd.get("retrieved_paragraphs", []))
+                    # A tools update means the agent's previous tokens were
+                    # preamble before a tool call, not the final answer.
+                    # Discard them and tell the client to clear its buffer.
+                    full_response = ""
+                    yield {"type": "reset"}
 
-            await self._save_ai_message(session_id, full_response, retrieved)
-            await self._maybe_regenerate_title(session_id)
+            # Save best-effort. If embedding/save fails (e.g., content too
+            # long for the embedding model), keep the response visible to
+            # the user instead of aborting the whole turn.
+            try:
+                ai_msg = await self._save_ai_message(
+                    session_id, full_response, retrieved
+                )
+                ai_msg_id = ai_msg.id
+                ai_msg_ts = ai_msg.timestamp.isoformat()
+            except Exception as save_err:
+                logger.warning(
+                    f"Failed to persist AI message for {session_id}: {save_err}"
+                )
+                ai_msg_id = f"unsaved-{datetime.now(UTC).timestamp()}"
+                ai_msg_ts = datetime.now(UTC).isoformat()
 
-        return _stream(), retrieved
+            try:
+                await self._maybe_regenerate_title(session_id)
+            except Exception as title_err:
+                logger.warning(f"Title regeneration failed: {title_err}")
+
+            session = await self.get_session(session_id)
+
+            citations = [f"Page {p.page}" for p in retrieved] if retrieved else None
+
+            yield {
+                "type": "done",
+                "message": {
+                    "id": ai_msg_id,
+                    "content": full_response,
+                    "role": "assistant",
+                    "timestamp": ai_msg_ts,
+                    "session_id": session_id,
+                    "citations": citations,
+                    "metadata": {
+                        "num_retrieved_paragraphs": len(retrieved),
+                    },
+                },
+                "session": {
+                    "id": session.id,
+                    "title": session.title,
+                    "created_at": session.created_at.isoformat(),
+                    "updated_at": session.updated_at.isoformat(),
+                }
+                if session
+                else None,
+            }
+        except Exception as e:
+            logger.error(f"send_message_stream failed for {session_id}: {e}")
+            yield {"type": "error", "message": str(e)}
 
     # -------------------------------------------------------------------------
     # Eval support

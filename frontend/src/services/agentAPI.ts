@@ -10,12 +10,28 @@ import {
   SessionListResponse,
   MessageListResponse,
   ChatResponse,
+  MessageResponse,
 } from '../types';
+
+export type StreamEvent =
+  | { type: 'token'; text: string }
+  | { type: 'reset' }
+  | { type: 'done'; message: MessageResponse; session: SessionResponse }
+  | { type: 'error'; message: string };
+
+export interface StreamHandlers {
+  onToken: (text: string) => void;
+  onReset: () => void;
+  onDone: (message: MessageResponse, session: SessionResponse) => void;
+  onError: (message: string) => void;
+}
 
 class AgentAPI {
   private api: AxiosInstance;
+  private baseURL: string;
 
   constructor(baseURL: string = 'http://localhost:8000') {
+    this.baseURL = baseURL;
     this.api = axios.create({
       baseURL,
       timeout: 60000,
@@ -50,6 +66,62 @@ class AgentAPI {
   async sendMessage(sessionId: string, request: MessageRequest): Promise<ChatResponse> {
     const response = await this.api.post(`/api/chat/sessions/${sessionId}/messages`, request);
     return response.data;
+  }
+
+  async sendMessageStream(
+    sessionId: string,
+    request: MessageRequest,
+    handlers: StreamHandlers,
+  ): Promise<void> {
+    let response: Response;
+    try {
+      response = await fetch(
+        `${this.baseURL}/api/chat/sessions/${sessionId}/stream`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request),
+        },
+      );
+    } catch (e) {
+      handlers.onError(`Network error: ${e}`);
+      return;
+    }
+
+    if (!response.ok || !response.body) {
+      handlers.onError(`HTTP ${response.status}`);
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSE frames are separated by blank lines (\n\n).
+      const frames = buffer.split('\n\n');
+      buffer = frames.pop() ?? ''; // keep trailing partial frame
+
+      for (const frame of frames) {
+        const trimmed = frame.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        const json = trimmed.slice(6);
+        try {
+          const event: StreamEvent = JSON.parse(json);
+          if (event.type === 'token') handlers.onToken(event.text);
+          else if (event.type === 'reset') handlers.onReset();
+          else if (event.type === 'done')
+            handlers.onDone(event.message, event.session);
+          else if (event.type === 'error') handlers.onError(event.message);
+        } catch (e) {
+          console.error('Failed to parse SSE event:', json, e);
+        }
+      }
+    }
   }
 }
 

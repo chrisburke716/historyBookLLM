@@ -1,5 +1,6 @@
 """Chat API routes."""
 
+import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
@@ -179,15 +180,14 @@ async def stream_message(
 
         async def event_generator() -> AsyncIterator[str]:
             try:
-                stream_gen, _ = await service.send_message_stream(
+                async for event in service.send_message_stream(
                     session_id=session_id,
                     user_message=request.content,
-                )
-                async for chunk in stream_gen:
-                    yield f"data: {chunk}\n\n"
+                ):
+                    yield f"data: {json.dumps(event)}\n\n"
             except Exception as e:
                 logger.error(f"Streaming error for {session_id}: {e}")
-                yield f"data: [ERROR] {e}\n\n"
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
         return StreamingResponse(
             event_generator(),

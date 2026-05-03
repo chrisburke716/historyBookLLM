@@ -9,7 +9,6 @@ import {
   MessageResponse,
   ChatState,
   SessionCreateRequest,
-  MessageRequest,
 } from '../types';
 
 export const useChat = () => {
@@ -102,7 +101,10 @@ export const useChat = () => {
   }, [setLoading, setError]);
 
   /**
-   * Send a message in the current session
+   * Send a message in the current session (token-streaming).
+   *
+   * Adds an optimistic user message and an empty in-progress assistant
+   * message, appends text on each token event, finalizes both on `done`.
    */
   const sendMessage = useCallback(async (content: string): Promise<boolean> => {
     if (!state.currentSession) {
@@ -110,59 +112,101 @@ export const useChat = () => {
       return false;
     }
 
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const request: MessageRequest = { content };
+    const sessionId = state.currentSession.id;
+    setLoading(true);
+    setError(null);
 
-      // Add user message optimistically
-      const userMessage: MessageResponse = {
-        id: `temp-${Date.now()}`,
-        content,
-        role: 'user',
-        timestamp: new Date().toISOString(),
-        session_id: state.currentSession.id,
-      };
+    const userId = `temp-user-${Date.now()}`;
+    const inProgressId = `streaming-${Date.now()}`;
 
-      setState(prev => ({
-        ...prev,
-        messages: [...prev.messages, userMessage],
-      }));
+    const userMessage: MessageResponse = {
+      id: userId,
+      content,
+      role: 'user',
+      timestamp: new Date().toISOString(),
+      session_id: sessionId,
+    };
+    const inProgressMessage: MessageResponse = {
+      id: inProgressId,
+      content: '',
+      role: 'assistant',
+      timestamp: new Date().toISOString(),
+      session_id: sessionId,
+    };
 
-      // Send to API and get response
-      const response = await api.sendMessage(state.currentSession.id, request);
+    setState(prev => ({
+      ...prev,
+      messages: [...prev.messages, userMessage, inProgressMessage],
+    }));
 
-      // Replace temp message with real user message and add AI response
-      // Also update currentSession and sessions list with new title
-      setState(prev => {
-        const messages = prev.messages.slice(0, -1); // Remove temp message
-
-        // Update sessions list to reflect new title
-        const updatedSessions = prev.sessions.map(s =>
-          s.id === response.session.id ? response.session : s
-        );
-
-        return {
-          ...prev,
-          currentSession: response.session,  // Update with new title
-          sessions: updatedSessions,         // Update sessions list
-          messages: [...messages, ...prev.messages.slice(-1), response.message],
-        };
-      });
-
-      return true;
-    } catch (error) {
-      setError(`Failed to send message: ${error}`);
-      // Remove the optimistic user message on error
-      setState(prev => ({
-        ...prev,
-        messages: prev.messages.slice(0, -1),
-      }));
-      return false;
-    } finally {
-      setLoading(false);
-    }
+    return new Promise<boolean>((resolve) => {
+      api
+        .sendMessageStream(
+          sessionId,
+          { content },
+          {
+            onToken: (text) => {
+              setState(prev => ({
+                ...prev,
+                messages: prev.messages.map(m =>
+                  m.id === inProgressId
+                    ? { ...m, content: m.content + text }
+                    : m,
+                ),
+              }));
+            },
+            onReset: () => {
+              // Tool boundary — drop preamble text, only the final answer
+              // should remain in the in-progress message.
+              setState(prev => ({
+                ...prev,
+                messages: prev.messages.map(m =>
+                  m.id === inProgressId ? { ...m, content: '' } : m,
+                ),
+              }));
+            },
+            onDone: (message, session) => {
+              setState(prev => {
+                const updatedSessions = prev.sessions.map(s =>
+                  s.id === session.id ? session : s,
+                );
+                return {
+                  ...prev,
+                  currentSession: session,
+                  sessions: updatedSessions,
+                  messages: prev.messages.map(m =>
+                    m.id === inProgressId ? message : m,
+                  ),
+                  isLoading: false,
+                };
+              });
+              resolve(true);
+            },
+            onError: (msg) => {
+              setError(`Failed to send message: ${msg}`);
+              setState(prev => ({
+                ...prev,
+                messages: prev.messages.filter(
+                  m => m.id !== inProgressId && m.id !== userId,
+                ),
+                isLoading: false,
+              }));
+              resolve(false);
+            },
+          },
+        )
+        .catch((e) => {
+          setError(`Failed to send message: ${e}`);
+          setState(prev => ({
+            ...prev,
+            messages: prev.messages.filter(
+              m => m.id !== inProgressId && m.id !== userId,
+            ),
+            isLoading: false,
+          }));
+          resolve(false);
+        });
+    });
   }, [state.currentSession, setLoading, setError]);
 
   /**
