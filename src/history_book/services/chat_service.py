@@ -233,9 +233,12 @@ class ChatService:
             ):
                 if mode == "messages":
                     token_chunk, _meta = data
-                    if token_chunk.content:
-                        full_response += token_chunk.content
-                        yield token_chunk.content
+                    # `.text` handles both string content and Responses API
+                    # list-of-blocks chunks (skipping reasoning blocks).
+                    chunk_text = token_chunk.text
+                    if chunk_text:
+                        full_response += chunk_text
+                        yield chunk_text
                 elif mode == "updates" and "tools" in data:
                     tool_paragraphs = data["tools"].get("retrieved_paragraphs", [])
                     retrieved.extend(tool_paragraphs)
@@ -294,10 +297,15 @@ class ChatService:
         return user_msg
 
     def _extract_generation(self, result: dict[str, Any]) -> str:
-        """Pull the final AI response text from graph result messages."""
+        """Pull the final AI response text from graph result messages.
+
+        Uses `AIMessage.text` so we transparently handle both plain-string
+        content and the list-of-blocks shape returned by the OpenAI Responses
+        API (reasoning blocks are filtered out, text blocks are joined).
+        """
         for msg in reversed(result["messages"]):
-            if isinstance(msg, AIMessage) and msg.content:
-                return msg.content
+            if isinstance(msg, AIMessage) and msg.text:
+                return msg.text
         return ""
 
     def _count_tool_iterations(self, messages: list[BaseMessage]) -> int:
