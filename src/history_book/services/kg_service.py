@@ -80,7 +80,11 @@ class KGService:
         return self._build_graph_response(entities, relationships, graph_name)
 
     def get_entity(self, entity_id: str) -> EntityDetail | None:
-        """Return detailed entity info including denormalized relationships."""
+        """Return detailed entity info including denormalized relationships.
+
+        Each `RelationshipSummary` includes the other entity's `occurrence_count`
+        so callers can rank or filter without additional lookups.
+        """
         entity = self.repo_manager.kg_entities.get_by_id(entity_id)
         if entity is None:
             return None
@@ -88,6 +92,17 @@ class KGService:
         relationships = self.repo_manager.kg_relationships.find_by_entities(
             [entity_id], entity.graph_name
         )
+
+        other_ids = {
+            r.target_entity_id
+            if r.source_entity_id == entity_id
+            else r.source_entity_id
+            for r in relationships
+        }
+        other_counts: dict[str, int] = {}
+        for oid in other_ids:
+            other = self.repo_manager.kg_entities.get_by_id(oid)
+            other_counts[oid] = other.occurrence_count if other else 0
 
         rel_summaries: list[RelationshipSummary] = []
         for r in relationships:
@@ -108,8 +123,10 @@ class KGService:
                     direction=direction,
                     other_entity_id=other_id,
                     other_entity_name=other_name,
+                    other_entity_occurrence_count=other_counts.get(other_id, 0),
                     book_index=r.book_index,
                     chapter_index=r.chapter_index,
+                    page=r.page,
                 )
             )
 
@@ -120,6 +137,7 @@ class KGService:
             aliases=entity.aliases,
             descriptions=entity.descriptions,
             occurrence_count=entity.occurrence_count,
+            source_paragraph_ids=entity.source_paragraph_ids,
             relationships=rel_summaries,
         )
 

@@ -36,8 +36,10 @@ class RelationshipSummary(BaseModel):
     direction: Literal["outgoing", "incoming"]
     other_entity_id: str
     other_entity_name: str
+    other_entity_occurrence_count: int = 0
     book_index: int
     chapter_index: int
+    page: int = 0
 
 
 class EntityDetail(BaseModel):
@@ -47,6 +49,7 @@ class EntityDetail(BaseModel):
     aliases: list[str]
     descriptions: list[str]
     occurrence_count: int
+    source_paragraph_ids: list[str] = []
     relationships: list[RelationshipSummary]
 
 

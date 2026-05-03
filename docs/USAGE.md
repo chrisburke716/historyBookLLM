@@ -375,7 +375,7 @@ async for chunk in chat_service.send_message_stream(
 # Required for chat functionality
 OPENAI_API_KEY=your-openai-or-anthropic-key
 LLM_PROVIDER=openai                    # or anthropic
-LLM_MODEL_NAME=gpt-4o-mini            # or gpt-4, claude-3-sonnet, etc.
+LLM_MODEL_NAME=gpt-5.4-mini           # or gpt-4o, claude-3-sonnet, etc.
 ```
 
 ## Best Practices

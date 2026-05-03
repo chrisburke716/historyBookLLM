@@ -218,7 +218,7 @@ OPENAI_API_KEY=your-api-key  # Required for chat functionality
 
 ## Important Notes
 
-- The system has moved away from complex abstraction layers to use LangChain LCEL directly in `RagService`
+- The system has moved away from complex abstraction layers — `ChatService` orchestrates a LangGraph agent that consumes a LangChain chat model directly via `build_chat_model(LLMConfig)`
 - Repository pattern provides clean separation between business logic and data access
 - Environment-specific configurations handle different deployment scenarios
 - Chat functionality requires OpenAI or Anthropic API keys

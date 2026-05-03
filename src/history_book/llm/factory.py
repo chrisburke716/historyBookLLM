@@ -1,89 +1,45 @@
-"""Factory for creating LangChain chat models from LLMConfig.
-
-This module provides a reusable function to create LangChain chat models
-in a provider-agnostic way, eliminating code duplication across services.
-"""
+"""Factory for creating LangChain chat models from LLMConfig."""
 
 import logging
 
+from langchain.chat_models import init_chat_model
+from langchain_core.language_models import BaseChatModel
+
 from history_book.llm.config import LLMConfig
-from history_book.llm.exceptions import LLMConnectionError, LLMValidationError
 
 logger = logging.getLogger(__name__)
 
 
-def create_chat_model(config: LLMConfig | None = None, streaming: bool = False):
+def build_chat_model(
+    config: LLMConfig, *, temperature_override: float | None = None
+) -> BaseChatModel:
+    """Build a chat model from LLMConfig via init_chat_model.
+
+    When `config.reasoning_effort` is set (gpt-5 family, o1/o3), passes
+    `reasoning_effort` + `use_responses_api=True` and omits `temperature`
+    (reasoning models reject anything other than the default 1.0). Otherwise
+    passes `temperature_override` if provided, else `config.temperature`.
+
+    Used by the agent graph and the title-generation chain.
     """
-    Create a LangChain chat model from configuration.
-
-    This is the canonical way to create LLM instances across the application.
-    Supports both OpenAI and Anthropic providers.
-
-    Args:
-        config: LLM configuration. If None, loads from environment.
-        streaming: Whether to enable streaming mode.
-
-    Returns:
-        LangChain chat model instance (ChatOpenAI or ChatAnthropic)
-
-    Raises:
-        LLMValidationError: If provider is not supported
-        LLMConnectionError: If required dependencies are missing
-
-    Example:
-        >>> from history_book.llm.factory import create_chat_model
-        >>> from history_book.llm.config import LLMConfig
-        >>>
-        >>> # Use environment config
-        >>> llm = create_chat_model()
-        >>>
-        >>> # Use custom config
-        >>> config = LLMConfig(provider="anthropic", model_name="claude-3-5-sonnet-20241022")
-        >>> llm = create_chat_model(config)
-        >>>
-        >>> # Enable streaming
-        >>> llm = create_chat_model(streaming=True)
-    """
-    # Load config from environment if not provided
-    if config is None:
-        config = LLMConfig.from_environment()
-
-    try:
-        if config.provider == "openai":
-            from langchain_openai import ChatOpenAI  # noqa: PLC0415
-
-            return ChatOpenAI(
-                model=config.model_name,
-                api_key=config.api_key,
-                base_url=config.api_base,
-                temperature=config.temperature,
-                max_tokens=config.max_tokens,
-                top_p=config.top_p,
-                frequency_penalty=config.frequency_penalty,
-                presence_penalty=config.presence_penalty,
-                streaming=streaming,
-                **config.provider_kwargs,
-            )
-
-        elif config.provider == "anthropic":
-            from langchain_anthropic import ChatAnthropic  # noqa: PLC0415
-
-            return ChatAnthropic(
-                model=config.model_name,
-                api_key=config.api_key,
-                temperature=config.temperature,
-                max_tokens=config.max_tokens,
-                top_p=config.top_p,
-                streaming=streaming,
-                **config.provider_kwargs,
-            )
-
-        else:
-            raise LLMValidationError(f"Unsupported provider: {config.provider}")
-
-    except ImportError as e:
-        raise LLMConnectionError(
-            f"Missing dependency for {config.provider}: {e}"
-        ) from e
-    except Exception as e:
-        raise LLMConnectionError(f"Failed to create chat model: {e}") from e
+    model_id = f"{config.provider}:{config.model_name}"
+    kwargs: dict = {}
+    if config.reasoning_effort:
+        kwargs["reasoning_effort"] = config.reasoning_effort
+        # Reasoning + bound tools requires the Responses API on gpt-5 family;
+        # Chat Completions rejects the combination.
+        kwargs["use_responses_api"] = True
+    else:
+        kwargs["temperature"] = (
+            temperature_override
+            if temperature_override is not None
+            else config.temperature
+        )
+    if config.api_key:
+        kwargs["api_key"] = config.api_key
+    if config.api_base:
+        kwargs["base_url"] = config.api_base
+    if config.max_tokens:
+        kwargs["max_tokens"] = config.max_tokens
+    kwargs.update(config.provider_kwargs)
+    return init_chat_model(model_id, **kwargs)

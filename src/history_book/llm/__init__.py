@@ -10,7 +10,7 @@ from .exceptions import (
     LLMTokenLimitError,
     LLMValidationError,
 )
-from .factory import create_chat_model
+from .factory import build_chat_model
 
 __all__ = [
     "LLMConfig",
@@ -21,5 +21,5 @@ __all__ = [
     "LLMValidationError",
     "LLMResponseError",
     "utils",
-    "create_chat_model",
+    "build_chat_model",
 ]

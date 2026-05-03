@@ -5,6 +5,7 @@ from typing import Any
 
 from history_book.database.repositories import BookRepositoryManager
 from history_book.llm.config import LLMConfig
+from history_book.services.kg_service import KGService
 
 
 @dataclass
@@ -18,7 +19,9 @@ class AgentContext:
 
     llm_config: LLMConfig
     repository_manager: BookRepositoryManager
-    max_tool_iterations: int = 3
+    kg_service: KGService
+    volume_graph_name: str | None = None
+    max_tool_iterations: int = 6
     tool_max_results: int = 40
     tool_min_similarity: float = 0.4
     extra_tool_kwargs: dict[str, Any] = field(default_factory=dict)
