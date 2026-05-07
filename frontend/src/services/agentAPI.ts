@@ -16,12 +16,16 @@ import {
 export type StreamEvent =
   | { type: 'token'; text: string }
   | { type: 'reset' }
+  | { type: 'tool_start'; id: string; label: string }
+  | { type: 'tool_end'; id: string; summary: string | null }
   | { type: 'done'; message: MessageResponse; session: SessionResponse }
   | { type: 'error'; message: string };
 
 export interface StreamHandlers {
   onToken: (text: string) => void;
   onReset: () => void;
+  onToolStart: (id: string, label: string) => void;
+  onToolEnd: (id: string, summary: string | null) => void;
   onDone: (message: MessageResponse, session: SessionResponse) => void;
   onError: (message: string) => void;
 }
@@ -114,6 +118,10 @@ class AgentAPI {
           const event: StreamEvent = JSON.parse(json);
           if (event.type === 'token') handlers.onToken(event.text);
           else if (event.type === 'reset') handlers.onReset();
+          else if (event.type === 'tool_start')
+            handlers.onToolStart(event.id, event.label);
+          else if (event.type === 'tool_end')
+            handlers.onToolEnd(event.id, event.summary);
           else if (event.type === 'done')
             handlers.onDone(event.message, event.session);
           else if (event.type === 'error') handlers.onError(event.message);

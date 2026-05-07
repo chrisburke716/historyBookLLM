@@ -1,7 +1,8 @@
 """Get a knowledge graph entity's descriptions, source paragraphs, and 1-hop relationships."""
 
 import logging
-from typing import Annotated
+import re
+from typing import Annotated, Any
 
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool
@@ -12,6 +13,23 @@ from history_book.services.agents.context import AgentContext
 from history_book.services.agents.tools._format import format_relationship_summary
 
 logger = logging.getLogger(__name__)
+
+# Matches the first line of the tool's normal output, e.g.
+#   "Entity: Charlemagne [person] (id=…)"
+_ENTITY_NAME_RE = re.compile(r"^Entity:\s+([^\[]+?)\s+\[")
+
+
+def start_label(_args: dict[str, Any]) -> str:
+    return "Looking up entity details"
+
+
+def end_summary(update: dict[str, Any]) -> str | None:
+    msgs = update.get("messages") or []
+    if not msgs:
+        return None
+    text = getattr(msgs[0], "content", "") or ""
+    m = _ENTITY_NAME_RE.match(text)
+    return m.group(1).strip() if m else None
 
 
 @tool

@@ -23,6 +23,7 @@ from history_book.llm.exceptions import LLMError
 from history_book.llm.factory import build_chat_model
 from history_book.services.agents.context import AgentContext
 from history_book.services.agents.rag_agent import build_rag_agent
+from history_book.services.agents.tools import TOOL_REGISTRY
 from history_book.services.kg_service import KGService
 
 logger = logging.getLogger(__name__)
@@ -217,6 +218,10 @@ class ChatService:
 
         Yields typed events:
           - {"type": "token", "text": "..."}              — incremental text
+          - {"type": "tool_start", "id": "...",
+             "label": "..."}                              — tool call announced
+          - {"type": "tool_end", "id": "...",
+             "summary": "..." | None}                     — tool call completed
           - {"type": "reset"}                             — drop buffered text
             (an intermediate-turn boundary; everything streamed before this
             was preamble before a tool call, not part of the final answer)
@@ -228,6 +233,12 @@ class ChatService:
         ctx = self._build_context()
         retrieved: list[Paragraph] = []
         full_response = ""
+        # Maps tool_call_id → tool name, populated when the agent announces
+        # a tool call so we can label tool_end events when the tool finishes.
+        pending_tools: dict[str, str] = {}
+
+        def _as_list(update: Any) -> list[dict[str, Any]]:
+            return update if isinstance(update, list) else [update]
 
         try:
             async for mode, data in self.agent.astream(
@@ -244,22 +255,45 @@ class ChatService:
                     if chunk_text:
                         full_response += chunk_text
                         yield {"type": "token", "text": chunk_text}
+                elif mode == "updates" and "agent" in data:
+                    # The agent step finished. If its AIMessage(s) request
+                    # tool calls, the previous tokens were preamble — clear
+                    # the client buffer and announce each tool start.
+                    saw_tool_calls = False
+                    for upd in _as_list(data["agent"]):
+                        for msg in upd.get("messages") or []:
+                            tool_calls = getattr(msg, "tool_calls", None) or []
+                            for tc in tool_calls:
+                                tc_id = tc.get("id") or ""
+                                tc_name = tc.get("name") or ""
+                                tc_args = tc.get("args") or {}
+                                pending_tools[tc_id] = tc_name
+                                entry = TOOL_REGISTRY.get(tc_name)
+                                label = entry.start_label(tc_args) if entry else tc_name
+                                saw_tool_calls = True
+                                yield {
+                                    "type": "tool_start",
+                                    "id": tc_id,
+                                    "label": label,
+                                }
+                    if saw_tool_calls:
+                        full_response = ""
+                        yield {"type": "reset"}
                 elif mode == "updates" and "tools" in data:
                     # `data["tools"]` is either a dict (single Command) or a
                     # list of dicts (parallel tool calls — one Command each).
-                    tools_update = data["tools"]
-                    updates = (
-                        tools_update
-                        if isinstance(tools_update, list)
-                        else [tools_update]
-                    )
-                    for upd in updates:
-                        retrieved.extend(upd.get("retrieved_paragraphs", []))
-                    # A tools update means the agent's previous tokens were
-                    # preamble before a tool call, not the final answer.
-                    # Discard them and tell the client to clear its buffer.
-                    full_response = ""
-                    yield {"type": "reset"}
+                    for upd in _as_list(data["tools"]):
+                        retrieved.extend(upd.get("retrieved_paragraphs") or [])
+                        for msg in upd.get("messages") or []:
+                            tc_id = getattr(msg, "tool_call_id", "") or ""
+                            tc_name = pending_tools.pop(tc_id, "")
+                            entry = TOOL_REGISTRY.get(tc_name)
+                            summary = entry.end_summary(upd) if entry else None
+                            yield {
+                                "type": "tool_end",
+                                "id": tc_id,
+                                "summary": summary,
+                            }
 
             # Save best-effort. If embedding/save fails (e.g., content too
             # long for the embedding model), keep the response visible to

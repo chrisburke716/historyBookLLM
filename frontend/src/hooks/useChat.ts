@@ -16,6 +16,7 @@ export const useChat = () => {
     currentSession: null,
     sessions: [],
     messages: [],
+    toolSteps: [],
     isLoading: false,
     error: null,
   });
@@ -137,6 +138,7 @@ export const useChat = () => {
     setState(prev => ({
       ...prev,
       messages: [...prev.messages, userMessage, inProgressMessage],
+      toolSteps: [],
     }));
 
     return new Promise<boolean>((resolve) => {
@@ -165,6 +167,23 @@ export const useChat = () => {
                 ),
               }));
             },
+            onToolStart: (id, label) => {
+              setState(prev => ({
+                ...prev,
+                toolSteps: [
+                  ...prev.toolSteps,
+                  { id, label, status: 'running', summary: null },
+                ],
+              }));
+            },
+            onToolEnd: (id, summary) => {
+              setState(prev => ({
+                ...prev,
+                toolSteps: prev.toolSteps.map(s =>
+                  s.id === id ? { ...s, status: 'done', summary } : s,
+                ),
+              }));
+            },
             onDone: (message, session) => {
               setState(prev => {
                 const updatedSessions = prev.sessions.map(s =>
@@ -177,6 +196,8 @@ export const useChat = () => {
                   messages: prev.messages.map(m =>
                     m.id === inProgressId ? message : m,
                   ),
+                  // Live-only — tool steps are discarded on completion.
+                  toolSteps: [],
                   isLoading: false,
                 };
               });
@@ -189,6 +210,7 @@ export const useChat = () => {
                 messages: prev.messages.filter(
                   m => m.id !== inProgressId && m.id !== userId,
                 ),
+                toolSteps: [],
                 isLoading: false,
               }));
               resolve(false);
@@ -202,6 +224,7 @@ export const useChat = () => {
             messages: prev.messages.filter(
               m => m.id !== inProgressId && m.id !== userId,
             ),
+            toolSteps: [],
             isLoading: false,
           }));
           resolve(false);

@@ -1,7 +1,8 @@
 """Query knowledge graph relationships by historical time period."""
 
 import logging
-from typing import Annotated
+import re
+from typing import Annotated, Any
 
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool
@@ -13,6 +14,32 @@ from history_book.services.agents.context import AgentContext
 from history_book.services.agents.tools._format import format_relationship
 
 logger = logging.getLogger(__name__)
+
+# Matches the header line of the tool's normal output, e.g.
+#   "Relationships in [-100, 200] (25 of 187...):"
+_REL_COUNT_RE = re.compile(r"^Relationships in\s+\[[^\]]+\]\s+\((\d+)\s+of\s+(\d+)")
+
+
+def start_label(args: dict[str, Any]) -> str:
+    start = args.get("start_year")
+    end = args.get("end_year")
+    return f"Querying relationships from {start}–{end}"
+
+
+def end_summary(update: dict[str, Any]) -> str | None:
+    msgs = update.get("messages") or []
+    if not msgs:
+        return None
+    text = getattr(msgs[0], "content", "") or ""
+    m = _REL_COUNT_RE.match(text)
+    if not m:
+        return None
+    shown, total = int(m.group(1)), int(m.group(2))
+    return (
+        f"{shown} of {total} relationships"
+        if shown < total
+        else f"{shown} relationships"
+    )
 
 
 @tool

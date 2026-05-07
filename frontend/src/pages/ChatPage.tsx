@@ -21,6 +21,7 @@ const ChatPage: React.FC = () => {
     currentSession,
     sessions,
     messages,
+    toolSteps,
     isLoading,
     error,
     createSession,
@@ -109,7 +110,7 @@ const ChatPage: React.FC = () => {
             </Box>
           ) : (
             <>
-              <MessageList messages={messages} />
+              <MessageList messages={messages} toolSteps={toolSteps} />
               <div ref={messagesEndRef} />
             </>
           )}

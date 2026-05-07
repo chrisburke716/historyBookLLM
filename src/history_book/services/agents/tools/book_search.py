@@ -1,7 +1,7 @@
 """Book search tool for the RAG agent."""
 
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool
@@ -12,6 +12,15 @@ from history_book.services.agents.context import AgentContext
 from history_book.services.agents.prompts import format_excerpts_for_llm
 
 logger = logging.getLogger(__name__)
+
+
+def start_label(args: dict[str, Any]) -> str:
+    return f'Searching the book for "{args.get("query", "")}"'
+
+
+def end_summary(update: dict[str, Any]) -> str | None:
+    n = len(update.get("retrieved_paragraphs") or [])
+    return f"{n} passage{'s' if n != 1 else ''}" if n else None
 
 
 @tool

@@ -16,13 +16,24 @@ import {
   Person as PersonIcon,
   SmartToy as BotIcon,
 } from '@mui/icons-material';
-import { MessageResponse } from '../types';
+import { MessageResponse, ToolStep as ToolStepData } from '../types';
+import ToolStep from './ToolStep';
 
 interface MessageListProps {
   messages: MessageResponse[];
+  // Tool steps for the in-progress assistant message (live-only).
+  // Rendered as small pills just above that message's content.
+  toolSteps?: ToolStepData[];
 }
 
-const MessageList: React.FC<MessageListProps> = ({ messages }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, toolSteps = [] }) => {
+  // The in-progress assistant message (if any) is the last message and has
+  // an id starting with "streaming-". Tool steps render above its content.
+  const lastMessage = messages[messages.length - 1];
+  const inProgressId =
+    lastMessage && lastMessage.role === 'assistant' && lastMessage.id.startsWith('streaming-')
+      ? lastMessage.id
+      : null;
   const formatTimestamp = (timestamp: string): string => {
     return new Date(timestamp).toLocaleTimeString();
   };
@@ -92,9 +103,18 @@ const MessageList: React.FC<MessageListProps> = ({ messages }) => {
                   borderRadius: 2,
                 }}
               >
-                <Typography 
-                  variant="body1" 
-                  sx={{ 
+                {/* Tool steps for the in-progress assistant message */}
+                {message.id === inProgressId && toolSteps.length > 0 && (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', mb: message.content ? 1 : 0 }}>
+                    {toolSteps.map(step => (
+                      <ToolStep key={step.id} step={step} />
+                    ))}
+                  </Box>
+                )}
+
+                <Typography
+                  variant="body1"
+                  sx={{
                     mb: 1,
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word',

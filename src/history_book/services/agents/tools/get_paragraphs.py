@@ -1,7 +1,7 @@
 """Look up specific paragraphs by ID."""
 
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool
@@ -12,6 +12,16 @@ from history_book.services.agents.context import AgentContext
 from history_book.services.agents.prompts import format_excerpts_for_llm
 
 logger = logging.getLogger(__name__)
+
+
+def start_label(args: dict[str, Any]) -> str:
+    n = len(args.get("paragraph_ids") or [])
+    return f"Retrieving {n} source paragraph{'s' if n != 1 else ''}"
+
+
+def end_summary(update: dict[str, Any]) -> str | None:
+    n = len(update.get("retrieved_paragraphs") or [])
+    return f"{n} retrieved" if n else None
 
 
 @tool

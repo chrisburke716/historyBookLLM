@@ -42,10 +42,21 @@ export interface ChatResponse {
 }
 
 // Additional types for UI state management
+
+export interface ToolStep {
+  id: string;
+  label: string;
+  status: 'running' | 'done';
+  summary: string | null;
+}
+
 export interface ChatState {
   currentSession: SessionResponse | null;
   sessions: SessionResponse[];
   messages: MessageResponse[];
+  // Tool steps for the current in-progress assistant message (live-only —
+  // discarded on completion; not persisted to history).
+  toolSteps: ToolStep[];
   isLoading: boolean;
   error: string | null;
 }

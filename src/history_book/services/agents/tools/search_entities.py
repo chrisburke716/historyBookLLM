@@ -1,7 +1,8 @@
 """Search the knowledge graph for entities by name/description."""
 
 import logging
-from typing import Annotated
+import re
+from typing import Annotated, Any
 
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool
@@ -11,6 +12,21 @@ from langgraph.types import Command
 from history_book.services.agents.context import AgentContext
 
 logger = logging.getLogger(__name__)
+
+_FOUND_RE = re.compile(r"^Found\s+(\d+)\s+entities", re.MULTILINE)
+
+
+def start_label(args: dict[str, Any]) -> str:
+    return f'Searching the knowledge graph for "{args.get("query", "")}"'
+
+
+def end_summary(update: dict[str, Any]) -> str | None:
+    msgs = update.get("messages") or []
+    if not msgs:
+        return None
+    text = getattr(msgs[0], "content", "") or ""
+    m = _FOUND_RE.match(text)
+    return f"{m.group(1)} entities" if m else None
 
 
 @tool
