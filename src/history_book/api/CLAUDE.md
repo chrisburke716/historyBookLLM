@@ -31,6 +31,20 @@ api/
     └── kg_models.py          # KG API models
 ```
 
+## Layer boundaries — routes are thin
+
+Routes do HTTP/transport only and delegate to a service. They MUST NOT:
+- access repositories directly or read state a service owns (caches, sessions, graphs, etc.)
+- chain multiple service calls into a multi-step operation — that sequence belongs in one service method
+- wrap/subclass infrastructure that adapts a service's internals (those wrappers live next to the service)
+- duplicate logic that already exists on the service
+
+Smell test: deleting a route file should lose URL plumbing only, not real logic.
+
+For streaming endpoints: the service returns an `AsyncIterator[event]` and owns pre/post-side-effects in a `finally`; the route wraps the iterator with transport encoding and an error-frame fallback.
+
+---
+
 ## Chat API (`/api/chat/*`)
 
 ### Sessions
