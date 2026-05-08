@@ -47,7 +47,10 @@ def _message_response(
 ) -> MessageResponse:
     citations = None
     if retrieved_paragraphs:
-        citations = [f"Page {p.page}" for p in retrieved_paragraphs]
+        citations = [
+            f"[B{p.book_index}, Ch{p.chapter_index}, p.{p.page}]"
+            for p in retrieved_paragraphs
+        ]
     elif message.retrieved_paragraphs:
         citations = [
             f"Source {i}" for i in range(1, len(message.retrieved_paragraphs) + 1)
