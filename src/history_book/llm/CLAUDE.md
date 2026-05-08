@@ -209,7 +209,7 @@ Always forwards `api_key`, `base_url`, `max_tokens` (when set), and
 
 **Call sites**:
 - `services/agents/rag_agent.py` — agent's per-turn LLM
-- `services/chat_service.py:_maybe_regenerate_title` — title generation
+- `services/chat_service.py:maybe_regenerate_title` — title generation
   (passes `temperature_override=0.3` for the non-reasoning path)
 
 ## Common Tasks

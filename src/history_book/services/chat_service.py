@@ -21,6 +21,7 @@ from history_book.database.repositories import BookRepositoryManager
 from history_book.llm.config import LLMConfig
 from history_book.llm.exceptions import LLMError
 from history_book.llm.factory import build_chat_model
+from history_book.services.agents.agui_wrapper import build_agui_wrapper
 from history_book.services.agents.context import AgentContext
 from history_book.services.agents.rag_agent import build_rag_agent
 from history_book.services.kg_service import KGService
@@ -30,6 +31,16 @@ logger = logging.getLogger(__name__)
 CONTEXT_MIN_RESULTS = 5
 CONTEXT_MAX_RESULTS = 40
 CONTEXT_SIMILARITY_CUTOFF = 0.4
+
+
+def _last_user_message_text(input_data: Any) -> str | None:
+    """Return the content of the most recent user message in an AG-UI input."""
+    for msg in reversed(getattr(input_data, "messages", None) or []):
+        if getattr(msg, "role", None) == "user":
+            content = getattr(msg, "content", None)
+            if isinstance(content, str) and content.strip():
+                return content
+    return None
 
 
 @dataclass
@@ -178,20 +189,20 @@ class ChatService:
         4. Regenerate session title
         """
         try:
-            await self._save_user_message(session_id, user_message)
+            await self.save_user_message(session_id, user_message)
 
-            ctx = self._build_context()
+            ctx = self.build_context()
             result = await self.agent.ainvoke(
                 {"messages": [HumanMessage(content=user_message)]},
                 context=ctx,
-                config=self._agent_config(session_id),
+                config=self.agent_config(session_id),
             )
 
             generation = self._extract_generation(result)
             retrieved = result.get("retrieved_paragraphs", [])
 
-            ai_msg = await self._save_ai_message(session_id, generation, retrieved)
-            await self._maybe_regenerate_title(session_id)
+            ai_msg = await self.save_ai_message(session_id, generation, retrieved)
+            await self.maybe_regenerate_title(session_id)
 
             return ChatResult(
                 message=ai_msg,
@@ -218,8 +229,8 @@ class ChatService:
         populated incrementally as tool nodes complete; it is fully populated
         once the stream is exhausted.
         """
-        await self._save_user_message(session_id, user_message)
-        ctx = self._build_context()
+        await self.save_user_message(session_id, user_message)
+        ctx = self.build_context()
         retrieved: list[Paragraph] = []
         full_response = ""
 
@@ -228,7 +239,7 @@ class ChatService:
             async for mode, data in self.agent.astream(
                 {"messages": [HumanMessage(content=user_message)]},
                 context=ctx,
-                config=self._agent_config(session_id, streaming=True),
+                config=self.agent_config(session_id, streaming=True),
                 stream_mode=["updates", "messages"],
             ):
                 if mode == "messages":
@@ -243,10 +254,66 @@ class ChatService:
                     tool_paragraphs = data["tools"].get("retrieved_paragraphs", [])
                     retrieved.extend(tool_paragraphs)
 
-            await self._save_ai_message(session_id, full_response, retrieved)
-            await self._maybe_regenerate_title(session_id)
+            await self.save_ai_message(session_id, full_response, retrieved)
+            await self.maybe_regenerate_title(session_id)
 
         return _stream(), retrieved
+
+    async def send_message_agui(self, input_data: Any) -> AsyncIterator[Any]:
+        """
+        Stream AG-UI events for a run; owns persistence around the stream.
+
+        Lifecycle:
+        1. Pre-persist the latest user message from input_data.messages.
+        2. Stream AG-UI events from the wrapped graph.
+        3. After the stream ends, read final state from the checkpointer to
+           persist the assistant message and trigger title regeneration.
+
+        Caller (the API route) is responsible for:
+        - Validating the session exists before invoking this method.
+        - Encoding events for the wire (SSE / EventEncoder).
+        - Catching exceptions from the iterator and emitting a transport-level
+          error frame.
+        """
+        session_id = input_data.thread_id
+
+        user_text = _last_user_message_text(input_data)
+        if user_text:
+            await self.save_user_message(session_id, user_text)
+
+        wrapper = build_agui_wrapper(
+            name="rag",
+            graph=self.agent,
+            agent_context=self.build_context(),
+            config=self.agent_config(session_id, streaming=True),
+        ).clone()
+
+        try:
+            async for event in wrapper.run(input_data):
+                yield event
+        finally:
+            await self._persist_run_completion(session_id)
+
+    async def _persist_run_completion(self, session_id: str) -> None:
+        """Read final graph state and persist the assistant message + title.
+
+        Idempotent: if no assistant text exists (run aborted before any
+        AIMessage), skip persistence and title regen.
+        """
+        try:
+            state = await self.agent.aget_state(self.agent_config(session_id))
+            values = state.values if state and state.values else {}
+            ai_text = self._extract_generation({"messages": values.get("messages", [])})
+            if not ai_text:
+                logger.info(
+                    f"No final assistant text for {session_id}; skipping persistence"
+                )
+                return
+            retrieved = values.get("retrieved_paragraphs", []) or []
+            await self.save_ai_message(session_id, ai_text, retrieved)
+            await self.maybe_regenerate_title(session_id)
+        except Exception as e:
+            logger.error(f"Failed to persist run completion for {session_id}: {e}")
 
     # -------------------------------------------------------------------------
     # Eval support
@@ -266,7 +333,7 @@ class ChatService:
     # Internal helpers
     # -------------------------------------------------------------------------
 
-    def _build_context(self) -> AgentContext:
+    def build_context(self) -> AgentContext:
         return AgentContext(
             llm_config=self.llm_config,
             repository_manager=self.repository_manager,
@@ -276,7 +343,7 @@ class ChatService:
             tool_min_similarity=self.context_similarity_cutoff,
         )
 
-    def _agent_config(self, session_id: str, streaming: bool = False) -> dict[str, Any]:
+    def agent_config(self, session_id: str, streaming: bool = False) -> dict[str, Any]:
         tags = ["agent", "langgraph", "rag"]
         if streaming:
             tags.append("streaming")
@@ -285,7 +352,7 @@ class ChatService:
             "tags": tags,
         }
 
-    async def _save_user_message(
+    async def save_user_message(
         self, session_id: str, user_message: str
     ) -> ChatMessage:
         """Persist the user message to Weaviate."""
@@ -311,7 +378,7 @@ class ChatService:
     def _count_tool_iterations(self, messages: list[BaseMessage]) -> int:
         return sum(1 for m in messages if isinstance(m, AIMessage) and m.tool_calls)
 
-    async def _save_ai_message(
+    async def save_ai_message(
         self, session_id: str, content: str, retrieved: list[Paragraph]
     ) -> ChatMessage:
         ai_msg = ChatMessage(
@@ -333,7 +400,7 @@ class ChatService:
         except Exception as e:
             logger.warning(f"Failed to update session timestamp: {e}")
 
-    async def _maybe_regenerate_title(self, session_id: str) -> None:
+    async def maybe_regenerate_title(self, session_id: str) -> None:
         messages = await self.get_session_messages(session_id)
         if len(messages) < 2:
             return
