@@ -1,5 +1,9 @@
 /**
- * Custom hook for managing chat state and API interactions.
+ * Custom hook for managing chat session state.
+ *
+ * Owns session list + per-session historical messages (loaded from Weaviate).
+ * Live message streaming and sending are handled by CopilotKit hooks inside
+ * the chat surface — see `<CopilotProvider>` and `<MessageInput>`.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -7,170 +11,91 @@ import { api } from '../services/api';
 import {
   SessionResponse,
   MessageResponse,
-  ChatState,
   SessionCreateRequest,
-  MessageRequest,
 } from '../types';
+
+interface ChatState {
+  currentSession: SessionResponse | null;
+  sessions: SessionResponse[];
+  historicalMessages: MessageResponse[];
+  isLoading: boolean;
+  error: string | null;
+}
 
 export const useChat = () => {
   const [state, setState] = useState<ChatState>({
     currentSession: null,
     sessions: [],
-    messages: [],
+    historicalMessages: [],
     isLoading: false,
     error: null,
   });
 
-  /**
-   * Set loading state
-   */
   const setLoading = useCallback((loading: boolean) => {
-    setState(prev => ({ ...prev, isLoading: loading }));
+    setState((prev) => ({ ...prev, isLoading: loading }));
   }, []);
 
-  /**
-   * Set error message
-   */
   const setError = useCallback((error: string | null) => {
-    setState(prev => ({ ...prev, error }));
+    setState((prev) => ({ ...prev, error }));
   }, []);
 
-  /**
-   * Load list of sessions
-   */
   const loadSessions = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const response = await api.getSessions();
-      setState(prev => ({ ...prev, sessions: response.sessions }));
+      setState((prev) => ({ ...prev, sessions: response.sessions }));
     } catch (error) {
       setError(`Failed to load sessions: ${error}`);
-    } finally {
-      setLoading(false);
     }
-  }, [setLoading, setError]);
-
-  /**
-   * Create a new session
-   */
-  const createSession = useCallback(async (title?: string): Promise<SessionResponse | null> => {
-    try {
-      setLoading(true);
-      setError(null);
-      const request: SessionCreateRequest = title ? { title } : {};
-      const session = await api.createSession(request);
-
-      // Add to sessions list
-      setState(prev => ({
-        ...prev,
-        sessions: [session, ...prev.sessions],
-        currentSession: session,
-        messages: [], // Clear messages for new session
-      }));
-
-      return session;
-    } catch (error) {
-      setError(`Failed to create session: ${error}`);
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, [setLoading, setError]);
-
-  /**
-   * Switch to a different session
-   */
-  const switchToSession = useCallback(async (session: SessionResponse) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Load messages for the session
-      const response = await api.getSessionMessages(session.id);
-
-      setState(prev => ({
-        ...prev,
-        currentSession: session,
-        messages: response.messages,
-      }));
-    } catch (error) {
-      setError(`Failed to load session messages: ${error}`);
-    } finally {
-      setLoading(false);
-    }
-  }, [setLoading, setError]);
-
-  /**
-   * Send a message in the current session
-   */
-  const sendMessage = useCallback(async (content: string): Promise<boolean> => {
-    if (!state.currentSession) {
-      setError('No active session');
-      return false;
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const request: MessageRequest = { content };
-
-      // Add user message optimistically
-      const userMessage: MessageResponse = {
-        id: `temp-${Date.now()}`,
-        content,
-        role: 'user',
-        timestamp: new Date().toISOString(),
-        session_id: state.currentSession.id,
-      };
-
-      setState(prev => ({
-        ...prev,
-        messages: [...prev.messages, userMessage],
-      }));
-
-      // Send to API and get response
-      const response = await api.sendMessage(state.currentSession.id, request);
-
-      // Replace temp message with real user message and add AI response
-      // Also update currentSession and sessions list with new title
-      setState(prev => {
-        const messages = prev.messages.slice(0, -1); // Remove temp message
-
-        // Update sessions list to reflect new title
-        const updatedSessions = prev.sessions.map(s =>
-          s.id === response.session.id ? response.session : s
-        );
-
-        return {
-          ...prev,
-          currentSession: response.session,  // Update with new title
-          sessions: updatedSessions,         // Update sessions list
-          messages: [...messages, ...prev.messages.slice(-1), response.message],
-        };
-      });
-
-      return true;
-    } catch (error) {
-      setError(`Failed to send message: ${error}`);
-      // Remove the optimistic user message on error
-      setState(prev => ({
-        ...prev,
-        messages: prev.messages.slice(0, -1),
-      }));
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  }, [state.currentSession, setLoading, setError]);
-
-  /**
-   * Clear current error
-   */
-  const clearError = useCallback(() => {
-    setError(null);
   }, [setError]);
+
+  const createSession = useCallback(
+    async (title?: string): Promise<SessionResponse | null> => {
+      try {
+        setLoading(true);
+        setError(null);
+        const request: SessionCreateRequest = title ? { title } : {};
+        const session = await api.createSession(request);
+
+        setState((prev) => ({
+          ...prev,
+          sessions: [session, ...prev.sessions],
+          currentSession: session,
+          historicalMessages: [],
+        }));
+
+        return session;
+      } catch (error) {
+        setError(`Failed to create session: ${error}`);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [setLoading, setError],
+  );
+
+  const switchToSession = useCallback(
+    async (session: SessionResponse) => {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await api.getSessionMessages(session.id);
+        setState((prev) => ({
+          ...prev,
+          currentSession: session,
+          historicalMessages: response.messages,
+        }));
+      } catch (error) {
+        setError(`Failed to load session messages: ${error}`);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [setLoading, setError],
+  );
+
+  const clearError = useCallback(() => setError(null), [setError]);
 
   // Load sessions on mount
   useEffect(() => {
@@ -179,11 +104,9 @@ export const useChat = () => {
 
   return {
     ...state,
-    // Actions
     loadSessions,
     createSession,
     switchToSession,
-    sendMessage,
     clearError,
   };
 };

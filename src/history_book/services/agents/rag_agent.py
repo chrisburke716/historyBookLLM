@@ -3,7 +3,7 @@
 import logging
 from typing import Literal
 
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -25,15 +25,32 @@ from history_book.services.agents.tools import resolve_tools
 logger = logging.getLogger(__name__)
 
 
+def _current_turn_messages(messages: list[BaseMessage]) -> list[BaseMessage]:
+    """Slice to the current turn — everything from the most recent HumanMessage on.
+
+    With a checkpointer, `messages` spans the whole session; both the iteration
+    cap and the "don't repeat queries" hint must be scoped to the active turn,
+    or they leak across turns and falsely engage the per-turn cap.
+    """
+    for i in range(len(messages) - 1, -1, -1):
+        if isinstance(messages[i], HumanMessage):
+            return messages[i:]
+    return messages
+
+
 def _count_tool_iterations(messages: list[BaseMessage]) -> int:
-    """Count how many times the LLM has called tools so far in this turn."""
-    return sum(1 for m in messages if isinstance(m, AIMessage) and m.tool_calls)
+    """Count how many times the LLM has called tools in the current turn."""
+    return sum(
+        1
+        for m in _current_turn_messages(messages)
+        if isinstance(m, AIMessage) and m.tool_calls
+    )
 
 
 def _previous_queries(messages: list[BaseMessage]) -> list[str]:
-    """Extract search queries from previous tool calls to avoid repeats."""
+    """Extract search queries from earlier tool calls in the current turn."""
     queries = []
-    for msg in messages:
+    for msg in _current_turn_messages(messages):
         if isinstance(msg, AIMessage) and msg.tool_calls:
             for tc in msg.tool_calls:
                 args = (

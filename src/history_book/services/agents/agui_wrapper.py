@@ -18,10 +18,26 @@ AG-UI events. Two subclass overrides are needed for our graph:
 from typing import Any
 
 from ag_ui_langgraph import LangGraphAgent
+from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 
 from history_book.services.agents.context import AgentContext
+
+# State keys the graph owns exclusively (backend-write, frontend-read).
+#
+# AG-UI's state model assumes state is a shared, bidirectional workspace —
+# both the agent and the frontend can read and write it, and CopilotKit
+# round-trips it on every turn (STATE_SNAPSHOT out, RunAgentInput.state back
+# in). For accumulators like `retrieved_paragraphs` that the frontend only
+# observes (citation chips), the round-trip is pure echo: the client posts
+# back JSON-serialized copies of paragraphs we already have in the
+# checkpointer. Letting them merge in pollutes graph state with dict-shaped
+# entries that break the typed reducer.
+#
+# We strip these keys from client-posted state so the checkpointer + tool
+# reducers stay the source of truth.
+GRAPH_OWNED_STATE_KEYS = ("retrieved_paragraphs",)
 
 
 class HistoryBookLangGraphAgent(LangGraphAgent):
@@ -62,6 +78,14 @@ class HistoryBookLangGraphAgent(LangGraphAgent):
             kwargs.update(fork)
         kwargs["context"] = self._agent_context
         return kwargs
+
+    def langgraph_default_merge_state(
+        self, state: dict, messages: list[BaseMessage], input: Any
+    ) -> dict:
+        merged = super().langgraph_default_merge_state(state, messages, input)
+        for key in GRAPH_OWNED_STATE_KEYS:
+            merged.pop(key, None)
+        return merged
 
     def get_schema_keys(self, config: RunnableConfig):
         def _keys(fn):
