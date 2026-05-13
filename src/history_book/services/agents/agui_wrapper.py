@@ -1,18 +1,19 @@
 """AG-UI adapter around the compiled RAG graph.
 
-`LangGraphAgent` from `ag-ui-langgraph` wraps a `CompiledStateGraph` and emits
-AG-UI events. Two subclass overrides are needed for our graph:
+`LangGraphAgent` from `ag-ui-langgraph` translates a `CompiledStateGraph`'s
+`astream_events` output into AG-UI events over SSE. We subclass it to fix
+three gaps between the stock adapter and our graph:
 
-1. `get_stream_kwargs` — force-pass `AgentContext` to `astream_events`. The
-   base implementation drops `context` because LangGraph doesn't expose it as
-   a named parameter (it accepts it via **kwargs), so the base's signature
-   check returns False.
-2. `get_schema_keys` — skip the base's `config_schema()` / `context_schema()`
-   introspection. Both raise on our graph because `AgentContext` carries
-   non-Pydantic services (BookRepositoryManager, KGService) that can't be
-   JSON-schema-serialized. The base's outer try/except catches the failure
-   but discards the successfully-computed input/output keys, which strips
-   `retrieved_paragraphs` from STATE_SNAPSHOT events.
+1. `get_stream_kwargs` — base detects context support via signature
+   inspection; LangGraph 1.1.x exposes `context` only via **kwargs, so the
+   check fails and our `AgentContext` is silently dropped. We force-pass it.
+2. `langgraph_default_merge_state` — base spreads client-posted state into
+   the graph input. We strip backend-owned keys (see GRAPH_OWNED_STATE_KEYS)
+   so the frontend can't echo them back.
+3. `get_schema_keys` — base introspects context/config schemas, which raise
+   on our `AgentContext` (live service handles aren't JSON-schemable). The
+   base's catch-all fallback then discards input/output keys too. We compute
+   input/output independently and skip config/context entirely.
 """
 
 from typing import Any
@@ -34,13 +35,16 @@ from history_book.services.agents.context import AgentContext
 # back JSON-serialized copies of paragraphs we already have in the
 # checkpointer. Letting them merge in pollutes graph state with dict-shaped
 # entries that break the typed reducer.
-#
-# We strip these keys from client-posted state so the checkpointer + tool
-# reducers stay the source of truth.
 GRAPH_OWNED_STATE_KEYS = ("retrieved_paragraphs",)
 
 
 class HistoryBookLangGraphAgent(LangGraphAgent):
+    """Adapts `LangGraphAgent` to our graph; see module docstring for details.
+
+    Clone per request — the parent stores active-run state on the instance,
+    so sharing one wrapper across concurrent runs corrupts that state.
+    """
+
     def __init__(
         self,
         *,
@@ -51,9 +55,12 @@ class HistoryBookLangGraphAgent(LangGraphAgent):
         config: RunnableConfig | dict | None = None,
     ):
         super().__init__(name=name, graph=graph, description=description, config=config)
+        # Stashed for get_stream_kwargs to inject into each run.
         self._agent_context = agent_context
 
     def clone(self):
+        # Parent's clone() doesn't know about agent_context; reimplement so
+        # it carries through.
         return type(self)(
             name=self.name,
             graph=self.graph,
@@ -71,6 +78,10 @@ class HistoryBookLangGraphAgent(LangGraphAgent):
         context: dict[str, Any] | None = None,
         fork: Any = None,
     ) -> dict[str, Any]:
+        # Replaces parent entirely. `astream_events` forwards `context=` via
+        # **kwargs to the Pregel runtime, which constructs Runtime[T] for
+        # our nodes — that's how tools get `runtime.context.repository_manager`
+        # etc.
         kwargs = dict(input=input, subgraphs=subgraphs, version=version)
         if config:
             kwargs["config"] = config
@@ -82,12 +93,17 @@ class HistoryBookLangGraphAgent(LangGraphAgent):
     def langgraph_default_merge_state(
         self, state: dict, messages: list[BaseMessage], input: Any
     ) -> dict:
+        # Let the parent do its work (message dedup, tool-call repair,
+        # orphan ToolMessage handling), then surgically drop our keys.
         merged = super().langgraph_default_merge_state(state, messages, input)
         for key in GRAPH_OWNED_STATE_KEYS:
             merged.pop(key, None)
         return merged
 
     def get_schema_keys(self, config: RunnableConfig):
+        # `_keys` swallows per-call failures so a broken context schema
+        # doesn't void successfully-computed input/output keys — which is
+        # what the parent's outer try/except does.
         def _keys(fn):
             try:
                 schema = fn()
@@ -116,6 +132,7 @@ def build_agui_wrapper(
     agent_context: AgentContext,
     config: RunnableConfig | dict | None = None,
 ) -> HistoryBookLangGraphAgent:
+    """Construct a wrapper. Keeps the service-layer import surface to one symbol."""
     return HistoryBookLangGraphAgent(
         name=name, graph=graph, agent_context=agent_context, config=config
     )
