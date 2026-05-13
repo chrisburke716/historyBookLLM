@@ -1,19 +1,26 @@
 /**
- * MessageList — renders the live conversation from CopilotKit hooks.
+ * MessageList — renders the conversation as a sequence of turns.
  *
- * Subscribes to:
- *  - `useCopilotChatInternal()` for the live message thread (AG-UI shape)
- *  - `useCoAgent({ name: 'rag' })` for agent state (retrieved_paragraphs)
+ * A turn is one user question + the agent's reaction: any number of tool
+ * calls + (optionally) one final text answer. The AG-UI stream can split
+ * that across multiple assistant messages mid-run and consolidate them
+ * post-run; rendering by turn instead of by message gives the same visual
+ * structure regardless of how the underlying messages array is grouped.
  *
- * Tool-call cards are live-only — they do not persist on reload (same
- * behavior as the original plan).
+ * Per-turn layout:
+ *   - User bubble (right, user avatar)
+ *   - Tool-call chips (left, no avatar, compact stack)
+ *   - Either:
+ *       * Assistant bubble (left, bot avatar, markdown + citations on latest turn)
+ *       * "Thinking…" indicator (latest turn only, while running w/ no text yet)
  */
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   Avatar,
   Box,
   Chip,
+  CircularProgress,
   List,
   ListItem,
   Paper,
@@ -42,8 +49,22 @@ interface AgentState {
   retrieved_paragraphs?: ParagraphState[];
 }
 
-const RUN_AGENT_NAME = 'rag';
+interface ToolInvocation {
+  id: string;
+  name: string;
+  args: unknown;
+  result?: string;
+}
 
+interface Turn {
+  userId: string;
+  userText: string;
+  toolCalls: ToolInvocation[];
+  assistantId: string | null;
+  assistantText: string;
+}
+
+const RUN_AGENT_NAME = 'rag';
 const MAX_ARG_PREVIEW_LEN = 60;
 const MAX_RESULT_PREVIEW_LEN = 240;
 
@@ -53,9 +74,7 @@ function truncate(s: string, n: number): string {
 
 function argsPreview(args: unknown): string | undefined {
   if (!args) return undefined;
-  if (typeof args === 'string') {
-    return truncate(args, MAX_ARG_PREVIEW_LEN);
-  }
+  if (typeof args === 'string') return truncate(args, MAX_ARG_PREVIEW_LEN);
   try {
     return truncate(JSON.stringify(args), MAX_ARG_PREVIEW_LEN);
   } catch {
@@ -67,8 +86,80 @@ function citationLabel(p: ParagraphState): string {
   return `[B${p.book_index}, Ch${p.chapter_index}, p.${p.page}]`;
 }
 
+function extractText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((c: any) => c?.type === 'text' && typeof c?.text === 'string')
+      .map((c: any) => c.text)
+      .join('');
+  }
+  return '';
+}
+
+/**
+ * Group a flat AG-UI message array into turns.
+ *
+ * UserMessage → starts a new turn.
+ * AssistantMessage → appends text to current turn's assistantText and any
+ *   `toolCalls` to current turn's toolCalls list.
+ * ToolMessage → matched by toolCallId; supplies the result preview for the
+ *   matching ToolInvocation in the current turn.
+ *
+ * Tolerant of the in-progress shape (assistant messages without text, tool
+ * calls without results yet) — those just produce partial turns.
+ */
+function groupIntoTurns(messages: any[]): Turn[] {
+  const turns: Turn[] = [];
+  let current: Turn | null = null;
+
+  for (const msg of messages) {
+    const role = msg?.role;
+    if (role === 'user') {
+      current = {
+        userId: msg.id ?? `user-${turns.length}`,
+        userText: extractText(msg.content),
+        toolCalls: [],
+        assistantId: null,
+        assistantText: '',
+      };
+      turns.push(current);
+    } else if (role === 'assistant' && current) {
+      const text = extractText(msg.content);
+      if (text) {
+        current.assistantText += text;
+        current.assistantId = msg.id ?? current.assistantId;
+      }
+      const toolCalls = Array.isArray(msg.toolCalls) ? msg.toolCalls : [];
+      for (const tc of toolCalls) {
+        const id = tc?.id;
+        if (!id) continue;
+        const fn = tc?.function ?? {};
+        const name = fn.name ?? 'tool';
+        const rawArgs = fn.arguments;
+        const args =
+          typeof rawArgs === 'string' && rawArgs.length > 0
+            ? (() => {
+                try {
+                  return JSON.parse(rawArgs);
+                } catch {
+                  return rawArgs;
+                }
+              })()
+            : rawArgs;
+        current.toolCalls.push({ id, name, args });
+      }
+    } else if (role === 'tool' && current) {
+      const id = msg.toolCallId;
+      const content = typeof msg.content === 'string' ? msg.content : '';
+      const tc = current.toolCalls.find((t) => t.id === id);
+      if (tc) tc.result = truncate(content, MAX_RESULT_PREVIEW_LEN);
+    }
+  }
+  return turns;
+}
+
 const markdownComponents = {
-  // Keep markdown inside the bubble — no extra outer margins.
   p: ({ children }: { children?: React.ReactNode }) => (
     <Typography variant="body1" sx={{ my: 0.5 }}>{children}</Typography>
   ),
@@ -129,11 +220,13 @@ const markdownComponents = {
     </Box>
   ),
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer">
-      {children}
-    </a>
+    <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
   ),
 };
+
+// Left padding for tool-call rows. Aligns the chip stack with where a bot
+// bubble would start (past the avatar gutter).
+const BOT_GUTTER_PL = 8;
 
 const MessageList: React.FC = () => {
   const { messages } = useCopilotChatInternal();
@@ -142,38 +235,10 @@ const MessageList: React.FC = () => {
     initialState: { retrieved_paragraphs: [] },
   });
 
-  // toolCallId -> truncated result text (for the "done" tooltip)
-  const toolResults = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const msg of messages) {
-      if ((msg as any).role === 'tool') {
-        const id = (msg as any).toolCallId;
-        const content = (msg as any).content;
-        if (id && typeof content === 'string') {
-          m.set(id, truncate(content, MAX_RESULT_PREVIEW_LEN));
-        }
-      }
-    }
-    return m;
-  }, [messages]);
-
-  // Visible roles: user + assistant. Tool messages are folded into their
-  // matching tool-call cards via toolCallId.
-  const visible = messages.filter(
-    (m) => (m as any).role === 'user' || (m as any).role === 'assistant'
-  );
-
-  // Find last assistant index — that's where live citation chips attach.
-  const lastAssistantIdx = (() => {
-    for (let i = visible.length - 1; i >= 0; i--) {
-      if ((visible[i] as any).role === 'assistant') return i;
-    }
-    return -1;
-  })();
-
+  const turns = groupIntoTurns(messages as any[]);
   const liveCitations = state?.retrieved_paragraphs ?? [];
 
-  if (visible.length === 0 && !running) {
+  if (turns.length === 0 && !running) {
     return (
       <Box
         display="flex"
@@ -191,92 +256,116 @@ const MessageList: React.FC = () => {
 
   return (
     <List sx={{ width: '100%', p: 1 }}>
-      {visible.map((message, idx) => {
-        const m = message as any;
-        const isUser = m.role === 'user';
-        const content =
-          typeof m.content === 'string'
-            ? m.content
-            : Array.isArray(m.content)
-            ? m.content
-                .filter((c: any) => c?.type === 'text' && typeof c?.text === 'string')
-                .map((c: any) => c.text)
-                .join('')
-            : '';
-        const toolCalls = !isUser && Array.isArray(m.toolCalls) ? m.toolCalls : [];
-        const showCitations = idx === lastAssistantIdx && liveCitations.length > 0;
+      {turns.map((turn, idx) => {
+        const isLatest = idx === turns.length - 1;
+        const showThinking = isLatest && running && !turn.assistantText;
+        const showCitations =
+          isLatest && !!turn.assistantText && liveCitations.length > 0;
 
         return (
-          <ListItem
-            key={m.id ?? `msg-${idx}`}
-            alignItems="flex-start"
-            sx={{ mb: 2, justifyContent: isUser ? 'flex-end' : 'flex-start' }}
-          >
-            <Box
-              sx={{
-                display: 'flex',
-                flexDirection: isUser ? 'row-reverse' : 'row',
-                alignItems: 'flex-start',
-                maxWidth: '80%',
-                width: 'fit-content',
-              }}
+          <Box key={turn.userId} sx={{ mb: 3 }}>
+            {/* User bubble — right, user avatar */}
+            <ListItem
+              alignItems="flex-start"
+              sx={{ mb: 1, justifyContent: 'flex-end' }}
             >
-              <Avatar sx={{ bgcolor: isUser ? 'primary.main' : 'secondary.main', mx: 1 }}>
-                {isUser ? <PersonIcon /> : <BotIcon />}
-              </Avatar>
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'row-reverse',
+                  alignItems: 'flex-start',
+                  maxWidth: '80%',
+                }}
+              >
+                <Avatar sx={{ bgcolor: 'primary.main', mx: 1 }}>
+                  <PersonIcon />
+                </Avatar>
+                <Paper
+                  elevation={1}
+                  sx={{
+                    p: 2,
+                    bgcolor: 'primary.light',
+                    color: 'primary.contrastText',
+                    borderRadius: 2,
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
+                    {turn.userText}
+                  </Typography>
+                </Paper>
+              </Box>
+            </ListItem>
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, minWidth: 0 }}>
-                {/* Tool-call cards (live-only, for assistant turns) */}
-                {toolCalls.length > 0 && (
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                    {toolCalls.map((tc: any) => {
-                      const id = tc?.id;
-                      const fn = tc?.function ?? {};
-                      const name = fn.name ?? 'tool';
-                      const rawArgs = fn.arguments;
-                      const args = typeof rawArgs === 'string' && rawArgs.length > 0
-                        ? (() => {
-                            try { return JSON.parse(rawArgs); } catch { return rawArgs; }
-                          })()
-                        : rawArgs;
-                      const result = id ? toolResults.get(id) : undefined;
-                      return (
-                        <ToolCallCard
-                          key={id ?? `${name}-${rawArgs}`}
-                          toolName={name}
-                          argsPreview={argsPreview(args)}
-                          done={!!result}
-                          resultPreview={result}
-                        />
-                      );
-                    })}
-                  </Box>
-                )}
+            {/* Tool-call chips — left, no avatar, stacked */}
+            {turn.toolCalls.length > 0 && (
+              <ListItem alignItems="flex-start" sx={{ mb: 1, pl: BOT_GUTTER_PL }}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                  {turn.toolCalls.map((tc) => (
+                    <ToolCallCard
+                      key={tc.id}
+                      toolName={tc.name}
+                      argsPreview={argsPreview(tc.args)}
+                      resultPreview={tc.result}
+                    />
+                  ))}
+                </Box>
+              </ListItem>
+            )}
 
-                {/* Message bubble */}
-                {content && (
+            {/* Assistant bubble OR thinking indicator (mutually exclusive) */}
+            {showThinking ? (
+              <ListItem alignItems="flex-start" sx={{ mb: 1 }}>
+                <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+                  <Avatar sx={{ bgcolor: 'secondary.main', mx: 1 }}>
+                    <BotIcon />
+                  </Avatar>
                   <Paper
                     elevation={1}
                     sx={{
                       p: 2,
-                      bgcolor: isUser ? 'primary.light' : 'grey.100',
-                      color: isUser ? 'primary.contrastText' : 'text.primary',
+                      bgcolor: 'grey.100',
+                      borderRadius: 2,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                    }}
+                  >
+                    <CircularProgress size={14} />
+                    <Typography variant="body2" color="text.secondary">
+                      Thinking…
+                    </Typography>
+                  </Paper>
+                </Box>
+              </ListItem>
+            ) : turn.assistantText ? (
+              <ListItem alignItems="flex-start" sx={{ mb: 1 }}>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'row',
+                    alignItems: 'flex-start',
+                    maxWidth: '80%',
+                  }}
+                >
+                  <Avatar sx={{ bgcolor: 'secondary.main', mx: 1 }}>
+                    <BotIcon />
+                  </Avatar>
+                  <Paper
+                    elevation={1}
+                    sx={{
+                      p: 2,
+                      bgcolor: 'grey.100',
+                      color: 'text.primary',
                       borderRadius: 2,
                       wordBreak: 'break-word',
                     }}
                   >
-                    {isUser ? (
-                      <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
-                        {content}
-                      </Typography>
-                    ) : (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                        {content}
-                      </ReactMarkdown>
-                    )}
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                      {turn.assistantText}
+                    </ReactMarkdown>
 
-                    {/* Citation chips — live-only, attached to last assistant message */}
-                    {!isUser && showCitations && (
+                    {showCitations && (
                       <Box sx={{ mt: 1 }}>
                         <Typography
                           variant="caption"
@@ -299,10 +388,10 @@ const MessageList: React.FC = () => {
                       </Box>
                     )}
                   </Paper>
-                )}
-              </Box>
-            </Box>
-          </ListItem>
+                </Box>
+              </ListItem>
+            ) : null}
+          </Box>
         );
       })}
     </List>
