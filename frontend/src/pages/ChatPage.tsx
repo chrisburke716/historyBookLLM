@@ -31,6 +31,7 @@ const ChatPage: React.FC = () => {
     currentSession,
     sessions,
     historicalMessages,
+    sessionsLoaded,
     isLoading,
     error,
     loadSessions,
@@ -39,21 +40,24 @@ const ChatPage: React.FC = () => {
     clearError,
   } = useChat();
 
-  const hasCreatedInitialSession = useRef(false);
+  const hasInitialized = useRef(false);
 
-  // Auto-create an initial session on first load if none exists.
+  // Pick an initial session once the session list has loaded:
+  //   - if there are existing sessions, open the most recent one
+  //   - otherwise create a new one
+  // Gated on `sessionsLoaded` so we don't fire before the GET /sessions
+  // request has actually resolved (otherwise we'd race the fetch and
+  // always create a fresh session on every page load).
   useEffect(() => {
-    if (
-      !currentSession &&
-      sessions.length === 0 &&
-      !isLoading &&
-      !hasCreatedInitialSession.current
-    ) {
-      hasCreatedInitialSession.current = true;
+    if (!sessionsLoaded || currentSession || hasInitialized.current) return;
+    hasInitialized.current = true;
+    if (sessions.length > 0) {
+      switchToSession(sessions[0]);
+    } else {
       createSession();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSession, sessions.length, isLoading]);
+  }, [sessionsLoaded, currentSession, sessions]);
 
   return (
     <Container

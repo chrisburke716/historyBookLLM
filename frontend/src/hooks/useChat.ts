@@ -18,6 +18,10 @@ interface ChatState {
   currentSession: SessionResponse | null;
   sessions: SessionResponse[];
   historicalMessages: MessageResponse[];
+  // True once the initial session list has been fetched (whether the result
+  // was empty or not). Lets callers distinguish "we don't know yet" from
+  // "we asked and there are no sessions".
+  sessionsLoaded: boolean;
   isLoading: boolean;
   error: string | null;
 }
@@ -27,6 +31,7 @@ export const useChat = () => {
     currentSession: null,
     sessions: [],
     historicalMessages: [],
+    sessionsLoaded: false,
     isLoading: false,
     error: null,
   });
@@ -43,9 +48,16 @@ export const useChat = () => {
     try {
       setError(null);
       const response = await api.getSessions();
-      setState((prev) => ({ ...prev, sessions: response.sessions }));
+      setState((prev) => ({
+        ...prev,
+        sessions: response.sessions,
+        sessionsLoaded: true,
+      }));
     } catch (error) {
       setError(`Failed to load sessions: ${error}`);
+      // Treat a failed fetch as "loaded" so the UI doesn't hang waiting
+      // forever; the error snackbar surfaces the actual problem.
+      setState((prev) => ({ ...prev, sessionsLoaded: true }));
     }
   }, [setError]);
 
