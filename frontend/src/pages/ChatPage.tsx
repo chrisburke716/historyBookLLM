@@ -25,7 +25,6 @@ import ChatThreadController from '../components/ChatThreadController';
 import MessageList from '../components/MessageList';
 import MessageInput from '../components/MessageInput';
 import SessionDropdown from '../components/SessionDropdown';
-import { SessionResponse } from '../types';
 
 const ChatPage: React.FC = () => {
   const {
@@ -56,14 +55,6 @@ const ChatPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSession, sessions.length, isLoading]);
 
-  const handleNewSession = () => {
-    void createSession();
-  };
-
-  const handleSessionChange = (session: SessionResponse) => {
-    void switchToSession(session);
-  };
-
   return (
     <Container
       maxWidth="lg"
@@ -73,8 +64,8 @@ const ChatPage: React.FC = () => {
         <SessionDropdown
           sessions={sessions}
           currentSession={currentSession}
-          onSessionChange={handleSessionChange}
-          onNewSession={handleNewSession}
+          onSessionChange={switchToSession}
+          onNewSession={createSession}
           disabled={isLoading}
         />
       </Box>
