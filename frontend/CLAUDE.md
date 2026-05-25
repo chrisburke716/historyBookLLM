@@ -1,6 +1,6 @@
 # CLAUDE.md - Frontend (React TypeScript)
 
-React 19 + TypeScript chat interface for the History Book RAG application. Uses Material-UI components and Axios for API communication.
+React 19 + TypeScript UI for the History Book RAG application. Three pages: Chat, Book browsing, KG Explorer.
 
 ## Quick Commands
 
@@ -8,33 +8,26 @@ React 19 + TypeScript chat interface for the History Book RAG application. Uses 
 # Install dependencies
 cd frontend && npm install
 
-# Start development server (http://localhost:3000)
+# Dev server (http://localhost:3000)
 cd frontend && npm start
 
-# Build for production
+# Production build
 cd frontend && npm run build
 
-# Run tests
-cd frontend && npm test
-
-# Type checking
+# Type check
 cd frontend && npx tsc --noEmit
 ```
 
 ## Tech Stack
 
-- **React 19** with TypeScript
-- **Material-UI (MUI)** v7 - Component library
-- **Axios** - HTTP client
-- **React Hooks** - State management (Chat/Book pages)
-- **Redux Toolkit + react-redux** - Global state for KG Explorer
-- **TanStack Query** - Server state / caching for KG data
-- **react-force-graph-2d** - Force-directed graph canvas rendering (KG Explorer)
-- **Jest + React Testing Library** - Testing
-
-## API Client
-
-All chat operations go through `services/agentAPI.ts` → `/api/chat/*`. Book browsing uses `services/api.ts` (`booksAPI`) → `/api/books/*`. KG Explorer uses `services/kgAPI.ts` → `/api/kg/*`.
+- **React 19** with TypeScript (5.x; bumped above CRA's 4.x default because CopilotKit's `.d.cts` files use modern TS syntax)
+- **Material-UI v7** — component library and theming
+- **CopilotKit** (`@copilotkit/react-core`) + `@ag-ui/client` — chat hooks + AG-UI transport
+- **react-markdown** + **remark-gfm** — assistant message rendering
+- **TanStack Query** — server state for chat session list/history + KG data
+- **Redux Toolkit + react-redux** — UI state for KG Explorer
+- **Axios** — REST surface (sessions, history, books, KG); live chat goes through CopilotKit's HttpAgent, not Axios
+- **react-force-graph-2d** — KG canvas
 
 ---
 
@@ -43,260 +36,141 @@ All chat operations go through `services/agentAPI.ts` → `/api/chat/*`. Book br
 ```
 frontend/src/
 ├── components/
-│   ├── BookSelector.tsx      # Book and chapter dropdown selector
-│   ├── ChapterView.tsx       # Chapter content display
-│   ├── MessageInput.tsx      # User input field
-│   ├── MessageList.tsx       # Message display
-│   ├── SessionDropdown.tsx   # Session selector
+│   ├── CopilotProvider.tsx        # Wraps chat page with <CopilotKit> + HttpAgent
+│   ├── ChatThreadController.tsx   # Hydrates history; fires onRunEnd on agent completion
+│   ├── MessageList.tsx            # Renders conversation as turns (user + tool calls + answer)
+│   ├── MessageInput.tsx           # Driven by useCopilotChatInternal.sendMessage
+│   ├── ToolCallCard.tsx           # Compact MUI chip for a single tool call
+│   ├── SessionDropdown.tsx        # Session selector
+│   ├── BookSelector.tsx, ChapterView.tsx
 │   └── kg/
-│       ├── KGTopBar.tsx      # Graph selector, search, display controls
-│       ├── ForceGraphPanel.tsx  # react-force-graph-2d canvas wrapper
-│       └── EntityPanel.tsx   # Entity detail + relationship list
+│       ├── KGTopBar.tsx
+│       ├── ForceGraphPanel.tsx
+│       └── EntityPanel.tsx
 ├── pages/
-│   ├── BookPage.tsx          # Book browsing page
-│   ├── ChatPage.tsx          # Main chat page
-│   └── KGPage.tsx            # KG Explorer page (layout + display logic)
+│   ├── ChatPage.tsx
+│   ├── BookPage.tsx
+│   └── KGPage.tsx
 ├── services/
-│   ├── api.ts               # Unified API abstraction (switches backends)
-│   ├── agentAPI.ts          # Agent API client (LangGraph)
-│   └── kgAPI.ts             # KG API client (/api/kg/*)
-├── store/
-│   ├── index.ts             # Redux store configuration
-│   └── graphSlice.ts        # KG Explorer state (focus, graph, display mode, filters)
+│   ├── api.ts                     # Re-exports for backwards compat
+│   ├── agentAPI.ts                # REST client: sessions + history (no chat send)
+│   └── kgAPI.ts                   # KG API client
+├── store/                         # Redux (KG Explorer only)
 ├── hooks/
-│   ├── useChat.ts           # Chat state management hook
-│   └── useKGQueries.ts      # TanStack Query hooks for KG data
-├── types/
-│   ├── index.ts             # Shared TypeScript interfaces
-│   ├── agent.ts             # Agent-specific types
-│   └── kg.ts                # KG API types (mirrors kg_models.py exactly)
-├── App.tsx                  # Root component with routing + Redux/Query providers
-└── index.tsx                # Entry point
+│   ├── useChat.ts                 # Session list + history + currentSession
+│   └── useKGQueries.ts            # KG TanStack hooks
+├── types/index.ts                 # Interfaces matching backend Pydantic models
+├── App.tsx                        # Routes + provider stack
+└── index.tsx
 ```
 
-## Key Files
+---
 
-### API Client (`services/api.ts`)
+## Chat surface
 
-The API client provides a **unified interface** that works with both backends (Chat and Agent).
+Custom MUI components driven by CopilotKit hooks. No prebuilt `<CopilotChat>` — design consistency with the rest of the MUI app outweighs the implementation savings.
 
-**Unified API Export** (recommended):
-```typescript
-import { api } from '../services/api';
-
-const session = await api.createSession({ title: 'New Chat' });
-const response = await api.sendMessage(session.id, { content: 'Hello' });
-```
-
-The `api` export automatically switches between `ChatAPI` and `AgentAPI` based on `REACT_APP_USE_AGENT_API`.
-
-**Individual API Classes**:
-
-Both `ChatAPI` and `AgentAPI` implement the same interface:
-
-```typescript
-interface APIClient {
-  createSession(request: SessionCreateRequest): Promise<SessionResponse>
-  getSessions(limit: number): Promise<SessionListResponse>
-  getSessionMessages(sessionId: string): Promise<MessageListResponse>
-  sendMessage(sessionId: string, request: MessageRequest): Promise<ChatResponse>
-  healthCheck(): Promise<{ message: string }>
-}
-```
-
-- **ChatAPI**: Calls `/api/chat/*` endpoints (LCEL-based)
-- **AgentAPI**: Calls `/api/agent/*` endpoints (LangGraph-based)
-
-**Legacy access**:
-```typescript
-import { chatAPI, agentAPI } from '../services/api';
-
-// Directly use specific backend (not recommended)
-const response = await chatAPI.sendMessage(...);
-const response = await agentAPI.sendMessage(...);
-```
-
-### Type Definitions (`types/index.ts`)
-
-**Matches backend API models exactly**:
-
-```typescript
-// Request types
-interface SessionCreateRequest {
-  title?: string;
-}
-
-interface MessageRequest {
-  content: string;
-  enable_retrieval?: boolean;
-  max_context_paragraphs?: number;
-}
-
-// Response types
-interface SessionResponse {
-  id: string;
-  title?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-interface MessageResponse {
-  id: string;
-  content: string;
-  role: string;  // "user" | "assistant"
-  timestamp: string;
-  session_id: string;
-  citations?: string[];  // ["Page 42", ...]
-  metadata?: AgentMetadata;  // Agent API only - graph execution details
-}
-
-interface ChatResponse {
-  message: MessageResponse;
-  session: SessionResponse;  // Includes updated session with title
-}
-
-// UI state
-interface ChatState {
-  currentSession: SessionResponse | null;
-  sessions: SessionResponse[];
-  messages: MessageResponse[];
-  isLoading: boolean;
-  error: string | null;
-}
-```
-
-**Title Updates**: The `currentSession` and `sessions` are automatically updated when `sendMessage` receives a response. The backend generates titles synchronously, so the UI reflects the new title immediately without polling.
+### Component graph
 
 ```
-
-### Custom Hook (`hooks/useChat.ts`)
-
-**Purpose**: Manages chat state and API interactions with React hooks.
-
-**State Management**:
-```typescript
-const [state, setState] = useState<ChatState>({
-  currentSession: null,
-  sessions: [],
-  messages: [],
-  isLoading: false,
-  error: null,
-});
+ChatPage
+  ├── SessionDropdown                  ← useChat (sessions, switchToSession, createSession)
+  └── CopilotProvider                  ← scopes <CopilotKit> to the chat page only
+        ├── ChatThreadController       ← setMessages on mount; fires onRunEnd
+        ├── MessageList                ← useCopilotChatInternal + useCoAgent
+        └── MessageInput               ← useCopilotChatInternal.sendMessage
 ```
 
-**Key Methods**:
-- `loadSessions()` - Fetch session list
-- `createSession(title)` - Create new session
-- `selectSession(sessionId)` - Switch to session and load messages
-- `sendMessage(content)` - Send message, get AI response, update session title automatically
-- `setError(error)` - Set error state
-- `setLoading(loading)` - Set loading state
+### Hooks in play
 
-**Usage in Components**:
-```typescript
-import { useChat } from '../hooks/useChat';
+- **`useCopilotChatInternal()`** — gives `messages`, `sendMessage`, `setMessages`. We use the "internal" variant because the OSS-public `useCopilotChat` strips `messages` and `sendMessage` (those are reserved for Cloud users). `Internal` is exported and stable; pin the CopilotKit version.
+- **`useCoAgent({ name: 'rag', initialState })`** — gives `state` (our `retrieved_paragraphs`), `running` (true→false transition signals run-end). `running` drives both the input's disabled state and `ChatThreadController`'s session-refresh trigger.
+- **`HttpAgent` from `@ag-ui/client`** — POSTs `RunAgentInput` to `/api/chat/agent` and parses the SSE stream. Constructed once per session in `CopilotProvider` with `threadId={currentSession.id}` so the agent's `threadId` round-trips correctly to the backend.
 
-const ChatPage = () => {
-  const {
-    state,
-    loadSessions,
-    createSession,
-    selectSession,
-    sendMessage
-  } = useChat();
+### Turn-based rendering
 
-  // Component logic
-};
+`MessageList` doesn't iterate the raw AG-UI messages array. It folds them into `Turn[]` via `groupIntoTurns(messages)`: every `UserMessage` starts a new turn; subsequent `AssistantMessage`s contribute text and `toolCalls`; `ToolMessage`s match into the turn's tool list by `toolCallId`. This makes the visual structure stable regardless of how AG-UI splits/consolidates assistant messages across mid-run vs end-of-run.
+
+Per turn the renderer emits:
+- User bubble (right, user avatar)
+- Tool-call chip stack (left, no avatar — chips clearly bot output by styling alone)
+- Either the assistant text bubble (left, bot avatar, markdown via `react-markdown` + `remark-gfm`, citation chips from `state.retrieved_paragraphs` on the latest turn) **or** a "Thinking…" indicator (same position, only shown on the latest turn while `running` and `assistantText` is empty)
+
+### Citations
+
+Live citations come from `useCoAgent`'s `state.retrieved_paragraphs` and render under the latest turn's assistant bubble using the unified compact format `[B X, Ch Y, p. Z]` (same format the backend uses for chip labels, tool excerpts fed to the LLM, and inline-citation prompt instructions). Historical chips on previously-completed turns are a known gap — addressing that would require attaching citations to each message rather than just the latest one (AG-UI's message types don't have a metadata slot).
+
+### Provider config (CopilotProvider)
+
+- `runtimeUrl` is set to a stub URL even though we use `selfManagedAgents` — CopilotKit's prop validator requires `runtimeUrl` / `publicApiKey` / `publicLicenseKey` to be set. With `selfManagedAgents`, the named agent takes precedence at runtime, so the stub URL is a dead-letter for validation only.
+- `<CopilotKit key={threadId}>` — re-keying on session switch unmounts and remounts the subtree, giving `ChatThreadController` a fresh `hydrated` ref so it hydrates exactly once per session.
+
+### Session state (useChat)
+
+TanStack Query owns server state — same pattern as the KG page. Local `useState` for `currentSession` (UI choice) and `dismissed` (most recently dismissed Error ref for snackbar UX).
+
+```ts
+const {
+  currentSession,          // useState
+  sessions,                // useQuery(['sessions'])
+  historicalMessages,      // useQuery(['session-messages', id])
+  sessionsLoaded,          // sessionsQuery.isFetched
+  isLoading,               // createMutation.isPending || switchMutation.isPending
+  error,                   // derived; null if user already dismissed this Error ref
+  onRunEnd,                // invalidates sessions + active session's messages
+  createSession,           // useMutation
+  switchToSession,         // useMutation (pre-fetches messages, then setCurrentSession)
+  clearError,
+} = useChat();
 ```
 
-## Components
+`onRunEnd` is wired to `ChatThreadController`. Its messages-invalidation matters because a finished turn means Weaviate now has new persisted messages; re-entering the session later should re-fetch fresh history rather than serve a stale cache.
 
-### MessageInput
+### Error UX
 
-**Purpose**: Text input field with send button.
+Snackbar shows a derived error message — first non-null among the four query/mutation errors. The `dismissed` state tracks the user's last dismissal *by Error reference*; a new failure produces a new Error reference and the snackbar re-appears. This sidesteps the "useEffect that copies state into state" antipattern from React's *You Might Not Need an Effect* guide.
 
-**Props**:
-```typescript
-interface MessageInputProps {
-  onSendMessage: (content: string) => void;
-  disabled?: boolean;
-}
+---
+
+## REST surface (`services/agentAPI.ts`)
+
+Used only for the non-streaming parts: create/list/delete session, fetch persisted history. Live chat goes through CopilotKit's HttpAgent.
+
+```ts
+agentAPI.createSession(request)
+agentAPI.getSessions(limit)
+agentAPI.getSessionMessages(sessionId)
+agentAPI.healthCheck()
 ```
 
-**Features**:
-- Material-UI TextField
-- Send button (disabled while loading)
-- Enter key to send
-- Auto-focus on load
+All hit `/api/chat/*`. Base URL configurable via `REACT_APP_API_URL` (default `http://localhost:8000`).
 
-### MessageList
+---
 
-**Purpose**: Displays conversation with citations.
+## Types (`types/index.ts`)
 
-**Props**:
-```typescript
-interface MessageListProps {
-  messages: MessageResponse[];
-  isLoading?: boolean;
-}
+Mirrors the backend Pydantic models in `src/history_book/api/models/chat_models.py`. Keep them in sync:
+
+```ts
+SessionCreateRequest, SessionResponse, SessionListResponse
+MessageResponse, MessageListResponse
+BookResponse, ChapterResponse, ParagraphResponse, ...
 ```
 
-**Features**:
-- Scrollable container
-- User messages (right-aligned, blue)
-- Assistant messages (left-aligned, gray)
-- Citations display below AI responses
-- Loading indicator
-- Auto-scroll to bottom on new messages
-
-### SessionDropdown
-
-**Purpose**: Session selector dropdown.
-
-**Props**:
-```typescript
-interface SessionDropdownProps {
-  sessions: SessionResponse[];
-  currentSession: SessionResponse | null;
-  onSelectSession: (sessionId: string) => void;
-  onNewSession: () => void;
-}
-```
-
-**Features**:
-- Material-UI Select component
-- "New Chat" button
-- Session list with titles (truncated at 100 chars)
-- Auto-generated titles based on conversation content
-
-### ChatPage
-
-**Purpose**: Main page - composes all components and manages state.
-
-**Responsibilities**:
-- Uses `useChat()` hook for state
-- Renders SessionDropdown, MessageList, MessageInput
-- Handles user interactions
-- Coordinates API calls
-
-**Lifecycle**:
-1. Load sessions on mount
-2. Auto-create session if none exists
-3. User sends message → call `sendMessage()`
-4. Display AI response with citations
+Chat-send types (`MessageRequest`, `ChatResponse`, `ChatState`) were removed when the synchronous chat endpoint was retired in favor of AG-UI.
 
 ---
 
 ## KG Explorer (`/kg`)
 
-Interactive force-directed graph visualization of the knowledge graph.
+Interactive force-directed graph visualization of the knowledge graph. (Unchanged by the chat overhaul.)
 
 ### Architecture
 
-- **`KGPage.tsx`**: Top-level layout; owns `displayGraph` memo (applies occurrence filter then recursive leaf trim); passes filtered data to `ForceGraphPanel` and raw graph stats to `EntityPanel`.
-- **`ForceGraphPanel.tsx`**: Wraps `react-force-graph-2d`. Custom canvas node rendering with focus highlighting. First-order neighbors of focused entity are fully opaque; others dimmed to 50%. Link opacity/width also scales with focus proximity.
-- **`EntityPanel.tsx`**: Unfocused → graph stats. Focused → entity name, type, aliases, description bullets, relationship list with direction icons, relation_type chips, clickable neighbor names, and `b{N}:ch{N}` source citations.
-- **`KGTopBar.tsx`**: Graph selector dropdown (volume/book/chapter grouped + sorted, titles from `/api/books`), entity search (enter key → API call → dropdown), N-hop/Full toggle, hop count, occurrence threshold slider (1–4), leaf trim toggle, back/forward history buttons (stubbed).
+- **`KGPage.tsx`** — owns `displayGraph` memo (occurrence filter + recursive leaf trim); passes filtered data to `ForceGraphPanel` and raw graph stats to `EntityPanel`.
+- **`ForceGraphPanel.tsx`** — wraps `react-force-graph-2d`. Custom canvas node rendering with focus highlighting; first-order neighbors of focused entity opaque, others dimmed.
+- **`EntityPanel.tsx`** — unfocused → graph stats; focused → entity name, type, aliases, descriptions, relationship list with direction icons, clickable neighbors, source citations.
+- **`KGTopBar.tsx`** — graph selector (volume/book/chapter grouped + sorted, titles from `/api/books`), entity search, N-hop/Full toggle, hop count, occurrence threshold slider (1–4), leaf-trim toggle.
 
 ### Redux state (`graphSlice`)
 
@@ -312,515 +186,87 @@ Interactive force-directed graph visualization of the knowledge graph.
 
 `clearFocus` resets `displayMode` → `'full'`. `setGraphName` clears focus.
 
-### Key implementation details
+### Implementation notes
 
-- **Link mutation**: `react-force-graph-2d` mutates `link.source`/`link.target` from string IDs to node objects during simulation. Always use `linkNodeId(endpoint)` (defined in both `ForceGraphPanel` and `KGPage`) to resolve IDs from links.
-- **Neighbor highlighting**: `neighborIds` useMemo must use `linkNodeId()` — direct string comparison fails post-simulation.
+- **Link mutation**: `react-force-graph-2d` mutates `link.source`/`link.target` from string IDs to node objects during simulation. Use `linkNodeId(endpoint)` to resolve IDs from links — direct string comparison fails post-simulation.
 - **Leaf trimming**: `trimLeavesRecursive` in `KGPage` uses degree `<= 1` (catches isolated nodes too). Focused entity is always protected from removal.
-- **Graph dropdown filtering**: Book-type graphs filtered with `/^book\d+$/` to exclude partial merge artifacts (e.g., `book3_ch4_5`).
+- **Graph dropdown filtering**: Book-type graphs filtered with `/^book\d+$/` to exclude partial merge artifacts.
 
 ---
 
-## Book Browsing Interface
+## Book Browsing (`/book`)
 
-The application includes a dedicated book browsing interface that allows users to read book content directly in the browser. This improves the workflow by eliminating the need to reference physical books while chatting.
+Read chapter content directly in the browser. Eliminates needing the physical book during chat. (Unchanged by the chat overhaul.)
 
-**Access**: `/book` or `/book/:bookIndex/:chapterIndex`
-
-### Features
-
-- **Cascading Selection**: Book → Chapter dropdown navigation
-- **URL-based Deep Linking**: Navigate directly to specific chapters via URL parameters
-- **Scroll Position Persistence**: Automatically saves and restores reading position per chapter
-- **Page Number Display**: Shows page numbers in left margin for citation reference
-- **Fixed Navigation**: Book/Chapter selectors remain visible while scrolling
-- **Tab Navigation**: Switch between Chat and Book modes via navigation bar
+- **Cascading selection**: Book → Chapter dropdown
+- **URL-based deep linking**: `/book/:bookIndex/:chapterIndex`
+- **Scroll position persistence** via `localStorage` (debounced 300ms; max 10 saved positions, oldest evicted)
+- **Page numbers** in left margin for citation reference
 
 ### Components
 
-#### BookSelector
+- **`BookSelector`** — cascading dropdowns (book then chapter); loads from `/api/books` and `/api/books/{idx}/chapters`.
+- **`ChapterView`** — paragraph layout with 60px left-margin page numbers; loaded from `/api/books/{idx}/chapters/{idx}`.
+- **`BookPage`** — owns URL params, content load, scroll-position effect.
 
-**Purpose**: Cascading dropdown for book and chapter selection.
+---
 
-**Props**:
-```typescript
-interface BookSelectorProps {
-  selectedBookIndex: number | null;
-  selectedChapterIndex: number | null;
-  onSelectionChange: (bookIndex: number | null, chapterIndex: number | null) => void;
-  disabled?: boolean;
-}
+## Provider stack (App.tsx)
+
+```tsx
+<Provider store={store}>
+  <QueryClientProvider client={queryClient}>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <BrowserRouter>...routes...</BrowserRouter>
+    </ThemeProvider>
+  </QueryClientProvider>
+</Provider>
 ```
 
-**Features**:
-- Loads books on mount from `/api/books`
-- Loads chapters when book selected from `/api/books/{bookIndex}/chapters`
-- Material-UI Select components with loading states
-- Cascading behavior: chapter dropdown disabled until book selected
-- Calls `onSelectionChange` callback when selection changes
+CopilotKit is scoped to the chat page only via `<CopilotProvider>` inside `ChatPage`, not lifted to `App.tsx`.
 
-**File**: `src/components/BookSelector.tsx`
+---
 
-#### ChapterView
+## Environment
 
-**Purpose**: Displays chapter content with paragraphs and page numbers.
+`.env` in `frontend/`:
 
-**Props**:
-```typescript
-interface ChapterViewProps {
-  chapterContent: ChapterContentResponse | null;
-  isLoading: boolean;
-}
-```
-
-**Features**:
-- Material-UI Paper wrapper for visual elevation
-- Chapter title with metadata (page range)
-- Flexbox layout with page numbers in left margin (60px)
-- Paragraph text with justified alignment
-- Loading state with CircularProgress
-- Empty state when no chapter selected
-
-**Layout**:
-```
-┌─────────────────────────────────────┐
-│  Chapter Title                      │
-│  Pages 42-67                        │
-│                                     │
-│  42   First paragraph text...       │
-│       continuing on same page.      │
-│                                     │
-│  43   Next paragraph starts here... │
-│                                     │
-└─────────────────────────────────────┘
-```
-
-**File**: `src/components/ChapterView.tsx`
-
-#### BookPage
-
-**Purpose**: Main container that orchestrates book browsing experience.
-
-**Responsibilities**:
-- Manages URL parameters for book/chapter selection
-- Loads chapter content from `/api/books/{bookIndex}/chapters/{chapterIndex}`
-- Handles scroll position persistence via localStorage
-- Provides scrollable container with fixed navigation
-- Updates URL when selection changes
-
-**State**:
-```typescript
-const [selectedBookIndex, setSelectedBookIndex] = useState<number | null>(null);
-const [selectedChapterIndex, setSelectedChapterIndex] = useState<number | null>(null);
-const [chapterContent, setChapterContent] = useState<ChapterContentResponse | null>(null);
-const [isLoadingContent, setIsLoadingContent] = useState(false);
-const [error, setError] = useState<string | null>(null);
-```
-
-**Layout Architecture**:
-```typescript
-<Container
-  maxWidth="lg"
-  sx={{
-    height: 'calc(100vh - 64px)',  // Full height minus AppBar (64px)
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden'  // Prevent outer scroll
-  }}
->
-  {/* Fixed at top - doesn't scroll */}
-  <BookSelector ... />
-
-  {/* Scrollable container */}
-  <Box
-    ref={scrollContainerRef}
-    sx={{
-      flex: 1,
-      overflow: 'auto',  // Enable scrolling
-      mt: 2
-    }}
-  >
-    <ChapterView ... />
-  </Box>
-</Container>
-```
-
-**File**: `src/pages/BookPage.tsx`
-
-### URL Routing
-
-**Routes** (defined in `App.tsx`):
-```typescript
-<Routes>
-  <Route path="/book" element={<BookPage />} />
-  <Route path="/book/:bookIndex/:chapterIndex" element={<BookPage />} />
-</Routes>
-```
-
-**URL Parameters**:
-- `bookIndex` - Integer index of selected book
-- `chapterIndex` - Integer index of selected chapter within book
-
-**Examples**:
-- `/book` - No selection (shows empty state)
-- `/book/3/4` - Book 3, Chapter 4
-
-**Navigation Behavior**:
-- Selecting book/chapter updates URL via `navigate()`
-- URL changes trigger content loading via `useEffect`
-- Browser back/forward buttons work naturally
-- Deep linking: Share URLs to specific chapters
-
-### Scroll Position Persistence
-
-**Implementation**: Uses `localStorage` with automatic cleanup.
-
-**Storage Format**:
-```typescript
-// localStorage key format
-const key = `book-scroll-${bookIndex}-${chapterIndex}`;
-
-// Stored value (JSON)
-{
-  position: number,      // Scroll position in pixels
-  timestamp: number      // Date.now() for cleanup
-}
-```
-
-**Lifecycle**:
-
-1. **Save** (debounced 300ms on scroll):
-```typescript
-const saveScrollPosition = debounce(() => {
-  const position = scrollContainerRef.current.scrollTop;
-  const data = { position, timestamp: Date.now() };
-  localStorage.setItem(key, JSON.stringify(data));
-  cleanupOldScrollPositions();
-}, 300);
-```
-
-2. **Restore** (when chapter loads):
-```typescript
-useEffect(() => {
-  const savedData = localStorage.getItem(key);
-  if (savedData) {
-    const { position } = JSON.parse(savedData);
-    scrollContainerRef.current?.scrollTo({
-      top: position,
-      behavior: 'smooth'
-    });
-  }
-}, [chapterContent, selectedBookIndex, selectedChapterIndex]);
-```
-
-3. **Cleanup** (automatic, max 10 positions):
-```typescript
-const MAX_SAVED_POSITIONS = 10;
-
-function cleanupOldScrollPositions() {
-  // Get all scroll position keys with timestamps
-  const scrollKeys = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key?.startsWith('book-scroll-')) {
-      const data = JSON.parse(localStorage.getItem(key));
-      scrollKeys.push({ key, timestamp: data.timestamp });
-    }
-  }
-
-  // Remove oldest positions beyond MAX
-  if (scrollKeys.length > MAX_SAVED_POSITIONS) {
-    scrollKeys
-      .sort((a, b) => a.timestamp - b.timestamp)
-      .slice(0, scrollKeys.length - MAX_SAVED_POSITIONS)
-      .forEach(({ key }) => localStorage.removeItem(key));
-  }
-}
-```
-
-**Benefits**:
-- Maintains reading position across sessions
-- Automatic cleanup prevents localStorage bloat
-- Smooth scroll restoration for better UX
-- Independent position per chapter
-
-### Backend API Integration
-
-**Book API Endpoints** (see `/src/history_book/api/routes/books.py`):
-
-```typescript
-// Get all books
-GET /api/books
-→ BookListResponse { books: BookResponse[] }
-
-// Get chapters for a book
-GET /api/books/{book_index}/chapters
-→ ChapterListResponse { chapters: ChapterResponse[] }
-
-// Get chapter content with paragraphs
-GET /api/books/{book_index}/chapters/{chapter_index}
-→ ChapterContentResponse {
-    chapter: ChapterResponse,
-    paragraphs: ParagraphResponse[]
-  }
-```
-
-**Type Definitions** (`types/index.ts`):
-```typescript
-interface BookResponse {
-  id: string;
-  title: string;
-  book_index: number;
-  start_page: number;
-  end_page: number;
-}
-
-interface ChapterResponse {
-  id: string;
-  title: string;
-  chapter_index: number;
-  book_index: number;
-  start_page: number;
-  end_page: number;
-}
-
-interface ParagraphResponse {
-  text: string;
-  page: number;
-  paragraph_index: number;
-}
-
-interface ChapterContentResponse {
-  chapter: ChapterResponse;
-  paragraphs: ParagraphResponse[];
-}
-```
-
-### Usage Workflow
-
-1. **Navigate to Book Page**: Click "Book" tab in navigation bar
-2. **Select Book**: Choose from dropdown (e.g., "Book 3: Medieval History")
-3. **Select Chapter**: Choose from dropdown (e.g., "Chapter 4: The Crusades")
-4. **Read Content**: Scroll through chapter paragraphs
-5. **Navigate Away**: Switch to Chat tab or close browser
-6. **Return**: Come back to same book/chapter → scroll position restored
-
-### Development Notes
-
-**Performance Optimizations**:
-- Debounced scroll events (300ms) to reduce localStorage writes
-- Cached repository manager on backend (via `@lru_cache`) to avoid connection overhead
-- Delayed scroll restoration (100ms) to ensure content is fully rendered
-
-**Layout Strategy**:
-- Navigation bar fixed at top (doesn't scroll)
-- Container height calculated as `calc(100vh - 64px)` where 64px is AppBar height
-- Flexbox for layout control (vertical stacking)
-- Scroll container uses `overflow: auto` for native browser scrolling
-
-**Future Enhancements**:
-- Click citations in chat to jump to book location
-- Highlight text to auto-populate chat question
-- Search within chapter
-- Bookmark specific paragraphs
-
-## State Management Pattern
-
-**Custom Hook Pattern** (not Redux/Context):
-
-```typescript
-// useChat.ts provides state + methods
-const { state, loadSessions, sendMessage } = useChat();
-
-// Components use state directly
-{state.messages.map(msg => <Message key={msg.id} {...msg} />)}
-
-// Components call methods
-<MessageInput onSendMessage={(content) => sendMessage(content)} />
-```
-
-**Benefits**:
-- Simple for small app
-- No global state complexity
-- Easy to test
-- Type-safe with TypeScript
-
-**Title Generation Flow**:
-1. User sends first message in session
-2. Backend generates response + title (synchronous)
-3. Response includes both `message` and `session` fields
-4. `useChat.sendMessage()` updates both message list and session title in one operation
-5. UI reflects new title immediately (no polling required)
-
-## Material-UI Components Used
-
-- `TextField` - Text input
-- `Button` - Send button, new session
-- `Select`, `MenuItem` - Session dropdown
-- `Paper`, `Box` - Layout containers
-- `Typography` - Text styling
-- `CircularProgress` - Loading spinner
-- `Alert` - Error messages
-
-## Environment Configuration
-
-Frontend configuration is controlled by `.env` file in `frontend/` directory.
-
-**Example `.env`**:
 ```bash
-# Backend selection (default: Agent API)
-REACT_APP_USE_AGENT_API=true
-
-# Backend URL
 REACT_APP_API_URL=http://localhost:8000
 ```
 
-**Environment Variables**:
-- `REACT_APP_USE_AGENT_API` - Set to `true` for Agent API (LangGraph), `false` for Chat API (LCEL)
-- `REACT_APP_API_URL` - Backend base URL (default: `http://localhost:8000`)
+Changes require restarting `npm start`.
 
-**Note**: Changes to `.env` require restarting `npm start`.
+---
 
-## Development Workflow
+## Dev workflow
 
-### Local Development
+1. Start backend: `PYTHONPATH=src poetry run uvicorn src.history_book.api.main:app --reload --port 8000`
+2. Start frontend: `cd frontend && npm start`
+3. Open http://localhost:3000
 
-1. **Start backend**:
-```bash
-PYTHONPATH=src poetry run uvicorn src.history_book.api.main:app --reload
-```
+Both auto-reload on file changes.
 
-2. **Start frontend**:
-```bash
-cd frontend && npm start
-```
+CopilotKit's transitive deps produce ~50 source-map warnings on every build (`@0no-co/graphql.web`, `@a2ui/web_core`, `rehype-harden`, `@urql/core` ship bundles whose `//# sourceMappingURL` points at `.ts` sources not published to npm). Harmless; ignore. Suppressible via `GENERATE_SOURCEMAP=false` in `.env` if they get noisy, at the cost of debugging into our own source.
 
-3. **Access**: http://localhost:3000
+---
 
-### Hot Reload
-
-Both frontend and backend auto-reload on file changes.
-
-## Common Tasks
-
-### Adding New Component
-
-```typescript
-// src/components/NewComponent.tsx
-import React from 'react';
-
-interface NewComponentProps {
-  data: string;
-}
-
-const NewComponent: React.FC<NewComponentProps> = ({ data }) => {
-  return <div>{data}</div>;
-};
-
-export default NewComponent;
-```
-
-### Updating TypeScript Types
-
-When backend API changes:
-1. Update `types/index.ts` to match new API models
-2. Run `npx tsc --noEmit` to check for errors
-3. Fix type errors in components
-
-### Adding API Method
-
-```typescript
-// services/api.ts
-async newMethod(param: string): Promise<ResponseType> {
-  const response = await this.api.get(`/api/new-endpoint/${param}`);
-  return response.data;
-}
-```
-
-### Adding Hook Method
-
-```typescript
-// hooks/useChat.ts
-const newMethod = useCallback(async (param: string) => {
-  try {
-    setLoading(true);
-    const result = await chatAPI.newMethod(param);
-    setState(prev => ({ ...prev, newData: result }));
-  } catch (error) {
-    setError(`Failed: ${error}`);
-  } finally {
-    setLoading(false);
-  }
-}, [setLoading, setError]);
-```
-
-## Testing
-
-### Run Tests
-
-```bash
-cd frontend && npm test
-```
-
-### Example Test
-
-```typescript
-import { render, screen } from '@testing-library/react';
-import MessageInput from './MessageInput';
-
-test('renders message input', () => {
-  render(<MessageInput onSendMessage={jest.fn()} />);
-  const inputElement = screen.getByPlaceholderText(/type a message/i);
-  expect(inputElement).toBeInTheDocument();
-});
-```
-
-## Build & Deployment
-
-### Production Build
+## Build
 
 ```bash
 cd frontend && npm run build
 ```
 
-**Output**: `build/` directory with optimized static files.
+Outputs `build/` with optimized static files. Serve with any static server (`npx serve -s build` for local testing).
 
-### Serve Build
+---
 
-```bash
-# Local testing
-npx serve -s build -p 3000
+## Related backend files
 
-# Or configure nginx/Apache to serve static files
-```
-
-### Environment Variables
-
-- Development: `.env.development`
-- Production: `.env.production`
-
-## Integration
-
-**Upstream**: User browser at http://localhost:3000
-
-**Downstream**: FastAPI backend at http://localhost:8000
-
-**Flow**:
-```
-User → React UI → Axios → FastAPI → [ChatService | GraphChatService] → Database
-                                      (LCEL)      (LangGraph)
-```
-
-**CORS**: Backend allows `http://localhost:3000` in development.
-
-## Related Files
-
-- **Backend APIs**:
-  - `/src/history_book/api/routes/chat.py` - Chat API endpoints (LCEL)
-  - `/src/history_book/api/routes/agent.py` - Agent API endpoints (LangGraph)
-  - `/src/history_book/api/routes/books.py` - Book browsing API endpoints
-- **Agent Documentation**: `/src/history_book/services/agents/CLAUDE.md` - LangGraph implementation details
-- **Root Documentation**: `/CLAUDE.md` - High-level architecture overview
-- **Verification Scripts**:
-  - `scripts/verify/verify_api.py` - API endpoint testing
-  - `scripts/verify/verify_integration.py` - End-to-end tests with frontend + backend
+- `src/history_book/api/routes/agent.py` — AG-UI streaming endpoint (the one HttpAgent talks to)
+- `src/history_book/api/routes/chat.py` — session CRUD + history fetch
+- `src/history_book/api/routes/books.py` — book browsing
+- `src/history_book/api/routes/kg.py` — KG explorer
+- `src/history_book/services/agents/CLAUDE.md` — LangGraph agent + AG-UI wrapper
+- Root `CLAUDE.md` — high-level architecture

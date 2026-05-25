@@ -14,6 +14,7 @@ START → agent_node → tools_node → agent_node → ... → END
 | File | Purpose |
 |------|---------|
 | `rag_agent.py` | `build_rag_agent(enabled_tools=None)` factory — compiles the `StateGraph` with a configurable tool set |
+| `agui_wrapper.py` | `HistoryBookLangGraphAgent` — AG-UI adapter around the compiled graph. Three protocol-bridge overrides (context injection, schema-keys, graph-owned-state stripping). See module docstring for the gaps it fills. |
 | `context.py` | `AgentContext` dataclass — runtime config passed via `context=` |
 | `state.py` | `AgentState(MessagesState)` + `add_paragraphs` reducer |
 | `prompts.py` | Prompt assembly — `build_system_prompt(enabled_tool_names)` + cross-tool notes |
@@ -95,9 +96,22 @@ def search_book(query: str, runtime: ToolRuntime[AgentContext]) -> Command:
 
 ### Iteration cap
 
-Derived from message history on each agent turn:
+Counted from the current turn only — everything from the most recent
+`HumanMessage` onward. With `MemorySaver` the full message list spans the
+whole session, so scoping is required or the cap engages spuriously on
+multi-turn conversations.
+
 ```python
-iterations = sum(1 for m in messages if isinstance(m, AIMessage) and m.tool_calls)
+def _current_turn_messages(messages):
+    for i in range(len(messages) - 1, -1, -1):
+        if isinstance(messages[i], HumanMessage):
+            return messages[i:]
+    return messages
+
+iterations = sum(
+    1 for m in _current_turn_messages(messages)
+    if isinstance(m, AIMessage) and m.tool_calls
+)
 is_final = iterations >= ctx.max_tool_iterations
 ```
 
@@ -105,14 +119,19 @@ When `is_final`, the LLM is invoked without bound tools → forced final answer.
 
 ### Streaming
 
+In production, streaming goes through the AG-UI wrapper
+(`agui_wrapper.HistoryBookLangGraphAgent`) which consumes `astream_events`
+and translates LangChain events into AG-UI events for the frontend. See
+`api/CLAUDE.md` and the wrapper module docstring for the wire shape.
+
+For direct programmatic use (e.g. evals — `ChatService.send_message`), the
+graph is invoked with `ainvoke`:
 ```python
-async for mode, data in agent.astream(inputs, context=ctx, config=cfg,
-                                       stream_mode=["updates", "messages"]):
-    if mode == "messages":
-        token, _meta = data
-        if token.content: yield token.content
-    elif mode == "updates" and "tools" in data:
-        retrieved.extend(data["tools"].get("retrieved_paragraphs", []))
+result = await agent.ainvoke(
+    {"messages": [HumanMessage(content=user_message)]},
+    context=ctx,
+    config={"configurable": {"thread_id": session_id}},
+)
 ```
 
 ## KG tool playbook

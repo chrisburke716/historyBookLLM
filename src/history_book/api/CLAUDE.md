@@ -21,12 +21,13 @@ curl http://localhost:8000/
 api/
 ├── main.py                    # FastAPI app setup, CORS, router registration
 ├── routes/
-│   ├── chat.py               # Chat endpoints (/api/chat/*)
+│   ├── chat.py               # Session/history CRUD (/api/chat/sessions/*, /graph)
+│   ├── agent.py              # AG-UI streaming endpoint (POST /api/chat/agent)
 │   ├── books.py              # Book browsing endpoints (/api/books/*)
 │   ├── kg.py                 # KG Explorer endpoints (/api/kg/*)
 │   └── kg_metrics.py         # KG metrics endpoints
 └── models/
-    ├── chat_models.py        # Chat request/response Pydantic models
+    ├── chat_models.py        # Session + message Pydantic models
     ├── api_models.py         # Book API models
     └── kg_models.py          # KG API models
 ```
@@ -47,6 +48,21 @@ For streaming endpoints: the service returns an `AsyncIterator[event]` and owns 
 
 ## Chat API (`/api/chat/*`)
 
+Live chat goes through one streaming endpoint (`POST /api/chat/agent`); everything else is plain JSON session/history CRUD.
+
+### Live chat (AG-UI streaming)
+
+```http
+POST /api/chat/agent
+RunAgentInput {threadId, runId, messages, state, tools, context, forwardedProps}
+→ text/event-stream (AG-UI events: RUN_STARTED, TEXT_MESSAGE_*, TOOL_CALL_*,
+                     STATE_SNAPSHOT, RUN_FINISHED, RUN_ERROR, ...)
+```
+
+`thread_id` must match an existing session id. The route validates the session (400 if missing, 404 if unknown) and then delegates to `ChatService.send_message_agui`, wrapping the resulting `AsyncIterator[ProcessedEvents]` with `EventEncoder` for SSE framing. Errors mid-stream are emitted as `RUN_ERROR` events; the route doesn't break the SSE connection on failure.
+
+Frontend consumers don't talk to this endpoint directly — CopilotKit's `HttpAgent` from `@ag-ui/client` does. See `frontend/CLAUDE.md`.
+
 ### Sessions
 
 ```http
@@ -61,36 +77,33 @@ DELETE /api/chat/sessions/{session_id}
 → {"status": "deleted", "session_id": "..."}
 ```
 
-### Messages
+### History + graph
 
 ```http
-POST /api/chat/sessions/{id}/messages
-{"content": "What caused WWI?"}
-→ ChatResponse {message: MessageResponse, session: SessionResponse}
-
 GET /api/chat/sessions/{id}/messages
 → MessageListResponse {messages: [MessageResponse]}
-
-POST /api/chat/sessions/{id}/stream
-{"content": "..."}
-→ text/event-stream (token-by-token SSE)
 
 GET /api/chat/sessions/{id}/graph
 → GraphVisualization {mermaid, nodes, edges}
 ```
 
-`ChatResponse.session` includes the auto-generated title (updated synchronously after each response).
+`MessageResponse.citations` use the unified compact format `[B X, Ch Y, p. Z]`.
 
-### Quick Test
+### Quick test (curl against the AG-UI endpoint)
 
 ```bash
 SESSION_ID=$(curl -s -X POST http://localhost:8000/api/chat/sessions \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Test"}' | jq -r '.id')
+  -H "Content-Type: application/json" -d '{"title": "Test"}' | jq -r '.id')
 
-curl -X POST http://localhost:8000/api/chat/sessions/$SESSION_ID/messages \
-  -H "Content-Type: application/json" \
-  -d '{"content": "Who was Julius Caesar?"}'
+curl -N -X POST http://localhost:8000/api/chat/agent \
+  -H "Content-Type: application/json" -H "Accept: text/event-stream" \
+  -d "{
+    \"threadId\": \"$SESSION_ID\",
+    \"runId\": \"run-$(uuidgen)\",
+    \"state\": {},
+    \"messages\": [{\"id\": \"m1\", \"role\": \"user\", \"content\": \"Who was Charlemagne?\"}],
+    \"tools\": [], \"context\": [], \"forwardedProps\": {}
+  }"
 ```
 
 ## Book API (`/api/books/*`)
@@ -114,22 +127,32 @@ POST /api/kg/search
 ## Models (`models/chat_models.py`)
 
 ```python
-class MessageRequest(BaseModel):
-    content: str = Field(..., min_length=1, max_length=10000)
+class SessionCreateRequest(BaseModel):
+    title: str | None = None
 
 class MessageResponse(BaseModel):
     id, content, role, timestamp, session_id
-    citations: list[str] | None   # e.g. ["Ch 5, p. 123"]
-    metadata: dict                # num_retrieved_paragraphs, tool_iterations
+    citations: list[str] | None   # e.g. ["[B3, Ch5, p.42]"]
+    metadata: dict
 
-class ChatResponse(BaseModel):
-    message: MessageResponse
-    session: SessionResponse      # includes updated title
+class SessionResponse(BaseModel):
+    id, title, created_at, updated_at
+
+class SessionListResponse(BaseModel):
+    sessions: list[SessionResponse]
+
+class MessageListResponse(BaseModel):
+    messages: list[MessageResponse]
+
+class GraphVisualization(BaseModel):
+    mermaid, nodes, edges
 ```
+
+The AG-UI endpoint uses `ag_ui.core.RunAgentInput` directly (not a model we define here).
 
 ## Dependency Injection
 
-`ChatService` is a module-level singleton in `routes/chat.py` — this preserves the `MemorySaver` checkpointer across requests so conversation history survives between turns.
+`ChatService` is a module-level singleton in `routes/chat.py` — this preserves the `MemorySaver` checkpointer across requests so conversation history survives between turns within a process. `routes/agent.py` imports the same `get_chat_service` from `chat.py` so both routers share the singleton.
 
 ```python
 _chat_service: ChatService = ChatService()
@@ -137,10 +160,11 @@ _chat_service: ChatService = ChatService()
 def get_chat_service() -> ChatService:
     return _chat_service
 
-@router.post("/sessions/{session_id}/messages")
-async def send_message(
-    session_id: str,
-    request: MessageRequest,
+# in agent.py:
+@router.post("/agent")
+async def agent_endpoint(
+    input_data: RunAgentInput,
+    request: Request,
     service: ChatService = Depends(get_chat_service),
 ):
     ...
@@ -154,5 +178,5 @@ async def send_message(
 
 ## Related Files
 
-- Services: `services/chat_service.py`, `services/agents/`
-- Frontend: `frontend/src/services/agentAPI.ts`
+- Services: `services/chat_service.py`, `services/agents/` (includes the AG-UI wrapper)
+- Frontend: `frontend/src/services/agentAPI.ts` (session CRUD), `frontend/src/components/CopilotProvider.tsx` (AG-UI HttpAgent)

@@ -25,27 +25,28 @@ PYTHONPATH=src poetry run python scripts/run_kg_extraction.py list
 
 ### ChatService (`chat_service.py`)
 
-Session management and LangGraph agent orchestration.
+Session management and agent orchestration. Two entry points for running
+the agent serve different consumers:
 
-**Key Methods**:
+**Key methods**:
 - `create_session(title)` → `ChatSession`
-- `send_message(session_id, user_message)` → `ChatResult(message, retrieved_paragraphs, metadata)`
-- `send_message_stream(session_id, user_message)` → `(AsyncIterator[str], list[Paragraph])`
-- `get_session_messages(session_id)` → `list[ChatMessage]`
-- `get_eval_metadata()` → dict
+- `get_session(session_id)`, `list_recent_sessions(limit)`, `delete_session(session_id)`, `get_session_messages(session_id)` — session/history CRUD
+- `send_message_agui(input_data)` → `AsyncIterator[ProcessedEvents]` — primary chat path. Owns the full turn lifecycle: pre-persists the user message, streams AG-UI events from the wrapped graph, persists the assistant message and regenerates the title in a `finally`. Used by `routes/agent.py`.
+- `send_message(session_id, user_message)` → `ChatResult` — synchronous one-shot used by `scripts/run_evals.py`. Not exposed via HTTP. Same persistence semantics as the AG-UI path.
+- `save_user_message`, `save_ai_message`, `maybe_regenerate_title`, `build_context`, `agent_config` — public helpers shared by both entry points.
+- `get_eval_metadata()` → dict — eval surfacing of model + retrieval config.
 
-**Flow**:
-1. Save user message to Weaviate
-2. Load chat history, convert to LangChain messages
-3. `agent.ainvoke(messages, context=AgentContext(...), config={"thread_id": session_id})`
-4. Save AI response + update session timestamp
-5. Regenerate session title (async, via `create_title_generation_chain`)
+**Lifecycle (both paths)**:
+1. Save user message to Weaviate.
+2. Run the graph (AG-UI wrapped for `send_message_agui`, direct `ainvoke` for `send_message`).
+3. Save AI response, update session timestamp.
+4. Regenerate session title (via `create_title_generation_chain`).
 
 **Memory strategy**:
-- `MemorySaver` (LangGraph): fast ephemeral state during graph execution
-- Weaviate: durable session + message storage across restarts
+- `MemorySaver` (LangGraph): in-process state with full message history including tool calls/results. Lost on restart.
+- Weaviate: durable session + user/assistant message storage. Tool messages are not persisted here.
 
-**ChatResult**:
+**ChatResult** (eval path only):
 ```python
 @dataclass
 class ChatResult:
@@ -69,7 +70,7 @@ cache stays warm across requests) and resolves `volume_graph_name` once via
 `_resolve_volume_graph_name()` (volume → largest book → None with warning).
 Both flow into `AgentContext` on every invocation.
 
-**Integration**: Called by `api/routes/chat.py` → invokes agent from `services/agents/` → uses `BookRepositoryManager` and `KGService`.
+**Integration**: HTTP via `api/routes/agent.py` (streaming) and `api/routes/chat.py` (session CRUD only); evals via `scripts/run_evals.py`. All paths share the same compiled graph and checkpointer.
 
 ---
 
@@ -126,7 +127,7 @@ High-level paragraph operations.
 
 **Async patterns**: All I/O uses `async def`. Repository calls are synchronous Weaviate I/O (wrapped as needed).
 
-**LangSmith tracing**: `@traceable` on `ChatService.send_message()` + automatic LangGraph tracing.
+**LangSmith tracing**: `@traceable` on `ChatService.send_message()` (eval path) + automatic LangGraph tracing on every run regardless of entry point.
 
 **Context flow**: `LLMConfig` + `BookRepositoryManager` built once in `ChatService.__init__`, passed to agent via `AgentContext` on each invocation.
 
