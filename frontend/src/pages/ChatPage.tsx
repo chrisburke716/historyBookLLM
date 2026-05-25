@@ -1,17 +1,27 @@
 /**
- * ChatPage - Main chat interface component.
+ * ChatPage — main chat surface.
+ *
+ * Layers:
+ *  - useChat hook: session list + per-session history (Weaviate-backed)
+ *  - <CopilotProvider>: AG-UI HttpAgent + CopilotKit runtime, scoped to chat
+ *  - <ChatThreadController>: hydrates the thread with history, fires run-end
+ *  - <MessageList>: renders live messages from CopilotKit hooks
+ *  - <MessageInput>: sends new turns via CopilotKit hooks
  */
 
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
-  Container,
-  Box,
-  Paper,
-  CircularProgress,
   Alert,
+  Box,
+  CircularProgress,
+  Container,
+  Paper,
   Snackbar,
 } from '@mui/material';
+
 import { useChat } from '../hooks/useChat';
+import CopilotProvider from '../components/CopilotProvider';
+import ChatThreadController from '../components/ChatThreadController';
 import MessageList from '../components/MessageList';
 import MessageInput from '../components/MessageInput';
 import SessionDropdown from '../components/SessionDropdown';
@@ -20,143 +30,98 @@ const ChatPage: React.FC = () => {
   const {
     currentSession,
     sessions,
-    messages,
+    historicalMessages,
+    sessionsLoaded,
     isLoading,
     error,
+    onRunEnd,
     createSession,
     switchToSession,
-    sendMessage,
     clearError,
   } = useChat();
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const hasCreatedInitialSession = useRef(false);
+  const hasInitialized = useRef(false);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Pick an initial session once the session list has loaded:
+  //   - if there are existing sessions, open the most recent one
+  //   - otherwise create a new one
+  // Gated on `sessionsLoaded` so we don't fire before the GET /sessions
+  // request has actually resolved (otherwise we'd race the fetch and
+  // always create a fresh session on every page load).
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages]);
-
-  // Create initial session if none exists
-  // Use ref to prevent duplicate creation in React StrictMode (which runs effects twice)
-  useEffect(() => {
-    if (!currentSession && sessions.length === 0 && !isLoading && !hasCreatedInitialSession.current) {
-      hasCreatedInitialSession.current = true;
+    if (!sessionsLoaded || currentSession || hasInitialized.current) return;
+    hasInitialized.current = true;
+    if (sessions.length > 0) {
+      switchToSession(sessions[0]);
+    } else {
       createSession();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSession, sessions.length, isLoading]);
-
-  const handleSendMessage = useCallback(async (content: string) => {
-    if (!currentSession) {
-      const newSession = await createSession();
-      if (!newSession) return;
-    }
-
-    await sendMessage(content);
-  }, [currentSession, createSession, sendMessage]);
-
-  const handleNewSession = useCallback(async () => {
-    await createSession();
-  }, [createSession]);
-
-  const handleSessionChange = useCallback(async (session: any) => {
-    await switchToSession(session);
-  }, [switchToSession]);
+  }, [sessionsLoaded, currentSession, sessions]);
 
   return (
-    <Container maxWidth="lg" sx={{ py: 2, height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Header with Session Dropdown */}
+    <Container
+      maxWidth="lg"
+      sx={{ py: 2, height: '100vh', display: 'flex', flexDirection: 'column' }}
+    >
       <Box sx={{ mb: 2 }}>
         <SessionDropdown
           sessions={sessions}
           currentSession={currentSession}
-          onSessionChange={handleSessionChange}
-          onNewSession={handleNewSession}
+          onSessionChange={switchToSession}
+          onNewSession={createSession}
           disabled={isLoading}
         />
       </Box>
 
-      {/* Main Chat Area */}
-      <Paper 
+      <Paper
         elevation={2}
-        sx={{ 
-          flex: 1, 
-          display: 'flex', 
+        sx={{
+          flex: 1,
+          display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
           borderRadius: 2,
         }}
       >
-        {/* Messages Area */}
-        <Box 
-          sx={{ 
-            flex: 1, 
-            overflow: 'auto',
-            bgcolor: 'grey.50',
-          }}
-        >
-          {isLoading && messages.length === 0 ? (
-            <Box 
-              display="flex" 
-              justifyContent="center" 
-              alignItems="center" 
-              height="100%"
-            >
-              <CircularProgress />
-            </Box>
-          ) : (
-            <>
-              <MessageList messages={messages} />
-              <div ref={messagesEndRef} />
-            </>
-          )}
-        </Box>
+        {currentSession ? (
+          <CopilotProvider threadId={currentSession.id}>
+            <ChatThreadController
+              historicalMessages={historicalMessages}
+              onRunEnd={onRunEnd}
+            />
 
-        {/* Input Area */}
-        <Box sx={{ p: 2, bgcolor: 'background.paper' }}>
-          <MessageInput
-            onSendMessage={handleSendMessage}
-            disabled={isLoading}
-            placeholder={
-              !currentSession 
-                ? "Creating session..." 
-                : "Ask a question about history..."
-            }
-          />
-          
-          {/* Loading indicator for message sending */}
-          {isLoading && messages.length > 0 && (
-            <Box 
-              sx={{ 
-                display: 'flex', 
-                justifyContent: 'center', 
-                alignItems: 'center',
-                mt: 1,
-                gap: 1,
-              }}
-            >
-              <CircularProgress size={16} />
-              <span style={{ fontSize: '0.875rem', color: '#666' }}>
-                Generating response...
-              </span>
+            <Box sx={{ flex: 1, overflow: 'auto', bgcolor: 'grey.50' }}>
+              <MessageList />
             </Box>
-          )}
-        </Box>
+
+            <Box sx={{ p: 2, bgcolor: 'background.paper' }}>
+              <MessageInput
+                placeholder="Ask a question about history..."
+              />
+            </Box>
+          </CopilotProvider>
+        ) : (
+          <Box
+            display="flex"
+            justifyContent="center"
+            alignItems="center"
+            height="100%"
+          >
+            <CircularProgress />
+          </Box>
+        )}
       </Paper>
 
-      {/* Error Snackbar */}
       <Snackbar
         open={!!error}
         autoHideDuration={6000}
         onClose={clearError}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert 
-          onClose={clearError} 
-          severity="error" 
+        <Alert
+          onClose={clearError}
+          severity="error"
           variant="filled"
           sx={{ width: '100%' }}
         >

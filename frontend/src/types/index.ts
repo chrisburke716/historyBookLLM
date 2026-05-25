@@ -7,10 +7,6 @@ export interface SessionCreateRequest {
   title?: string;
 }
 
-export interface MessageRequest {
-  content: string;
-}
-
 export interface SessionResponse {
   id: string;
   title?: string;
@@ -24,7 +20,7 @@ export interface MessageResponse {
   role: string; // "user" or "assistant"
   timestamp: string;
   session_id: string;
-  citations?: string[]; // e.g., ["Page 123", "Page 456"]
+  citations?: string[]; // e.g., ["[B3, Ch5, p.42]", ...]
   metadata?: Record<string, unknown>;
 }
 
@@ -34,20 +30,6 @@ export interface SessionListResponse {
 
 export interface MessageListResponse {
   messages: MessageResponse[];
-}
-
-export interface ChatResponse {
-  message: MessageResponse;
-  session: SessionResponse;
-}
-
-// Additional types for UI state management
-export interface ChatState {
-  currentSession: SessionResponse | null;
-  sessions: SessionResponse[];
-  messages: MessageResponse[];
-  isLoading: boolean;
-  error: string | null;
 }
 
 // Book reading API types

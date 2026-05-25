@@ -88,48 +88,35 @@ Chapter paragraphs → LLM extraction → Rule merge (name/alias, LLM-filtered)
                    → Chapter KGGraph → Cross-chapter merge → Book KGGraph → Cross-book merge → Volume KGGraph
 ```
 
-### Chat API (LangGraph-based)
+### Chat API
 
-The `/api/chat/*` endpoints provide RAG chat with LangGraph tooling:
-
-**Key Features**:
-- **Auto-generated Titles**: Sessions get descriptive titles based on conversation content
-- **Checkpointing**: Maintains conversation context across messages using LangGraph MemorySaver
-- **Graph Visualization**: View agent execution flow via Mermaid diagrams
-- **LangSmith Tracing**: Full observability of graph execution, timing, and state transitions
-- **Extensible**: Easy to add tools (KG search, paragraph lookup) via `ToolRuntime[AgentContext]`
+Live chat goes through one AG-UI streaming endpoint; everything else is plain JSON session/history CRUD.
 
 **Endpoints**:
-- `POST /api/chat/sessions` - Create session
-- `GET /api/chat/sessions` - List recent sessions
-- `POST /api/chat/sessions/{id}/messages` - Send message (non-streaming)
-- `POST /api/chat/sessions/{id}/stream` - Send message (token streaming)
-- `GET /api/chat/sessions/{id}/messages` - Get conversation history
-- `GET /api/chat/sessions/{id}/graph` - Get graph visualization (Mermaid)
-- `DELETE /api/chat/sessions/{id}` - Delete session
+- `POST /api/chat/agent` — AG-UI streaming. Accepts `RunAgentInput`, returns SSE event stream (token deltas, tool calls, state snapshots). The only live-chat surface.
+- `POST /api/chat/sessions` — create session
+- `GET /api/chat/sessions` — list recent sessions
+- `GET /api/chat/sessions/{id}/messages` — fetch persisted history
+- `DELETE /api/chat/sessions/{id}` — delete session
+- `GET /api/chat/sessions/{id}/graph` — Mermaid visualization of the agent graph
 
-**Quick Start**:
-```bash
-SESSION_ID=$(curl -s -X POST http://localhost:8000/api/chat/sessions \
-  -H "Content-Type: application/json" \
-  -d '{"title": "History Chat"}' | jq -r '.id')
+**Key features**:
+- **Auto-generated titles**: regenerated server-side after each turn (synchronous, via the title chain)
+- **Checkpointing**: `MemorySaver` keyed by `thread_id == session_id`. Full message history including tool calls/results survives within a process; Weaviate is the durable store across restarts
+- **LangSmith tracing**: every run, regardless of entry point
+- **AG-UI protocol**: wire-compatible with CopilotKit; the frontend uses `HttpAgent` from `@ag-ui/client` to consume the stream
 
-curl -X POST http://localhost:8000/api/chat/sessions/$SESSION_ID/messages \
-  -H "Content-Type: application/json" \
-  -d '{"content": "What is the history of Ancient Rome?"}'
-```
-
-See `/src/history_book/services/agents/CLAUDE.md` for implementation details.
+See `/src/history_book/api/CLAUDE.md` for endpoint details and a curl example; `/src/history_book/services/agents/CLAUDE.md` for the agent + AG-UI wrapper.
 
 ### Frontend Architecture
 
 - **React 19** with TypeScript and Material-UI
 - **Three-page interface**: Chat (RAG), Book (browse content), KG Explorer (graph visualization)
-- **Chat Components**: `MessageInput`, `MessageList`, `SessionDropdown`, `ChatPage`
-- **Book Components**: `BookSelector`, `ChapterView`, `BookPage`
-- **KG Components**: `KGTopBar`, `ForceGraphPanel`, `EntityPanel`, `KGPage`
-- **State management**: React hooks (Chat/Book) + Redux Toolkit + TanStack Query (KG Explorer)
-- API client with Axios for backend communication
+- **Chat surface**: custom MUI components driven by CopilotKit hooks (`useCopilotChatInternal`, `useCoAgent`). Key files: `ChatPage`, `CopilotProvider` (sets up `HttpAgent` + provider), `ChatThreadController` (history hydration + run-end signal), `MessageList` (turn-grouped renderer with markdown + tool-call chips + citations), `MessageInput`, `ToolCallCard`, `SessionDropdown`
+- **Book components**: `BookSelector`, `ChapterView`, `BookPage`
+- **KG components**: `KGTopBar`, `ForceGraphPanel`, `EntityPanel`, `KGPage`
+- **State management**: TanStack Query owns server state for chat (sessions, history) and KG; Redux Toolkit for KG Explorer's UI state; CopilotKit owns the live chat message thread
+- Axios for the REST surface (sessions, history). Live chat goes through CopilotKit's HttpAgent, not Axios
 
 ### Evaluation Framework
 
@@ -189,27 +176,29 @@ OPENAI_API_KEY=your-api-key  # Required for chat functionality
 
 ## Testing
 
-- **Backend API Verification**: `scripts/verify/verify_api.py` - API endpoint testing
-- **Integration Verification**: `scripts/verify/verify_integration.py` - End-to-end testing (requires both servers)
-- **Performance Benchmarks**: `scripts/verify/benchmark_langgraph.py` - LangGraph vs LCEL comparison
-- **Frontend Tests**: React Testing Library setup in frontend
+- **Eval suite**: `poetry run python scripts/run_evals.py` — LangSmith-tracked evaluation against the dataset. Calls `ChatService.send_message` directly (synchronous Python path), not the HTTP API.
+- **Frontend tests**: React Testing Library setup in `frontend/`.
 
 ## Key Libraries and Dependencies
 
 **Backend**:
 - FastAPI for REST API with automatic OpenAPI docs
 - Weaviate for vector database operations
-- LangChain for RAG implementation with direct LCEL chains
-- LangGraph for stateful agent execution with checkpointing
+- LangChain + LangGraph for the RAG agent (tool-using, stateful, checkpointed)
+- `ag-ui-langgraph` for the AG-UI wrapper around the compiled graph
+- `ag-ui-protocol` for the AG-UI event types + SSE encoder
 - PyMuPDF for PDF text extraction
 
 **Frontend**:
 - React 19 with TypeScript
 - Material-UI for component library
-- Axios for HTTP client
-- Redux Toolkit + react-redux (KG Explorer state)
-- TanStack Query (server state / caching for KG data)
-- react-force-graph-2d (force-directed graph canvas rendering)
+- `@copilotkit/react-core` for chat hooks (custom MUI on top, no prebuilt UI)
+- `@ag-ui/client`'s `HttpAgent` for AG-UI transport
+- TanStack Query for server state (chat session list/history + KG data)
+- Redux Toolkit + react-redux (KG Explorer UI state)
+- react-markdown + remark-gfm for assistant message rendering
+- Axios for the REST surface
+- react-force-graph-2d (KG visualization)
 - NetworkX (backend, subgraph computation via `nx.MultiDiGraph` + `ego_graph`)
 
 ## Project Documentation
@@ -218,11 +207,12 @@ OPENAI_API_KEY=your-api-key  # Required for chat functionality
 
 ## Important Notes
 
-- The system has moved away from complex abstraction layers — `ChatService` orchestrates a LangGraph agent that consumes a LangChain chat model directly via `build_chat_model(LLMConfig)`
-- Repository pattern provides clean separation between business logic and data access
-- Environment-specific configurations handle different deployment scenarios
-- Chat functionality requires OpenAI or Anthropic API keys
-- Vector embeddings are generated during PDF ingestion and stored in Weaviate
+- `ChatService` orchestrates a LangGraph agent that consumes a LangChain chat model directly via `build_chat_model(LLMConfig)`. Two entry points: `send_message_agui` (HTTP / AG-UI streaming, used by the frontend) and `send_message` (synchronous, used by evals). Both share the same compiled graph + checkpointer.
+- The AG-UI integration lives entirely in `services/agents/agui_wrapper.py` + `api/routes/agent.py`. The graph itself doesn't know AG-UI exists.
+- Layer-boundary doc lives in `api/CLAUDE.md` — routes are HTTP/transport only; orchestration belongs in services.
+- Repository pattern provides clean separation between business logic and data access.
+- Chat functionality requires OpenAI or Anthropic API keys.
+- Vector embeddings are generated during PDF ingestion and stored in Weaviate.
 
 ## Guiding Principles
 

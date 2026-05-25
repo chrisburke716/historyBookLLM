@@ -1,189 +1,154 @@
 /**
- * Custom hook for managing chat state and API interactions.
+ * Custom hook for managing chat session state.
+ *
+ * Server state (session list, per-session message history, create + switch
+ * operations) is owned by TanStack Query. Errors surface via derived state:
+ * `error` is computed during render from the queries/mutations, and a
+ * `dismissed` ref tracks the most recently dismissed Error so the snackbar
+ * can be closed without resetting the underlying query state.
+ *
+ * Local UI state (currentSession, dismissed-error reference) stays as
+ * useState. Live message streaming is handled by CopilotKit hooks inside
+ * the chat surface; this hook only touches the static endpoints.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useState } from 'react';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+
 import { api } from '../services/api';
 import {
-  SessionResponse,
+  MessageListResponse,
   MessageResponse,
-  ChatState,
   SessionCreateRequest,
-  MessageRequest,
+  SessionListResponse,
+  SessionResponse,
 } from '../types';
 
+const SESSIONS_KEY = ['sessions'] as const;
+const sessionMessagesKey = (id: string) =>
+  ['session-messages', id] as const;
+
+interface ErrorSource {
+  error: Error;
+  prefix: string;
+}
+
 export const useChat = () => {
-  const [state, setState] = useState<ChatState>({
-    currentSession: null,
-    sessions: [],
-    messages: [],
-    isLoading: false,
-    error: null,
+  const queryClient = useQueryClient();
+  const [currentSession, setCurrentSession] = useState<SessionResponse | null>(
+    null,
+  );
+  // Stores the Error reference the user most recently dismissed. `error`
+  // derives to null while liveError equals this; a new failure produces a
+  // new Error reference and the snackbar re-appears.
+  const [dismissed, setDismissed] = useState<Error | null>(null);
+
+  const sessionsQuery = useQuery<SessionListResponse, Error, SessionResponse[]>(
+    {
+      queryKey: SESSIONS_KEY,
+      queryFn: () => api.getSessions(),
+      select: (data) => data.sessions,
+    },
+  );
+
+  const messagesQuery = useQuery<MessageListResponse, Error, MessageResponse[]>(
+    {
+      queryKey: sessionMessagesKey(currentSession?.id ?? ''),
+      queryFn: () => api.getSessionMessages(currentSession!.id),
+      select: (data) => data.messages,
+      enabled: !!currentSession,
+    },
+  );
+
+  const createMutation = useMutation({
+    mutationFn: (title?: string) => {
+      const req: SessionCreateRequest = title ? { title } : {};
+      return api.createSession(req);
+    },
+    onSuccess: (session) => {
+      // Optimistically prepend to the cached session list.
+      queryClient.setQueryData<SessionListResponse>(SESSIONS_KEY, (old) => ({
+        sessions: [session, ...(old?.sessions ?? [])],
+      }));
+      // Seed empty history so the new session's messages query hits the
+      // cache instead of round-tripping for [].
+      queryClient.setQueryData<MessageListResponse>(
+        sessionMessagesKey(session.id),
+        { messages: [] },
+      );
+      setCurrentSession(session);
+    },
   });
 
-  /**
-   * Set loading state
-   */
-  const setLoading = useCallback((loading: boolean) => {
-    setState(prev => ({ ...prev, isLoading: loading }));
-  }, []);
-
-  /**
-   * Set error message
-   */
-  const setError = useCallback((error: string | null) => {
-    setState(prev => ({ ...prev, error }));
-  }, []);
-
-  /**
-   * Load list of sessions
-   */
-  const loadSessions = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await api.getSessions();
-      setState(prev => ({ ...prev, sessions: response.sessions }));
-    } catch (error) {
-      setError(`Failed to load sessions: ${error}`);
-    } finally {
-      setLoading(false);
-    }
-  }, [setLoading, setError]);
-
-  /**
-   * Create a new session
-   */
-  const createSession = useCallback(async (title?: string): Promise<SessionResponse | null> => {
-    try {
-      setLoading(true);
-      setError(null);
-      const request: SessionCreateRequest = title ? { title } : {};
-      const session = await api.createSession(request);
-
-      // Add to sessions list
-      setState(prev => ({
-        ...prev,
-        sessions: [session, ...prev.sessions],
-        currentSession: session,
-        messages: [], // Clear messages for new session
-      }));
-
-      return session;
-    } catch (error) {
-      setError(`Failed to create session: ${error}`);
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, [setLoading, setError]);
-
-  /**
-   * Switch to a different session
-   */
-  const switchToSession = useCallback(async (session: SessionResponse) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Load messages for the session
-      const response = await api.getSessionMessages(session.id);
-
-      setState(prev => ({
-        ...prev,
-        currentSession: session,
-        messages: response.messages,
-      }));
-    } catch (error) {
-      setError(`Failed to load session messages: ${error}`);
-    } finally {
-      setLoading(false);
-    }
-  }, [setLoading, setError]);
-
-  /**
-   * Send a message in the current session
-   */
-  const sendMessage = useCallback(async (content: string): Promise<boolean> => {
-    if (!state.currentSession) {
-      setError('No active session');
-      return false;
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const request: MessageRequest = { content };
-
-      // Add user message optimistically
-      const userMessage: MessageResponse = {
-        id: `temp-${Date.now()}`,
-        content,
-        role: 'user',
-        timestamp: new Date().toISOString(),
-        session_id: state.currentSession.id,
-      };
-
-      setState(prev => ({
-        ...prev,
-        messages: [...prev.messages, userMessage],
-      }));
-
-      // Send to API and get response
-      const response = await api.sendMessage(state.currentSession.id, request);
-
-      // Replace temp message with real user message and add AI response
-      // Also update currentSession and sessions list with new title
-      setState(prev => {
-        const messages = prev.messages.slice(0, -1); // Remove temp message
-
-        // Update sessions list to reflect new title
-        const updatedSessions = prev.sessions.map(s =>
-          s.id === response.session.id ? response.session : s
-        );
-
-        return {
-          ...prev,
-          currentSession: response.session,  // Update with new title
-          sessions: updatedSessions,         // Update sessions list
-          messages: [...messages, ...prev.messages.slice(-1), response.message],
-        };
+  const switchMutation = useMutation({
+    mutationFn: async (session: SessionResponse) => {
+      // Pre-fetch so historicalMessages is ready when
+      // ChatThreadController mounts and hydrates CopilotKit.
+      await queryClient.fetchQuery({
+        queryKey: sessionMessagesKey(session.id),
+        queryFn: () => api.getSessionMessages(session.id),
       });
+      return session;
+    },
+    onSuccess: (session) => setCurrentSession(session),
+  });
 
-      return true;
-    } catch (error) {
-      setError(`Failed to send message: ${error}`);
-      // Remove the optimistic user message on error
-      setState(prev => ({
-        ...prev,
-        messages: prev.messages.slice(0, -1),
-      }));
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  }, [state.currentSession, setLoading, setError]);
+  // Derived error — first non-null source, unless it matches `dismissed`.
+  const liveError: ErrorSource | null = sessionsQuery.error
+    ? { error: sessionsQuery.error, prefix: 'Failed to load sessions' }
+    : messagesQuery.error
+      ? { error: messagesQuery.error, prefix: 'Failed to load messages' }
+      : createMutation.error
+        ? { error: createMutation.error, prefix: 'Failed to create session' }
+        : switchMutation.error
+          ? { error: switchMutation.error, prefix: 'Failed to switch session' }
+          : null;
+  const error =
+    liveError && liveError.error !== dismissed
+      ? `${liveError.prefix}: ${liveError.error.message}`
+      : null;
 
-  /**
-   * Clear current error
-   */
+  const createSession = useCallback(
+    (title?: string) => createMutation.mutate(title),
+    [createMutation],
+  );
+
+  const switchToSession = useCallback(
+    (session: SessionResponse) => switchMutation.mutate(session),
+    [switchMutation],
+  );
+
   const clearError = useCallback(() => {
-    setError(null);
-  }, [setError]);
+    if (liveError) setDismissed(liveError.error);
+  }, [liveError]);
 
-  // Load sessions on mount
-  useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
+  // Called after a turn finishes. Invalidates the session list (titles may
+  // have regenerated) and the active session's messages (Weaviate now has
+  // the new user/assistant pair, so re-entering this session later should
+  // re-fetch fresh history).
+  const onRunEnd = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: SESSIONS_KEY });
+    if (currentSession) {
+      queryClient.invalidateQueries({
+        queryKey: sessionMessagesKey(currentSession.id),
+      });
+    }
+  }, [queryClient, currentSession]);
 
   return {
-    ...state,
-    // Actions
-    loadSessions,
+    currentSession,
+    sessions: sessionsQuery.data ?? [],
+    historicalMessages: messagesQuery.data ?? [],
+    sessionsLoaded: sessionsQuery.isFetched,
+    isLoading: createMutation.isPending || switchMutation.isPending,
+    error,
+    onRunEnd,
     createSession,
     switchToSession,
-    sendMessage,
     clearError,
   };
 };

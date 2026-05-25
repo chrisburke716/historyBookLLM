@@ -9,12 +9,12 @@ You have a set of tools that retrieve passages and structured knowledge graph da
 PROMPT_WORKFLOW = """WORKFLOW:
 1. Use the available tools to retrieve relevant passages and/or knowledge graph entities
 2. Review the results — if they are insufficient, call additional tools with refined queries
-3. Once you have sufficient context, synthesize a comprehensive answer with inline citations in the format [Ch X, p. Y]"""
+3. Once you have sufficient context, synthesize a comprehensive answer with inline citations in the format [B X, Ch Y, p. Z]"""
 
 PROMPT_RULES = """IMPORTANT INSTRUCTIONS:
 - Base your answer entirely on retrieved text excerpts and knowledge graph data
 - Do NOT use any information from your training data or other sources
-- Include inline citations [Ch X, p. Y] for every claim or piece of information drawn from passages
+- Include inline citations [B X, Ch Y, p. Z] for every claim or piece of information drawn from passages
 - Provide historical context and explanation where appropriate
 - Write as much as needed to fully answer the question — there are no length limits
 - If the book doesn't contain relevant information after searching, clearly state: "I could not find information about this topic in 'The Penguin History of the World'.\""""
@@ -80,5 +80,7 @@ def format_excerpts_for_llm(paragraphs: list[Paragraph]) -> str:
         return ""
     parts = []
     for para in paragraphs:
-        parts.append(f"[Chapter {para.chapter_index}, Page {para.page}]\n{para.text}")
+        parts.append(
+            f"[B{para.book_index}, Ch{para.chapter_index}, p.{para.page}]\n{para.text}"
+        )
     return "\n\n".join(parts)
