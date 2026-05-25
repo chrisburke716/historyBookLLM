@@ -1,122 +1,146 @@
 /**
  * Custom hook for managing chat session state.
  *
- * Owns session list + per-session historical messages (loaded from Weaviate).
- * Live message streaming and sending are handled by CopilotKit hooks inside
- * the chat surface — see `<CopilotProvider>` and `<MessageInput>`.
+ * Server state (session list, per-session message history) is owned by
+ * TanStack Query — same pattern as the KG page. Local UI state
+ * (currentSession, displayed error) stays as useState. Live message
+ * streaming is handled by CopilotKit hooks inside the chat surface;
+ * this hook only touches the static session/history endpoints.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+
 import { api } from '../services/api';
 import {
-  SessionResponse,
+  MessageListResponse,
   MessageResponse,
   SessionCreateRequest,
+  SessionListResponse,
+  SessionResponse,
 } from '../types';
 
-interface ChatState {
-  currentSession: SessionResponse | null;
-  sessions: SessionResponse[];
-  historicalMessages: MessageResponse[];
-  // True once the initial session list has been fetched (whether the result
-  // was empty or not). Lets callers distinguish "we don't know yet" from
-  // "we asked and there are no sessions".
-  sessionsLoaded: boolean;
-  isLoading: boolean;
-  error: string | null;
-}
+const SESSIONS_KEY = ['sessions'] as const;
+const sessionMessagesKey = (id: string) =>
+  ['session-messages', id] as const;
 
 export const useChat = () => {
-  const [state, setState] = useState<ChatState>({
-    currentSession: null,
-    sessions: [],
-    historicalMessages: [],
-    sessionsLoaded: false,
-    isLoading: false,
-    error: null,
-  });
+  const queryClient = useQueryClient();
+  const [currentSession, setCurrentSession] = useState<SessionResponse | null>(
+    null,
+  );
+  const [error, setError] = useState<string | null>(null);
 
-  const setLoading = useCallback((loading: boolean) => {
-    setState((prev) => ({ ...prev, isLoading: loading }));
-  }, []);
+  const sessionsQuery = useQuery<SessionListResponse, Error, SessionResponse[]>(
+    {
+      queryKey: SESSIONS_KEY,
+      queryFn: () => api.getSessions(),
+      select: (data) => data.sessions,
+    },
+  );
 
-  const setError = useCallback((error: string | null) => {
-    setState((prev) => ({ ...prev, error }));
-  }, []);
+  // Per-session history. Query key changes with currentSession.id; disabled
+  // when there is no current session so the placeholder key is never fetched.
+  const messagesQuery = useQuery<MessageListResponse, Error, MessageResponse[]>(
+    {
+      queryKey: sessionMessagesKey(currentSession?.id ?? ''),
+      queryFn: () => api.getSessionMessages(currentSession!.id),
+      select: (data) => data.messages,
+      enabled: !!currentSession,
+    },
+  );
 
-  const loadSessions = useCallback(async () => {
-    try {
-      setError(null);
-      const response = await api.getSessions();
-      setState((prev) => ({
-        ...prev,
-        sessions: response.sessions,
-        sessionsLoaded: true,
-      }));
-    } catch (error) {
-      setError(`Failed to load sessions: ${error}`);
-      // Treat a failed fetch as "loaded" so the UI doesn't hang waiting
-      // forever; the error snackbar surfaces the actual problem.
-      setState((prev) => ({ ...prev, sessionsLoaded: true }));
+  // Surface query errors via local error state so the snackbar can be
+  // dismissed independently of the underlying query state.
+  useEffect(() => {
+    if (sessionsQuery.error) {
+      setError(`Failed to load sessions: ${sessionsQuery.error.message}`);
     }
-  }, [setError]);
+  }, [sessionsQuery.error]);
+  useEffect(() => {
+    if (messagesQuery.error) {
+      setError(`Failed to load messages: ${messagesQuery.error.message}`);
+    }
+  }, [messagesQuery.error]);
+
+  const createMutation = useMutation({
+    mutationFn: (title?: string) => {
+      const req: SessionCreateRequest = title ? { title } : {};
+      return api.createSession(req);
+    },
+    onSuccess: (session) => {
+      // Optimistically prepend to the cached session list so the dropdown
+      // reflects the new session before the next list refetch.
+      queryClient.setQueryData<SessionListResponse>(SESSIONS_KEY, (old) => ({
+        sessions: [session, ...(old?.sessions ?? [])],
+      }));
+      // Seed an empty history so the messages query for this new session
+      // hits the cache instead of round-tripping for [].
+      queryClient.setQueryData<MessageListResponse>(
+        sessionMessagesKey(session.id),
+        { messages: [] },
+      );
+      setCurrentSession(session);
+    },
+    onError: (err: Error) =>
+      setError(`Failed to create session: ${err.message}`),
+  });
 
   const createSession = useCallback(
     async (title?: string): Promise<SessionResponse | null> => {
       try {
-        setLoading(true);
-        setError(null);
-        const request: SessionCreateRequest = title ? { title } : {};
-        const session = await api.createSession(request);
-
-        setState((prev) => ({
-          ...prev,
-          sessions: [session, ...prev.sessions],
-          currentSession: session,
-          historicalMessages: [],
-        }));
-
-        return session;
-      } catch (error) {
-        setError(`Failed to create session: ${error}`);
+        return await createMutation.mutateAsync(title);
+      } catch {
         return null;
-      } finally {
-        setLoading(false);
       }
     },
-    [setLoading, setError],
+    [createMutation],
   );
 
   const switchToSession = useCallback(
     async (session: SessionResponse) => {
       try {
-        setLoading(true);
-        setError(null);
-        const response = await api.getSessionMessages(session.id);
-        setState((prev) => ({
-          ...prev,
-          currentSession: session,
-          historicalMessages: response.messages,
-        }));
-      } catch (error) {
-        setError(`Failed to load session messages: ${error}`);
-      } finally {
-        setLoading(false);
+        // Pre-fetch so historicalMessages is ready by the time
+        // ChatThreadController mounts and hydrates CopilotKit.
+        await queryClient.fetchQuery({
+          queryKey: sessionMessagesKey(session.id),
+          queryFn: () => api.getSessionMessages(session.id),
+        });
+        setCurrentSession(session);
+      } catch (err) {
+        setError(`Failed to load session: ${err}`);
       }
     },
-    [setLoading, setError],
+    [queryClient],
   );
 
-  const clearError = useCallback(() => setError(null), [setError]);
+  // Called after a turn finishes. Invalidates the session list (titles may
+  // have regenerated) and the active session's messages (Weaviate now has
+  // the new user/assistant pair, so re-entering this session later should
+  // re-fetch fresh history).
+  const onRunEnd = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: SESSIONS_KEY });
+    if (currentSession) {
+      queryClient.invalidateQueries({
+        queryKey: sessionMessagesKey(currentSession.id),
+      });
+    }
+  }, [queryClient, currentSession]);
 
-  // Load sessions on mount
-  useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
+  const clearError = useCallback(() => setError(null), []);
 
   return {
-    ...state,
-    loadSessions,
+    currentSession,
+    sessions: sessionsQuery.data ?? [],
+    historicalMessages: messagesQuery.data ?? [],
+    sessionsLoaded: sessionsQuery.isFetched,
+    isLoading: createMutation.isPending || messagesQuery.isFetching,
+    error,
+    onRunEnd,
     createSession,
     switchToSession,
     clearError,

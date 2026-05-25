@@ -34,7 +34,7 @@ const ChatPage: React.FC = () => {
     sessionsLoaded,
     isLoading,
     error,
-    loadSessions,
+    onRunEnd,
     createSession,
     switchToSession,
     clearError,
@@ -88,7 +88,7 @@ const ChatPage: React.FC = () => {
           <CopilotProvider threadId={currentSession.id}>
             <ChatThreadController
               historicalMessages={historicalMessages}
-              onRunEnd={loadSessions}
+              onRunEnd={onRunEnd}
             />
 
             <Box sx={{ flex: 1, overflow: 'auto', bgcolor: 'grey.50' }}>
