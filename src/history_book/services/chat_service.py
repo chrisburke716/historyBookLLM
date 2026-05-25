@@ -219,46 +219,6 @@ class ChatService:
             logger.error(f"send_message failed: {e}")
             raise
 
-    async def send_message_stream(
-        self, session_id: str, user_message: str
-    ) -> tuple[AsyncIterator[str], list[Paragraph]]:
-        """
-        Send a message with token-by-token streaming.
-
-        Returns (token_stream, retrieved_paragraphs). retrieved_paragraphs is
-        populated incrementally as tool nodes complete; it is fully populated
-        once the stream is exhausted.
-        """
-        await self.save_user_message(session_id, user_message)
-        ctx = self.build_context()
-        retrieved: list[Paragraph] = []
-        full_response = ""
-
-        async def _stream():
-            nonlocal full_response
-            async for mode, data in self.agent.astream(
-                {"messages": [HumanMessage(content=user_message)]},
-                context=ctx,
-                config=self.agent_config(session_id, streaming=True),
-                stream_mode=["updates", "messages"],
-            ):
-                if mode == "messages":
-                    token_chunk, _meta = data
-                    # `.text` handles both string content and Responses API
-                    # list-of-blocks chunks (skipping reasoning blocks).
-                    chunk_text = token_chunk.text
-                    if chunk_text:
-                        full_response += chunk_text
-                        yield chunk_text
-                elif mode == "updates" and "tools" in data:
-                    tool_paragraphs = data["tools"].get("retrieved_paragraphs", [])
-                    retrieved.extend(tool_paragraphs)
-
-            await self.save_ai_message(session_id, full_response, retrieved)
-            await self.maybe_regenerate_title(session_id)
-
-        return _stream(), retrieved
-
     async def send_message_agui(self, input_data: Any) -> AsyncIterator[Any]:
         """
         Stream AG-UI events for a run; owns persistence around the stream.

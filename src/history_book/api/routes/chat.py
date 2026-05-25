@@ -1,24 +1,24 @@
-"""Chat API routes."""
+"""Chat API routes — session CRUD, history fetch, graph visualization.
+
+Live chat turns go through the AG-UI endpoint in `routes/agent.py`; this
+module only handles the supporting REST surface.
+"""
 
 import logging
-from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 
 from history_book.api.models.chat_models import (
-    ChatResponse,
     GraphVisualization,
     MessageListResponse,
-    MessageRequest,
     MessageResponse,
     SessionCreateRequest,
     SessionListResponse,
     SessionResponse,
 )
 from history_book.data_models.entities import ChatMessage, ChatSession, Paragraph
-from history_book.services.chat_service import ChatResult, ChatService
+from history_book.services.chat_service import ChatService
 
 logger = logging.getLogger(__name__)
 
@@ -129,79 +129,6 @@ async def get_messages(
         raise HTTPException(
             status_code=500, detail="Failed to retrieve messages"
         ) from e
-
-
-@router.post("/sessions/{session_id}/messages", response_model=ChatResponse)
-async def send_message(
-    session_id: str,
-    request: MessageRequest,
-    service: ChatService = Depends(get_chat_service),
-) -> ChatResponse:
-    try:
-        session = await service.get_session(session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-        result: ChatResult = await service.send_message(
-            session_id=session_id,
-            user_message=request.content,
-        )
-
-        updated_session = await service.get_session(session_id)
-        if not updated_session:
-            raise HTTPException(
-                status_code=500, detail="Session disappeared during processing"
-            )
-
-        return ChatResponse(
-            message=_message_response(
-                result.message,
-                retrieved_paragraphs=result.retrieved_paragraphs,
-                metadata=result.metadata,
-            ),
-            session=_session_response(updated_session),
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to send message to {session_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to send message") from e
-
-
-@router.post("/sessions/{session_id}/stream")
-async def stream_message(
-    session_id: str,
-    request: MessageRequest,
-    service: ChatService = Depends(get_chat_service),
-) -> StreamingResponse:
-    """Send a message with token-by-token streaming (Server-Sent Events)."""
-    try:
-        session = await service.get_session(session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-        async def event_generator() -> AsyncIterator[str]:
-            try:
-                stream_gen, _ = await service.send_message_stream(
-                    session_id=session_id,
-                    user_message=request.content,
-                )
-                async for chunk in stream_gen:
-                    yield f"data: {chunk}\n\n"
-            except Exception as e:
-                logger.error(f"Streaming error for {session_id}: {e}")
-                yield f"data: [ERROR] {e}\n\n"
-
-        return StreamingResponse(
-            event_generator(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to start streaming for {session_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to start streaming") from e
 
 
 @router.get("/sessions/{session_id}/graph", response_model=GraphVisualization)

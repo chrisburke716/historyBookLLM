@@ -10,10 +10,6 @@ class SessionCreateRequest(BaseModel):
     title: str | None = None
 
 
-class MessageRequest(BaseModel):
-    content: str = Field(..., min_length=1, max_length=10000)
-
-
 class MessageResponse(BaseModel):
     id: str
     content: str
@@ -37,13 +33,6 @@ class SessionListResponse(BaseModel):
 
 class MessageListResponse(BaseModel):
     messages: list[MessageResponse]
-
-
-class ChatResponse(BaseModel):
-    """Response after sending a message — includes AI reply and updated session (with title)."""
-
-    message: MessageResponse
-    session: SessionResponse
 
 
 class GraphVisualization(BaseModel):

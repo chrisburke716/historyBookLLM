@@ -1,15 +1,17 @@
 /**
- * Chat API service for communicating with the LangGraph-based RAG agent.
+ * REST client for session + history endpoints.
+ *
+ * Live chat turns go through the AG-UI endpoint via CopilotKit's HttpAgent
+ * (see components/CopilotProvider.tsx); this module only covers the
+ * supporting REST surface.
  */
 
 import axios, { AxiosInstance } from 'axios';
 import {
-  SessionCreateRequest,
-  MessageRequest,
-  SessionResponse,
-  SessionListResponse,
   MessageListResponse,
-  ChatResponse,
+  SessionCreateRequest,
+  SessionListResponse,
+  SessionResponse,
 } from '../types';
 
 class AgentAPI {
@@ -19,9 +21,7 @@ class AgentAPI {
     this.api = axios.create({
       baseURL,
       timeout: 60000,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
     });
   }
 
@@ -37,22 +37,18 @@ class AgentAPI {
 
   async getSessions(limit: number = 10): Promise<SessionListResponse> {
     const response = await this.api.get('/api/chat/sessions', {
-      params: { limit }
+      params: { limit },
     });
     return response.data;
   }
 
   async getSessionMessages(sessionId: string): Promise<MessageListResponse> {
-    const response = await this.api.get(`/api/chat/sessions/${sessionId}/messages`);
-    return response.data;
-  }
-
-  async sendMessage(sessionId: string, request: MessageRequest): Promise<ChatResponse> {
-    const response = await this.api.post(`/api/chat/sessions/${sessionId}/messages`, request);
+    const response = await this.api.get(
+      `/api/chat/sessions/${sessionId}/messages`,
+    );
     return response.data;
   }
 }
 
-// Export singleton instance
 export const agentAPI = new AgentAPI();
 export default agentAPI;
